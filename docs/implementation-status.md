@@ -8,7 +8,7 @@ This document tracks the verified status of all architectural components across 
 
 ---
 
-## Component Status Matrix
+## Component Status Matrix (Stage 02 — Vertical Slice)
 
 | Component / Subsystem | State | Evidence / Automated Test Command | Notes |
 | :--- | :--- | :--- | :--- |
@@ -16,7 +16,7 @@ This document tracks the verified status of all architectural components across 
 | **Authoritative Shared Contracts (v1)** | `TESTED` | `pytest tests/unit/test_contracts.py` | JSON Schema & Pydantic models for Session, Task, Action, Fact, Evidence |
 | **FastAPI Backend Server & Lifespan** | `TESTED` | `pytest tests/unit/test_health_and_capabilities.py` | Starts cleanly on 127.0.0.1 with database tables initialized |
 | **Health Diagnostic Endpoint** | `TESTED` | `pytest tests/unit/test_health_and_capabilities.py` | Probes system status, python version, local-only flag, and DB readiness |
-| **Capabilities Endpoint** | `TESTED` | `pytest tests/unit/test_health_and_capabilities.py` | Truthfully reports `desktopAutomationAvailable: false`, `browserAutomationAvailable: false`, `modelsAvailable: []` |
+| **Capabilities Endpoint** | `TESTED` | `pytest tests/unit/test_health_and_capabilities.py` | Accurately reports dynamic companion named pipe probe, active browser bridge, and empty external models |
 | **Task Orchestration & State Machine** | `TESTED` | `pytest tests/unit/test_orchestrator.py` | Enforces valid lifecycle transitions; rejects illegal jumps |
 | **Task Cancellation Invariant** | `TESTED` | `pytest tests/unit/test_orchestrator.py` | Cancelling task immediately blocks any subsequent action dispatch |
 | **Action Gate Policy Engine** | `TESTED` | `pytest tests/unit/test_action_gate.py` | Denies shell commands, unallowlisted actions, and requires consent grants |
@@ -26,13 +26,18 @@ This document tracks the verified status of all architectural components across 
 | **Independent Verifier Invariant** | `TESTED` | `pytest tests/unit/test_verification_and_ledger.py` | Model self-attestation is strictly rejected; objective checks required |
 | **Evidence Ledger Immutability** | `TESTED` | `pytest tests/unit/test_verification_and_ledger.py` | Records immutable link between action and verified postcondition |
 | **Secret Scanning Suite** | `TESTED` | `pytest tests/security/test_secret_scanning.py` | 0 secrets or private keys committed across repository files |
-| **Browser Extension (Manifest V3)** | `TESTED` | `npm run build` in `apps/browser-extension` | Compiles to `dist/` with valid service worker, content script, and popup |
+| **Browser Extension (Manifest V3)** | `TESTED` | `npm run build` in `apps/browser-extension` | Compiles cleanly; content script sanitizes DOM, discovers accessible controls, executes bounded scroll |
 | **Browser Extension Contract Test** | `TESTED` | `pytest tests/browser/test_extension_contracts.py` | Rejects unknown commands and enforces 1MB payload size limits |
-| **Electron Desktop UI (React/TS)** | `TESTED` | `npm run build` in `apps/desktop` | Compiles with TypeScript and Vite; includes timeline, badges, and controls |
-| **Native Messaging Host (C# Skeleton)** | `IMPLEMENTED` | `tests/desktop/test_native_host_contracts.py` | Standard 4-byte little-endian message framing and allowlist logic written |
-| **Native Companion C# Build** | `BLOCKED` | Host environment lacks .NET SDK (`No .NET SDKs were found`) | Solution and project files ready; blocked on installing .NET 8 SDK |
-| **Live Windows UI Automation** | `PLANNED` | Deferred to Stage 02 | Stubbed interface returns `WindowsAdapterNotImplementedError` |
-| **Live Browser Tab Control** | `PLANNED` | Deferred to Stage 02 | Stubbed interface returns `BrowserAdapterNotImplementedError` |
-| **Multimodal Meta Models (Llama)** | `PLANNED` | Deferred to subsequent stages | Model clients fail closed with `ModelProviderNotConfiguredError` |
-| **Local Llama Quantized Weights** | `PLANNED` | Deferred to subsequent stages | No weights downloaded in foundation stage |
-| **Muse Voice Transcribe / Spark** | `PLANNED` | Deferred to subsequent stages | Interfaces defined; no live model calls |
+| **Browser Ingestion & Observation API** | `TESTED` | `pytest tests/unit/test_browser_endpoints.py` | Ingests tab observation, registers source, writes observed context facts |
+| **Bounded Scroll Action & Verification**| `TESTED` | `pytest tests/unit/test_browser_endpoints.py` | Evaluates via ActionGate, checks delta, records to EvidenceLedger, detects conflicts |
+| **Deterministic Information Retrieval** | `TESTED` | `pytest tests/unit/test_deterministic_retrieval.py` | Keyword search with snippet extraction, provenance URI, and zero AI inference |
+| **.NET 10 Companion Migration & Build** | `TESTED` | `dotnet build apps/windows-companion/Sahaay.sln` | Migrated solution and 3 projects to .NET 10 LTS; builds Release and Debug |
+| **.NET Companion Unit Tests** | `TESTED` | `dotnet test apps/windows-companion/Sahaay.sln` | 8 xUnit tests verifying message framing, allowlist, and named pipe dispatch |
+| **Native Messaging Host (Sahaay.NativeHost)** | `TESTED` | `dotnet test` + `tests/desktop/test_native_host_contracts.py` | 4-byte stdio framing, origin validation, forwarder to Named Pipe |
+| **Native Host Registration Scripts** | `TESTED` | `register-native-host.ps1` & `unregister-native-host.ps1` | User-level HKCU registration for Chrome and Edge with validation |
+| **Windows UI Automation Inspector** | `TESTED` | `pytest tests/unit/test_windows_endpoints.py` | Discovers open windows via Win32 `EnumWindows` and inspects UI elements |
+| **Windows Named Pipe IPC Bridge** | `TESTED` | `pytest tests/unit/test_windows_endpoints.py` | Authenticated `\\.\pipe\SahaayControllerPipe` ctypes client with timeout |
+| **Electron Desktop UI (React/TS)** | `TESTED` | `npm run build` in `apps/desktop` | Compiles cleanly; includes windows inspector, browser bridge, deterministic search |
+| **Multimodal Meta Models (Llama)** | `PLANNED` | Deferred to Stage 03 | Model clients fail closed with `ModelProviderNotConfiguredError` |
+| **Local Llama Quantized Weights** | `PLANNED` | Deferred to Stage 03 | No weights downloaded in this stage |
+| **Muse Voice Transcribe / Spark** | `PLANNED` | Deferred to Stage 03 | Interfaces defined; zero external API calls |

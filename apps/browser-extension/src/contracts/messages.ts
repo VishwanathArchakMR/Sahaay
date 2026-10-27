@@ -9,6 +9,10 @@ export const ALLOWED_EXTENSION_COMMANDS = [
   "ping",
   "get_tab_metadata",
   "get_sanitized_dom",
+  "get_tab_observation",
+  "scroll_tab",
+  "get_active_window",
+  "list_open_windows",
   "check_authorization",
 ] as const;
 
@@ -28,7 +32,41 @@ export interface ExtensionMessageResponse {
   error?: string;
 }
 
-export function validateExtensionMessage(rawMessage: unknown): { isValid: boolean; error?: string; message?: ExtensionMessageRequest } {
+export interface TabObservationData {
+  observationId: string;
+  tabId: number;
+  url: string;
+  title: string;
+  capturedAt: string;
+  scrollPosition: { x: number; y: number };
+  documentDimensions: {
+    scrollHeight: number;
+    clientHeight: number;
+    scrollWidth: number;
+    clientWidth: number;
+  };
+  visibleTextExcerpt: string;
+  accessibleElements: Array<{
+    tag: string;
+    type?: string;
+    text: string;
+    id?: string;
+  }>;
+}
+
+export interface ScrollActionResult {
+  preScrollY: number;
+  postScrollY: number;
+  requestedDeltaY: number;
+  actualDeltaY: number;
+  isVerified: boolean;
+}
+
+export function validateExtensionMessage(rawMessage: unknown): {
+  isValid: boolean;
+  error?: string;
+  message?: ExtensionMessageRequest;
+} {
   if (!rawMessage || typeof rawMessage !== "object") {
     return { isValid: false, error: "Message must be a non-null JSON object." };
   }

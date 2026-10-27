@@ -34,6 +34,8 @@
 - `get_tab_content`: Grants permission to extract sanitized text content from authorized tabs.
 - `navigate_browser_tab`: Grants permission to navigate active tab to authorized URLs.
 - `click_browser_element`: Grants permission to interact with authorized web elements.
+- `scroll_browser_tab`: Grants permission to scroll active authorized tab by bounded delta.
+- `inspect_window_elements`: Grants permission to query accessible UI Automation hierarchy of selected window.
 - `focus_window:<name>`: Grants permission to bring an authorized window to the foreground.
 - `click_desktop_control:<id>`: Grants permission to click an authorized UI Automation control.
 

@@ -161,3 +161,84 @@ Retrieves facts within authorized source scope.
 
 ### `GET /api/v1/audit/evidence/task/{task_id}`
 Returns all immutable `EvidenceReference` records for a task.
+
+---
+
+## 7. Windows Companion Controller
+
+### `GET /api/v1/windows`
+Enumerate open visible application windows via Win32 `EnumWindows` and UI Automation.
+* **Response** (200 OK):
+  ```json
+  {
+    "isConnected": true,
+    "windows": [
+      {
+        "hwnd": 123456,
+        "title": "Document - WordPad",
+        "processName": "wordpad.exe",
+        "bounds": { "x": 100, "y": 100, "width": 800, "height": 600 }
+      }
+    ],
+    "count": 1
+  }
+  ```
+
+### `GET /api/v1/windows/active`
+Retrieve the current foreground window.
+
+### `POST /api/v1/windows/inspect`
+Inspect accessible UI Automation elements for a given HWND.
+* **Request**:
+  ```json
+  { "hwnd": 123456 }
+  ```
+
+### `POST /api/v1/windows/observe`
+Capture structured UI Automation tree and optional screenshot for an authorized window.
+
+---
+
+## 8. Browser Bridge & Deterministic Search
+
+### `POST /api/v1/browser/observe`
+Ingest real observation from authorized browser tab, register as source, and record context facts.
+* **Request**:
+  ```json
+  {
+    "url": "https://example.com/docs",
+    "title": "Example Docs",
+    "scrollPosition": { "x": 0, "y": 150 },
+    "documentDimensions": { "width": 1280, "height": 3400 },
+    "visibleTextExcerpt": "Documentation content...",
+    "accessibleElements": []
+  }
+  ```
+
+### `POST /api/v1/browser/action/scroll`
+Propose, authorize via Action Gate, execute bounded scroll, and independently verify postcondition.
+* **Request**:
+  ```json
+  {
+    "sessionId": "...",
+    "taskId": "...",
+    "stepId": "...",
+    "url": "https://example.com/docs",
+    "requestedDeltaY": 300,
+    "preScrollY": 150,
+    "postScrollY": 450
+  }
+  ```
+* **Response**: Returns authorization status, `actualDeltaY`, `verificationStatus` (`VERIFIED`/`CONFLICT`), and `evidenceId`.
+
+### `POST /api/v1/sources/search`
+Perform deterministic keyword search over ingested facts with snippet extraction and provenance tracking (zero AI model calls).
+* **Request**:
+  ```json
+  {
+    "query": "documentation",
+    "sourceType": "browser_tab"
+  }
+  ```
+* **Response**: Returns matches with `factId`, `sourceUri`, `sourceTitle`, `matchedSnippet`, and `isModelInference: false`.
+

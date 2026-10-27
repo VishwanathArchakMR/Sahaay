@@ -70,3 +70,18 @@ Every completed step records an `EvidenceReference` linking:
 - `verificationResultId` (`VERIFIED`, `FAILED`, `UNVERIFIED`, `CONFLICT`, or `NOT_ATTEMPTED`)
 - `narrative` summary
 The Evidence Ledger prevents retrospective alteration of past action records.
+
+---
+
+## 4. Stage 02 Browser Action & Verification Flow
+For the bounded browser scroll action:
+1. **Observe Precondition**: Ingests pre-action scroll coordinates $(X_0, Y_0)$ and document dimensions from the authorized tab.
+2. **Action Proposal**: Creates `ActionContract` with type `SCROLL_BROWSER_TAB` targeting tab URL with parameter `deltaY`.
+3. **Action Gate Authorization**: Confirms session consent, active task status, and verified target scope.
+4. **Driver Execution**: Extension content script executes `window.scrollBy({ top: deltaY, behavior: 'instant' })`.
+5. **Postcondition Observation**: Captures post-action scroll coordinates $(X_1, Y_1)$.
+6. **Independent Verification**: Calculates actual $\Delta Y = Y_1 - Y_0$.
+   - If $\Delta Y \neq 0$ and sign matches requested direction: `VERIFIED`.
+   - If $\Delta Y == 0$: flags `CONFLICT` (e.g. at document boundary or unscrollable viewport).
+   - Rejects any self-attesting completion message.
+7. **Audit Record**: Records immutable entry to `EvidenceLedger` linking task, step, delta, and verification state.

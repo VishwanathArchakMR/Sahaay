@@ -11,8 +11,7 @@ This setup was verified on:
 - **uv**: 0.7.13 (installed in user profile at `$env:APPDATA\Python\Python312\Scripts\uv.exe`)
 - **Git**: 2.50.1.windows.1
 - **Browsers**: Google Chrome (installed), Microsoft Edge (installed)
-- **.NET Runtime**: .NET 6.0.21 Desktop App runtime installed
-  * *Note*: Compiling the C# native companion solution requires installing the [.NET 8 or 9 SDK](https://dotnet.microsoft.com/download).
+- **.NET SDK**: .NET 10 LTS SDK (`10.0.403`) and WindowsDesktop runtime (`10.0.14`) installed at `$env:LOCALAPPDATA\Microsoft\dotnet`
 
 ---
 
@@ -22,59 +21,70 @@ Run the root setup script in PowerShell:
 ```powershell
 .\scripts\setup.ps1
 ```
+This script automatically:
+1. Configures Python virtual environment with `uv` and installs `core/` dependencies.
+2. Compiles the Browser Extension with `npm install` and `npm run build`.
+3. Compiles the Desktop Application with `npm install` and `npm run build`.
+4. Builds the .NET 10 companion solution (`Sahaay.sln`).
 
 ---
 
-## 3. Manual Component Setup
+## 3. Native Messaging Host Registration
 
-### 3.1 Python Backend Setup
+Register the native messaging host for Chrome and Edge (HKCU user-level registry):
 ```powershell
-cd C:\Sahaay\core
-# Create venv and install dependencies with uv
-uv venv .venv
-.\.venv\Scripts\activate
-uv pip install -e ".[dev]"
+# In PowerShell:
+.\apps\windows-companion\register-native-host.ps1 -ExtensionId "<your-extension-id>" -TargetBrowser "All"
+```
+To unregister when finished:
+```powershell
+.\apps\windows-companion\unregister-native-host.ps1 -TargetBrowser "All"
 ```
 
-### 3.2 Desktop App Setup
-```powershell
-cd C:\Sahaay\apps\desktop
-npm install
-npm run build
-```
+---
 
-### 3.3 Browser Extension Setup
-```powershell
-cd C:\Sahaay\apps\browser-extension
-npm install
-npm run build
-```
+## 4. Running the Complete Vertical Slice
 
-### 3.4 Windows Companion (.NET)
-Requires .NET SDK 8.0+:
+### Step 1: Start the Windows Companion Daemon
 ```powershell
 cd C:\Sahaay\apps\windows-companion
-dotnet build Sahaay.sln
+$env:PATH = "$env:LOCALAPPDATA\Microsoft\dotnet;$env:PATH"
+dotnet run --project Sahaay.Controller
+```
+The controller listens on `\\.\pipe\SahaayControllerPipe` for UI Automation queries.
+
+### Step 2: Start the FastAPI Backend
+```powershell
+cd C:\Sahaay
+.\core\.venv\Scripts\activate
+$env:PYTHONPATH = "core/src"
+uvicorn sahaay_core.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+### Step 3: Load the Browser Extension
+1. Open Google Chrome or Microsoft Edge.
+2. Navigate to `chrome://extensions` or `edge://extensions`.
+3. Enable **Developer mode**.
+4. Click **Load unpacked** and select `C:\Sahaay\apps\browser-extension\dist`.
+5. Copy the generated Extension ID and run `register-native-host.ps1` with that ID.
+
+### Step 4: Launch the Sahaay Desktop Interface
+```powershell
+cd C:\Sahaay\apps\desktop
+npm run dev
 ```
 
 ---
 
-## 4. Running Components Locally
+## 5. Running Quality Checks and Test Suites
 
-### 4.1 Launch Backend
+Execute all quality checks, linters, and unit test suites:
 ```powershell
-.\scripts\start-backend.ps1
-# Backend runs at http://127.0.0.1:8000
-# OpenAPI Swagger docs at http://127.0.0.1:8000/docs
+.\scripts\run-tests.ps1
 ```
-
-### 4.2 Launch Desktop App
-```powershell
-.\scripts\start-desktop.ps1
-```
-
-### 4.3 Load Browser Extension in Chrome or Edge
-1. Open `chrome://extensions/` or `edge://extensions/`.
-2. Enable **Developer mode** toggle.
-3. Click **Load unpacked**.
-4. Select `C:\Sahaay\apps\browser-extension`.
+This runs:
+- `ruff check core tests`
+- `pytest tests` (36 tests)
+- `dotnet test apps/windows-companion/Sahaay.sln` (8 xUnit tests)
+- Browser extension TypeScript typecheck
+- Desktop application TypeScript typecheck

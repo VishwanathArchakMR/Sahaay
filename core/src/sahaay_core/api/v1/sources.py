@@ -1,6 +1,6 @@
 """Sources and Context Retrieval Endpoints."""
 
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status
@@ -88,3 +88,61 @@ async def query_context(req: QueryContextRequest) -> List[ContextFact]:
         query=req.query,
         permitted_source_ids=req.permittedSourceIds,
     )
+
+
+class SearchSourcesRequest(BaseModel):
+    query: str
+    sourceType: Optional[str] = None
+
+
+@router.post("/search")
+async def search_sources(req: SearchSourcesRequest) -> Dict[str, Any]:
+    """Perform deterministic local text search over permitted sources without AI models.
+
+    Returns source-linked excerpts, timestamps, and confidence metrics.
+    """
+    query_lower = req.query.strip().lower()
+    if not query_lower:
+        return {"query": req.query, "results": [], "count": 0}
+
+    results = []
+    active_sources = source_manager.list_active_sources()
+
+    for src in active_sources:
+        if req.sourceType and src.sourceType != req.sourceType:
+            continue
+
+        facts = context_store.get_facts_for_source(src.sourceId)
+        for f in facts:
+            content_lower = f.content.lower()
+            idx = content_lower.find(query_lower)
+            if idx != -1:
+                # Extract surrounding window (120 chars before & after)
+                start = max(0, idx - 80)
+                end = min(len(f.content), idx + len(query_lower) + 120)
+                snippet = f.content[start:end].strip()
+                if start > 0:
+                    snippet = "..." + snippet
+                if end < len(f.content):
+                    snippet = snippet + "..."
+
+                results.append(
+                    {
+                        "factId": str(f.factId),
+                        "factType": f.factType.value,
+                        "sourceId": str(src.sourceId),
+                        "sourceType": src.sourceType,
+                        "sourceUri": src.uri,
+                        "sourceTitle": src.title or src.uri,
+                        "observedAt": src.observedAt.isoformat(),
+                        "matchedSnippet": snippet,
+                        "confidenceScore": f.confidenceScore,
+                    }
+                )
+
+    return {
+        "query": req.query,
+        "results": results,
+        "count": len(results),
+        "isModelInference": False,
+    }

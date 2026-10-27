@@ -9,11 +9,13 @@ from fastapi.responses import JSONResponse
 
 from sahaay_core.api.v1.actions import router as actions_router
 from sahaay_core.api.v1.audit import router as audit_router
+from sahaay_core.api.v1.browser import router as browser_router
 from sahaay_core.api.v1.capabilities import router as capabilities_router
 from sahaay_core.api.v1.health import router as health_router
 from sahaay_core.api.v1.sessions import router as sessions_router
 from sahaay_core.api.v1.sources import router as sources_router
 from sahaay_core.api.v1.tasks import router as tasks_router
+from sahaay_core.api.v1.windows import router as windows_router
 from sahaay_core.config.logging import logger
 from sahaay_core.config.settings import settings
 from sahaay_core.storage.database import init_db
@@ -91,6 +93,8 @@ app.include_router(tasks_router, prefix="/api/v1")
 app.include_router(actions_router, prefix="/api/v1")
 app.include_router(sources_router, prefix="/api/v1")
 app.include_router(audit_router, prefix="/api/v1")
+app.include_router(windows_router, prefix="/api/v1")
+app.include_router(browser_router, prefix="/api/v1")
 
 
 @app.get("/")

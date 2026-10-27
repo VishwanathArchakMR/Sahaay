@@ -147,7 +147,8 @@
             "get_active_window",
             "list_open_windows",
             "click_desktop_control",
-            "type_desktop_text"
+            "type_desktop_text",
+            "scroll_browser_tab"
           ]
         },
         "target": { "type": "string" },

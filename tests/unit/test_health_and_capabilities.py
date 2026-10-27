@@ -21,20 +21,24 @@ async def test_health_endpoint():
 
 @pytest.mark.asyncio
 async def test_capabilities_endpoint_reports_only_implemented():
-    """Verify capabilities endpoint reports only what is actually available in Stage 01."""
+    """Verify capabilities endpoint reports only what is actually available in Stage 02."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://testclient") as client:
         response = await client.get("/api/v1/capabilities")
         assert response.status_code == 200
         data = response.json()
-        # In Build 01: Desktop automation and browser automation MUST be false
-        assert data["desktopAutomationAvailable"] is False
-        assert data["browserAutomationAvailable"] is False
-        # External models MUST be empty
+        # In Build 02: Browser extension bridge is implemented
+        assert data["browserAutomationAvailable"] is True
+        # Desktop automation availability is dynamically determined by named pipe probe
+        assert isinstance(data["desktopAutomationAvailable"], bool)
+        # External models MUST remain empty in this stage
         assert data["modelsAvailable"] == []
-        # Active capabilities must contain baseline mechanisms
+        # Active capabilities must contain baseline mechanisms and new Stage 02 components
         active = data["activeCapabilities"]
         assert "action_gate_authorization" in active
         assert "privacy_gateway_fail_closed" in active
         assert "task_state_machine" in active
         assert "independent_verification_engine" in active
+        assert "browser_tab_observation" in active
+        assert "browser_bounded_scroll_action" in active
+        assert "deterministic_source_grounded_retrieval" in active

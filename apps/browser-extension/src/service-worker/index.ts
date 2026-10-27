@@ -1,6 +1,6 @@
 /**
- * Sahaay Browser Extension Service Worker.
- * Handles native messaging with Sahaay Windows Native Host and tab management.
+ * Sahaay Browser Extension Service Worker (Manifest V3).
+ * Bridges authorized tabs with the installed Sahaay native messaging host.
  */
 
 import {
@@ -10,9 +10,26 @@ import {
 } from "../contracts/messages.js";
 
 const NATIVE_HOST_NAME = "com.sahaay.nativehost";
+let nativePort: chrome.runtime.Port | null = null;
+
+function ensureNativePort(): chrome.runtime.Port {
+  if (!nativePort) {
+    try {
+      nativePort = chrome.runtime.connectNative(NATIVE_HOST_NAME);
+      nativePort.onDisconnect.addListener(() => {
+        console.warn("[Sahaay ServiceWorker] Native port disconnected:", chrome.runtime.lastError?.message);
+        nativePort = null;
+      });
+    } catch (err) {
+      console.error("[Sahaay ServiceWorker] Failed to connect to native host:", err);
+      throw err;
+    }
+  }
+  return nativePort;
+}
 
 chrome.runtime.onInstalled.addListener(() => {
-  console.log("Sahaay Browser Bridge Service Worker installed (Manifest V3).");
+  console.log("[Sahaay ServiceWorker] Installed and initialized.");
 });
 
 chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
@@ -38,30 +55,113 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
     return true;
   }
 
-  if (validMsg.command === "get_tab_metadata") {
+  if (validMsg.command === "get_tab_observation" || validMsg.command === "get_sanitized_dom") {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const activeTab = tabs[0];
-      if (!activeTab) {
+      if (!activeTab || !activeTab.id) {
         sendResponse({ success: false, command: validMsg.command, error: "No active tab found." });
         return;
       }
-      sendResponse({
-        success: true,
-        command: validMsg.command,
-        data: {
-          id: activeTab.id,
-          url: activeTab.url,
-          title: activeTab.title,
-        },
-      } as ExtensionMessageResponse);
+
+      // Check scheme - exclude chrome://, edge://, about:
+      if (activeTab.url && (activeTab.url.startsWith("chrome:") || activeTab.url.startsWith("edge:") || activeTab.url.startsWith("about:"))) {
+        sendResponse({ success: false, command: validMsg.command, error: "Cannot inspect protected browser internal pages." });
+        return;
+      }
+
+      chrome.tabs.sendMessage(activeTab.id, { command: "get_tab_observation" }, (contentRes) => {
+        if (chrome.runtime.lastError || !contentRes || !contentRes.success) {
+          sendResponse({
+            success: false,
+            command: validMsg.command,
+            error: chrome.runtime.lastError?.message || contentRes?.error || "Content script did not respond.",
+          });
+          return;
+        }
+
+        const observationData = {
+          observationId: crypto.randomUUID(),
+          tabId: activeTab.id,
+          capturedAt: new Date().toISOString(),
+          ...contentRes.data,
+        };
+
+        sendResponse({
+          success: true,
+          command: validMsg.command,
+          data: observationData,
+        } as ExtensionMessageResponse);
+      });
     });
+    return true;
+  }
+
+  if (validMsg.command === "scroll_tab") {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const activeTab = tabs[0];
+      if (!activeTab || !activeTab.id) {
+        sendResponse({ success: false, command: "scroll_tab", error: "No active tab found." });
+        return;
+      }
+
+      const deltaY = (validMsg.payload?.deltaY as number) || 300;
+      chrome.tabs.sendMessage(activeTab.id, { command: "scroll_tab", deltaY }, (contentRes) => {
+        if (chrome.runtime.lastError || !contentRes || !contentRes.success) {
+          sendResponse({
+            success: false,
+            command: "scroll_tab",
+            error: chrome.runtime.lastError?.message || contentRes?.error || "Failed to execute scroll on tab.",
+          });
+          return;
+        }
+
+        sendResponse({
+          success: true,
+          command: "scroll_tab",
+          data: contentRes.data,
+        } as ExtensionMessageResponse);
+      });
+    });
+    return true;
+  }
+
+  // Forward native commands to NativeHost
+  if (validMsg.command === "get_active_window" || validMsg.command === "list_open_windows") {
+    try {
+      chrome.runtime.sendNativeMessage(
+        NATIVE_HOST_NAME,
+        {
+          command: validMsg.command,
+          sessionId: validMsg.sessionId,
+          taskId: validMsg.taskId,
+          parameters: validMsg.payload,
+        },
+        (nativeRes) => {
+          if (chrome.runtime.lastError) {
+            sendResponse({
+              success: false,
+              command: validMsg.command,
+              error: `Native messaging failed: ${chrome.runtime.lastError.message}`,
+            });
+            return;
+          }
+          sendResponse(nativeRes);
+        }
+      );
+    } catch (err: any) {
+      sendResponse({
+        success: false,
+        command: validMsg.command,
+        error: `Could not send message to native host: ${err.message}`,
+      });
+    }
     return true;
   }
 
   sendResponse({
     success: false,
     command: validMsg.command,
-    error: "Operation not implemented in Stage 01 foundation.",
+    error: `Command '${validMsg.command}' not implemented.`,
   } as ExtensionMessageResponse);
   return true;
 });

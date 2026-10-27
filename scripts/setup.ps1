@@ -45,4 +45,13 @@ try {
     Pop-Location
 }
 
+# 4. Setup Windows Companion
+Write-Host "`n4. Setting up Windows Native Companion (apps/windows-companion)..." -ForegroundColor Yellow
+try {
+    & "$PSScriptRoot\build-companion.ps1"
+    Write-Host "[OK] Windows companion solution compiled." -ForegroundColor Green
+} catch {
+    Write-Host "[WARN] Windows companion build skipped or encountered issue: $_" -ForegroundColor Yellow
+}
+
 Write-Host "`n=== Sahaay Setup Completed Successfully ===" -ForegroundColor Green

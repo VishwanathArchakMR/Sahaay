@@ -8,16 +8,16 @@
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       margin: 0;
       padding: 16px;
-      width: 260px;
-      background: #0f172a;
+      width: 320px;
+      background: #090d16;
       color: #f8fafc;
     }
     .header {
       display: flex;
       align-items: center;
-      gap: 8px;
+      justify-content: space-between;
       margin-bottom: 12px;
-      border-bottom: 1px solid #334155;
+      border-bottom: 1px solid #1e293b;
       padding-bottom: 8px;
     }
     .badge {
@@ -29,18 +29,64 @@
       background: #059669;
       color: white;
     }
-    .info {
+    .badge-warn {
+      background: #d97706;
+    }
+    .btn {
+      width: 100%;
+      padding: 8px 12px;
+      background: #0284c7;
+      color: white;
+      border: none;
+      border-radius: 6px;
       font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: background 0.2s;
+    }
+    .btn:hover {
+      background: #0369a1;
+    }
+    .btn-secondary {
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #cbd5e1;
+    }
+    .btn-secondary:hover {
+      background: #334155;
+    }
+    .details {
+      margin-top: 10px;
+      padding: 10px;
+      background: #0f172a;
+      border-radius: 6px;
+      border: 1px solid #1e293b;
+      font-size: 11px;
       color: #94a3b8;
-      line-height: 1.4;
+      max-height: 160px;
+      overflow-y: auto;
+      word-break: break-all;
     }
   </style>
 </head>
 <body>
   <div class="header">
-    <h3 style="margin: 0; font-size: 15px;">Sahaay Bridge</h3>
-    <span class="badge" id="status-badge">Active</span>
+    <strong style="font-size: 14px; color: #38bdf8;">Sahaay Browser Bridge</strong>
+    <span class="badge" id="host-badge">Ready</span>
   </div>
-  <p class="info" id="info-text">Manifest V3 Bridge listening for authorized companion messages.</p>
+
+  <p style="font-size: 12px; color: #94a3b8; margin: 4px 0 10px;">
+    Authorized tab observation & bounded execution gateway.
+  </p>
+
+  <button class="btn" id="btn-inspect">Inspect Current Tab</button>
+  <button class="btn btn-secondary" id="btn-scroll">Execute Test Scroll (+300px)</button>
+
+  <div class="details" id="result-box">
+    Click 'Inspect Current Tab' to capture permitted title, URL, dimensions, and sanitized text excerpt.
+  </div>
+
+  <script type="module" src="../../dist/popup/popup.js"></script>
 </body>
 </html>

@@ -1,30 +1,57 @@
-"""Browser Integration Adapter Interface.
+"""Browser Integration Adapter.
 
-Coordinates with Manifest V3 browser extension and Playwright (for Sahaay-owned contexts).
-Notice: This skeleton interface is explicitly labelled as UNIMPLEMENTED in Stage 01.
+Processes authorized browser observations and executes bounded tab actions.
 """
 
 from typing import Any, Dict
-
-
-class BrowserAdapterNotImplementedError(NotImplementedError):
-    pass
+from uuid import uuid4
 
 
 class BrowserAdapter:
     """Adapter for browser tab inspection and permitted interactions."""
 
     def __init__(self) -> None:
-        self.is_connected: bool = False
+        self.active_observations: Dict[str, Dict[str, Any]] = {}
 
-    async def get_active_tab_metadata(self) -> Dict[str, Any]:
-        """Fetch metadata from authorized active browser tab via extension."""
-        raise BrowserAdapterNotImplementedError(
-            "Browser extension communication is scaffolded but not yet live in Stage 01."
+    def ingest_tab_observation(self, observation_payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate and ingest real observation from browser extension."""
+        url = observation_payload.get("url", "")
+        title = observation_payload.get("title", "")
+        obs_id = observation_payload.get("observationId", uuid4().hex)
+
+        if not url:
+            raise ValueError("Observation payload missing URL.")
+
+        record = {
+            "observationId": obs_id,
+            "url": url,
+            "title": title,
+            "scrollPosition": observation_payload.get("scrollPosition", {"x": 0, "y": 0}),
+            "documentDimensions": observation_payload.get("documentDimensions", {}),
+            "visibleTextExcerpt": observation_payload.get("visibleTextExcerpt", ""),
+            "accessibleElements": observation_payload.get("accessibleElements", []),
+            "capturedAt": observation_payload.get("capturedAt"),
+        }
+        self.active_observations[obs_id] = record
+        return record
+
+    def verify_scroll_action(
+        self,
+        pre_scroll_y: int,
+        post_scroll_y: int,
+        requested_delta: int,
+    ) -> Dict[str, Any]:
+        """Perform independent verification on scroll action postcondition."""
+        actual_delta = post_scroll_y - pre_scroll_y
+        is_verified = (actual_delta != 0) and (
+            (requested_delta > 0 and actual_delta > 0) or (requested_delta < 0 and actual_delta < 0)
         )
 
-    async def get_tab_dom_snapshot(self, tab_id: int) -> Dict[str, Any]:
-        """Fetch sanitized DOM representation from content script."""
-        raise BrowserAdapterNotImplementedError(
-            "DOM snapshot retrieval is scaffolded but not yet live in Stage 01."
-        )
+        return {
+            "preScrollY": pre_scroll_y,
+            "postScrollY": post_scroll_y,
+            "requestedDelta": requested_delta,
+            "actualDelta": actual_delta,
+            "isVerified": is_verified,
+            "status": "VERIFIED" if is_verified else "CONFLICT",
+        }

@@ -2,7 +2,7 @@
 
 ## 1. Test Suite Architecture
 
-The automated test suite in `tests/` validates the security invariants and state machine of Sahaay:
+The automated test suite across Python and .NET validates the security invariants and state machine of Sahaay:
 
 | Test Module | Coverage Scope | Command |
 | :--- | :--- | :--- |
@@ -13,17 +13,33 @@ The automated test suite in `tests/` validates the security invariants and state
 | `tests/privacy/test_privacy_gateway.py` | Verifies Local-Only Mode fails closed, classifies PII/Credentials, and blocks leaks | `pytest tests/privacy/test_privacy_gateway.py` |
 | `tests/unit/test_sources_and_retrieval.py` | Verifies source authorization, fail-closed revocation, and provenance derivation chains | `pytest tests/unit/test_sources_and_retrieval.py` |
 | `tests/unit/test_verification_and_ledger.py` | Enforces the invariant: **Model self-attestation is rejected**, tests state conflicts, and validates Evidence Ledger | `pytest tests/unit/test_verification_and_ledger.py` |
+| `tests/unit/test_windows_endpoints.py` | Verifies `/api/v1/windows` discovery, active foreground query, UI inspection, and graceful offline fallback | `pytest tests/unit/test_windows_endpoints.py` |
+| `tests/unit/test_browser_endpoints.py` | Verifies real tab observation ingestion, bounded scroll action authorization, postcondition verification, and cancellation denial | `pytest tests/unit/test_browser_endpoints.py` |
+| `tests/unit/test_deterministic_retrieval.py` | Verifies deterministic keyword search, snippet extraction, and exclusion of revoked sources (zero AI models) | `pytest tests/unit/test_deterministic_retrieval.py` |
 | `tests/browser/test_extension_contracts.py` | Verifies extension message schema, command allowlist, and 1MB size limit | `pytest tests/browser/test_extension_contracts.py` |
 | `tests/desktop/test_native_host_contracts.py`| Verifies native host stdio 4-byte framing and command allowlist | `pytest tests/desktop/test_native_host_contracts.py` |
 | `tests/security/test_secret_scanning.py` | Scans all repository files to ensure no API keys, private keys, or tokens are committed | `pytest tests/security/test_secret_scanning.py` |
+| `apps/windows-companion/tests` (.NET) | Verifies native host 4-byte message framing, oversized payload rejection, origin allowlist, and Named Pipe protocol | `dotnet test apps/windows-companion/Sahaay.sln` |
 
 ---
 
 ## 2. Running Quality Checks
 
-### Run All Pytest Tests
+### Run All Test Suites via Master Script
 ```powershell
+.\scripts\run-tests.ps1
+```
+
+### Run Python Test Suite
+```powershell
+$env:PYTHONPATH = "core/src"
 .\core\.venv\Scripts\pytest.exe tests
+```
+
+### Run .NET Companion Test Suite
+```powershell
+$env:PATH = "$env:LOCALAPPDATA\Microsoft\dotnet;$env:PATH"
+dotnet test apps\windows-companion\Sahaay.sln
 ```
 
 ### Run Python Linting & Formatting (Ruff)
@@ -48,9 +64,15 @@ npm run build
 
 ---
 
-## 3. Scaffolding vs. Real End-to-End Testing
+## 3. Real Execution Verification (Stage 02)
 
-> [!IMPORTANT]
-> Test scaffolding is not the same as testing the full product.
-> - **Exercised & Tested in Build 01**: Backend REST API, database schema, Task Orchestrator state machine, Action Gate deterministic authorization, Privacy Gateway fail-closed policy, Source revocation, Evidence Ledger, Secret scanning, Browser Extension build, and Desktop Electron/React build.
-> - **Explicitly Scaffolding in Build 01**: Windows UI Automation control, live browser tab DOM extraction, and multimodal model inference. These are marked as `UNIMPLEMENTED` / `BLOCKED` until real adapters and models are connected in future stages.
+> [!NOTE]
+> - **Exercised & Tested in Stage 02**:
+>   - .NET 10 LTS native companion build (`Sahaay.Contracts`, `Sahaay.Controller`, `Sahaay.NativeHost`).
+>   - Win32 `EnumWindows` and `System.Windows.Automation` element hierarchy inspection.
+>   - Authenticated `\\.\pipe\SahaayControllerPipe` IPC bridge.
+>   - Native messaging host stdio framing and HKCU registration scripts (`register-native-host.ps1`).
+>   - Browser extension Manifest V3 bridge, content script DOM extraction, and bounded scroll action.
+>   - Action Gate authorization, fresh postcondition verification, and Evidence Ledger auditing.
+>   - Deterministic keyword retrieval over ingested context facts with exact provenance.
+> - **Explicitly Deferred to Stage 03**: Multimodal Meta model inference (Llama, Muse Transcribe, Muse Spark). All external model API calls remain disabled and fail closed.

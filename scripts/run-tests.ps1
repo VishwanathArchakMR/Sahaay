@@ -1,6 +1,5 @@
 # Runs all automated quality checks and test suites across Sahaay
 $RepoRoot = (Resolve-Path "$PSScriptRoot\..").Path
-$PythonVenv = "$RepoRoot\core\.venv\Scripts\python.exe"
 $PytestExe = "$RepoRoot\core\.venv\Scripts\pytest.exe"
 $RuffExe = "$RepoRoot\core\.venv\Scripts\ruff.exe"
 
@@ -20,12 +19,29 @@ if (Test-Path $RuffExe) {
 # 2. Automated Test Suite (Unit, Privacy, Security, Contracts)
 if (Test-Path $PytestExe) {
     Write-Host "`n2. Running Pytest Suite..." -ForegroundColor Yellow
+    $env:PYTHONPATH = "$RepoRoot\core\src"
     & $PytestExe "$RepoRoot\tests"
     if ($LASTEXITCODE -ne 0) {
         Write-Host "[FAIL] Pytest tests failed." -ForegroundColor Red
         exit 1
     }
-    Write-Host "[PASS] All 26 automated tests passed." -ForegroundColor Green
+    Write-Host "[PASS] All automated Python tests passed." -ForegroundColor Green
+}
+
+# 2b. .NET Windows Companion Test Suite
+$localDotnet = "$env:LOCALAPPDATA\Microsoft\dotnet"
+if (Test-Path "$localDotnet\dotnet.exe") {
+    $env:PATH = "$localDotnet;$env:PATH"
+    $env:DOTNET_ROOT = $localDotnet
+}
+if (Get-Command dotnet -ErrorAction SilentlyContinue) {
+    Write-Host "`n2b. Running .NET Companion Test Suite..." -ForegroundColor Yellow
+    dotnet test "$RepoRoot\apps\windows-companion\Sahaay.sln"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[FAIL] .NET companion tests failed." -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "[PASS] .NET companion tests passed." -ForegroundColor Green
 }
 
 # 3. Browser Extension Typecheck

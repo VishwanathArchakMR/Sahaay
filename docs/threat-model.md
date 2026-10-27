@@ -45,3 +45,17 @@ Sahaay operates across four distinct trust boundaries:
   * Content scripts do not possess native messaging privileges.
   * Only the background service worker communicates with `com.sahaay.nativehost`.
   * Message payloads are validated against strict JSON schemas and capped at 1MB.
+
+### 2.6 Named Pipe IPC Local Isolation
+* **Threat**: An unauthorized local process or network actor connects to the companion controller IPC.
+* **Mitigation**:
+  * Named pipe `\\.\pipe\SahaayControllerPipe` is opened with current-user session scoping (`PipeOptions.CurrentUserOnly`).
+  * Strict schema validation and command allowlists (`ping`, `get_capabilities`, `list_open_windows`, `get_active_window`, `inspect_window_elements`, `capture_window_screenshot`).
+  * No arbitrary command execution, PowerShell dispatch, or binary execution APIs exist in the protocol.
+
+### 2.7 Extension Origin Validation
+* **Threat**: An unauthorized extension or web origin attempts to communicate with the native messaging host.
+* **Mitigation**:
+  * `Sahaay.NativeHost` checks the calling browser extension origin against an explicit configured allowlist (`AllowedOrigins`).
+  * Wildcard origins (`*`) are strictly forbidden in production manifests.
+  * Invalid origins are rejected immediately before request parsing.

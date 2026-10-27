@@ -76,3 +76,11 @@ Every external inference request must pass through the internal **Privacy Gatewa
 ## 5. Storage Architecture
 - **Persistent Relational DB**: SQLite managed asynchronously via SQLAlchemy/aiosqlite (`data/storage/sahaay.db`).
 - **Temporary Media Storage**: Managed, separate directory (`data/temp_media/`) for transient captures and screenshots, protected from public exposure.
+
+---
+
+## 6. Windows Companion & Browser Bridge Architecture (.NET 10 LTS)
+- **Sahaay.Controller**: Dedicated Windows daemon compiled on .NET 10 LTS (`net10.0-windows`). Uses Win32 `EnumWindows` and `System.Windows.Automation` to discover visible application windows and inspect accessible element hierarchies without polling loops or arbitrary shell execution. Exposes an authenticated local named pipe server at `\\.\pipe\SahaayControllerPipe` strictly scoped to the interactive user session.
+- **Sahaay.NativeHost**: Native messaging bridge conforming to Google Chrome and Microsoft Edge native messaging protocol (4-byte length-prefixed stdio framing). Validates calling extension origin against explicit allowlists, enforces 1MB payload limits, and forwards approved typed commands to the controller named pipe.
+- **Browser Extension (Manifest V3)**: Operates on real open Chrome and Edge tabs. Content scripts extract bounded visible page text, discover accessible interactive elements, and execute bounded actions (e.g. `scroll_tab`) via `window.scrollBy`.
+- **Deterministic Information Retrieval**: Local keyword search engine (`POST /api/v1/sources/search`) operating over ingested browser and file facts in the Context Store, extracting relevant snippets and preserving full source URI provenance without AI models.
