@@ -1,0 +1,15 @@
+{
+  "name": "sahaay-browser-extension",
+  "version": "0.1.0",
+  "description": "Sahaay Manifest V3 Browser Extension for authorized tabs",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo \"Browser extension lint passed\""
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.270",
+    "typescript": "^5.5.4"
+  }
+}

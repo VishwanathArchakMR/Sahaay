@@ -1,0 +1,59 @@
+name: Sahaay Foundation CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  quality-baseline:
+    name: Lint, Test & Build Validation
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install uv
+        run: |
+          pip install uv
+
+      - name: Install Python Dependencies & Core Package
+        run: |
+          cd core
+          uv venv .venv
+          uv pip install -e ".[dev]" --python .\.venv\Scripts\python.exe
+
+      - name: Run Ruff Linting Check
+        run: |
+          .\core\.venv\Scripts\ruff.exe check core tests
+          .\core\.venv\Scripts\ruff.exe format --check core tests
+
+      - name: Run Automated Pytest Suite (Unit, Privacy, Security, Contracts)
+        run: |
+          .\core\.venv\Scripts\pytest.exe tests
+
+      - name: Install & Build Browser Extension
+        run: |
+          cd apps/browser-extension
+          npm ci
+          npm run typecheck
+          npm run build
+
+      - name: Install & Build Desktop Application
+        run: |
+          cd apps/desktop
+          npm ci
+          npm run typecheck
+          npm run build

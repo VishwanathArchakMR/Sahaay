@@ -1,0 +1,311 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sahaay.ai/schemas/v1/contracts.json",
+  "title": "SahaayContractsV1",
+  "description": "Authoritative contract definitions for Sahaay Desktop Agent v1",
+  "$defs": {
+    "PolicyDecisionEnum": {
+      "type": "string",
+      "enum": ["ALLOW", "DENY", "CLARIFY", "HANDOFF", "REOBSERVE"]
+    },
+    "VerificationStatusEnum": {
+      "type": "string",
+      "enum": ["VERIFIED", "FAILED", "UNVERIFIED", "CONFLICT", "NOT_ATTEMPTED"]
+    },
+    "FactTypeEnum": {
+      "type": "string",
+      "enum": [
+        "user-provided",
+        "source-extracted",
+        "observed",
+        "normalized",
+        "inferred",
+        "uncertain",
+        "conflicting"
+      ]
+    },
+    "TaskStatusEnum": {
+      "type": "string",
+      "enum": [
+        "CREATED",
+        "PLANNING",
+        "OBSERVING",
+        "PROPOSING",
+        "AUTHORIZING",
+        "EXECUTING",
+        "VERIFYING",
+        "COMPLETED",
+        "FAILED",
+        "PAUSED",
+        "CANCELLED",
+        "HANDOFF_REQUESTED"
+      ]
+    },
+    "Session": {
+      "type": "object",
+      "required": ["sessionId", "createdAt", "isActive", "localOnlyMode"],
+      "properties": {
+        "sessionId": { "type": "string", "format": "uuid" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": ["string", "null"], "format": "date-time" },
+        "isActive": { "type": "boolean" },
+        "localOnlyMode": { "type": "boolean", "default": true },
+        "metadata": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "ConsentGrant": {
+      "type": "object",
+      "required": ["grantId", "sessionId", "scope", "purpose", "grantedAt", "isRevoked"],
+      "properties": {
+        "grantId": { "type": "string", "format": "uuid" },
+        "sessionId": { "type": "string", "format": "uuid" },
+        "scope": { "type": "string" },
+        "purpose": { "type": "string" },
+        "grantedAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": ["string", "null"], "format": "date-time" },
+        "isRevoked": { "type": "boolean", "default": false },
+        "revokedAt": { "type": ["string", "null"], "format": "date-time" },
+        "targetDomainOrPath": { "type": ["string", "null"] }
+      }
+    },
+    "SourceReference": {
+      "type": "object",
+      "required": ["sourceId", "sourceType", "uri", "observedAt"],
+      "properties": {
+        "sourceId": { "type": "string", "format": "uuid" },
+        "sourceType": {
+          "type": "string",
+          "enum": ["local_file", "browser_tab", "desktop_window", "user_input", "system_state"]
+        },
+        "uri": { "type": "string" },
+        "observedAt": { "type": "string", "format": "date-time" },
+        "title": { "type": ["string", "null"] },
+        "checksum": { "type": ["string", "null"] },
+        "metadata": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "ContextFact": {
+      "type": "object",
+      "required": ["factId", "factType", "content", "sourceReferenceId", "recordedAt"],
+      "properties": {
+        "factId": { "type": "string", "format": "uuid" },
+        "factType": { "$ref": "#/$defs/FactTypeEnum" },
+        "content": { "type": "string" },
+        "sourceReferenceId": { "type": "string", "format": "uuid" },
+        "derivationIds": {
+          "type": "array",
+          "items": { "type": "string", "format": "uuid" },
+          "default": []
+        },
+        "confidenceScore": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "default": 1.0
+        },
+        "recordedAt": { "type": "string", "format": "date-time" },
+        "metadata": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "Observation": {
+      "type": "object",
+      "required": ["observationId", "taskId", "stepId", "capturedAt", "environmentType"],
+      "properties": {
+        "observationId": { "type": "string", "format": "uuid" },
+        "taskId": { "type": "string", "format": "uuid" },
+        "stepId": { "type": "string", "format": "uuid" },
+        "capturedAt": { "type": "string", "format": "date-time" },
+        "environmentType": {
+          "type": "string",
+          "enum": ["windows_desktop", "browser_active_tab", "file_system"]
+        },
+        "windowTitle": { "type": ["string", "null"] },
+        "url": { "type": ["string", "null"] },
+        "domSnapshotRef": { "type": ["string", "null"] },
+        "screenshotRef": { "type": ["string", "null"] },
+        "extractedText": { "type": ["string", "null"] },
+        "elementTree": { "type": ["object", "null"] },
+        "metadata": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "ActionContract": {
+      "type": "object",
+      "required": ["actionId", "actionType", "target", "parameters", "expectedPostcondition"],
+      "properties": {
+        "actionId": { "type": "string", "format": "uuid" },
+        "actionType": {
+          "type": "string",
+          "enum": [
+            "read_file",
+            "search_files",
+            "get_active_tab_info",
+            "get_tab_content",
+            "navigate_browser_tab",
+            "click_browser_element",
+            "input_browser_text",
+            "focus_window",
+            "get_active_window",
+            "list_open_windows",
+            "click_desktop_control",
+            "type_desktop_text"
+          ]
+        },
+        "target": { "type": "string" },
+        "parameters": { "type": "object", "additionalProperties": true },
+        "expectedPostcondition": { "type": "string" },
+        "estimatedRisk": {
+          "type": "string",
+          "enum": ["READ_ONLY", "LOW", "MEDIUM", "HIGH"],
+          "default": "LOW"
+        }
+      }
+    },
+    "PolicyDecision": {
+      "type": "object",
+      "required": ["decisionId", "actionId", "decision", "reason", "evaluatedAt"],
+      "properties": {
+        "decisionId": { "type": "string", "format": "uuid" },
+        "actionId": { "type": "string", "format": "uuid" },
+        "decision": { "$ref": "#/$defs/PolicyDecisionEnum" },
+        "reason": { "type": "string" },
+        "requiredGrantScope": { "type": ["string", "null"] },
+        "clarificationPrompt": { "type": ["string", "null"] },
+        "evaluatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "ExecutionResult": {
+      "type": "object",
+      "required": ["executionId", "actionId", "isSuccess", "executedAt", "durationMs"],
+      "properties": {
+        "executionId": { "type": "string", "format": "uuid" },
+        "actionId": { "type": "string", "format": "uuid" },
+        "isSuccess": { "type": "boolean" },
+        "executedAt": { "type": "string", "format": "date-time" },
+        "durationMs": { "type": "number", "minimum": 0 },
+        "outputData": { "type": ["object", "null"] },
+        "errorMessage": { "type": ["string", "null"] }
+      }
+    },
+    "VerificationResult": {
+      "type": "object",
+      "required": ["verificationId", "actionId", "status", "verifierType", "details", "verifiedAt"],
+      "properties": {
+        "verificationId": { "type": "string", "format": "uuid" },
+        "actionId": { "type": "string", "format": "uuid" },
+        "status": { "$ref": "#/$defs/VerificationStatusEnum" },
+        "verifierType": {
+          "type": "string",
+          "enum": ["deterministic_state_check", "dom_property_check", "file_checksum_check", "human_confirmation"]
+        },
+        "details": { "type": "string" },
+        "observedPostcondition": { "type": ["string", "null"] },
+        "verifiedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "EvidenceReference": {
+      "type": "object",
+      "required": ["evidenceId", "taskId", "stepId", "actionId", "verificationResultId", "createdAt"],
+      "properties": {
+        "evidenceId": { "type": "string", "format": "uuid" },
+        "taskId": { "type": "string", "format": "uuid" },
+        "stepId": { "type": "string", "format": "uuid" },
+        "actionId": { "type": "string", "format": "uuid" },
+        "observationId": { "type": ["string", "null"], "format": "uuid" },
+        "verificationResultId": { "type": "string", "format": "uuid" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "narrative": { "type": "string" }
+      }
+    },
+    "TaskStep": {
+      "type": "object",
+      "required": ["stepId", "taskId", "sequenceNumber", "instruction", "status"],
+      "properties": {
+        "stepId": { "type": "string", "format": "uuid" },
+        "taskId": { "type": "string", "format": "uuid" },
+        "sequenceNumber": { "type": "integer", "minimum": 1 },
+        "instruction": { "type": "string" },
+        "status": { "$ref": "#/$defs/TaskStatusEnum" },
+        "action": { "type": ["object", "null"], "$ref": "#/$defs/ActionContract" },
+        "policyDecision": { "type": ["object", "null"], "$ref": "#/$defs/PolicyDecisionEnum" },
+        "verificationStatus": { "type": ["object", "null"], "$ref": "#/$defs/VerificationStatusEnum" }
+      }
+    },
+    "TaskContract": {
+      "type": "object",
+      "required": ["taskId", "sessionId", "goal", "status", "createdAt", "steps"],
+      "properties": {
+        "taskId": { "type": "string", "format": "uuid" },
+        "sessionId": { "type": "string", "format": "uuid" },
+        "goal": { "type": "string" },
+        "taskType": {
+          "type": "string",
+          "enum": ["retrieval_only", "action_only", "combined_retrieval_and_action"]
+        },
+        "status": { "$ref": "#/$defs/TaskStatusEnum" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "completedAt": { "type": ["string", "null"], "format": "date-time" },
+        "steps": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/TaskStep" }
+        }
+      }
+    },
+    "AuditEvent": {
+      "type": "object",
+      "required": ["eventId", "timestamp", "eventType", "actor", "payloadSanitized"],
+      "properties": {
+        "eventId": { "type": "string", "format": "uuid" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "sessionId": { "type": ["string", "null"], "format": "uuid" },
+        "taskId": { "type": ["string", "null"], "format": "uuid" },
+        "eventType": { "type": "string" },
+        "actor": { "type": "string", "enum": ["user", "policy_engine", "action_gate", "orchestrator", "verifier"] },
+        "payloadSanitized": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "ModelCapability": {
+      "type": "object",
+      "required": ["name", "provider", "isAvailable", "isLocal", "purpose"],
+      "properties": {
+        "name": { "type": "string" },
+        "provider": { "type": "string" },
+        "isAvailable": { "type": "boolean" },
+        "isLocal": { "type": "boolean" },
+        "purpose": { "type": "string" },
+        "contextWindowTokens": { "type": "integer" }
+      }
+    },
+    "CapabilityDescriptor": {
+      "type": "object",
+      "required": ["systemVersion", "desktopAutomationAvailable", "browserAutomationAvailable", "modelsAvailable", "activeCapabilities"],
+      "properties": {
+        "systemVersion": { "type": "string" },
+        "desktopAutomationAvailable": { "type": "boolean" },
+        "browserAutomationAvailable": { "type": "boolean" },
+        "modelsAvailable": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ModelCapability" }
+        },
+        "activeCapabilities": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "PrivacyDecision": {
+      "type": "object",
+      "required": ["decisionId", "allowTransmission", "destination", "reason", "evaluatedAt"],
+      "properties": {
+        "decisionId": { "type": "string", "format": "uuid" },
+        "allowTransmission": { "type": "boolean" },
+        "destination": { "type": "string" },
+        "dataClassification": {
+          "type": "string",
+          "enum": ["PUBLIC", "INTERNAL", "SENSITIVE_PII", "CREDENTIAL", "HIGHLY_RESTRICTED"]
+        },
+        "reason": { "type": "string" },
+        "evaluatedAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

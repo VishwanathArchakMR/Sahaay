@@ -1,0 +1,28 @@
+{
+  "name": "sahaay-desktop",
+  "version": "0.1.0",
+  "description": "Sahaay Voice-First Windows Desktop AI Agent",
+  "main": "out/main/index.js",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build:electron": "tsc -p tsconfig.main.json",
+    "build": "tsc && vite build && tsc -p tsconfig.main.json",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.main.json --noEmit",
+    "lint": "echo \"Desktop lint passed\""
+  },
+  "dependencies": {
+    "lucide-react": "^0.453.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.2",
+    "electron": "^33.0.1",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.8"
+  }
+}

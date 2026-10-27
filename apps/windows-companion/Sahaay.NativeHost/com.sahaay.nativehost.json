@@ -1,0 +1,9 @@
+{
+  "name": "com.sahaay.nativehost",
+  "description": "Sahaay Native Messaging Host for Chrome and Edge",
+  "path": "Sahaay.NativeHost.exe",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://allowed_extension_id_here/"
+  ]
+}
