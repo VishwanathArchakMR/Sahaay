@@ -4,7 +4,7 @@ Enforces deterministic authorization for all proposed computer and browser actio
 Models propose; Action Gate authorizes.
 """
 
-from typing import List
+from typing import List, Optional
 from uuid import uuid4
 
 from sahaay_core.contracts.models import (
@@ -52,6 +52,7 @@ class ActionGate:
         action: ActionContract,
         active_grants: List[ConsentGrant],
         is_task_cancelled: bool = False,
+        task_type: Optional[str] = None,
     ) -> PolicyDecision:
         """Evaluate an action against deterministic policies and active consent grants."""
         # 1. If task is cancelled, immediately deny all future actions
@@ -61,6 +62,22 @@ class ActionGate:
                 actionId=action.actionId,
                 decision=PolicyDecisionEnum.DENY,
                 reason="Task has been cancelled; all subsequent actions are blocked.",
+            )
+
+        # 1b. If task is declared retrieval_only, deny physical computer and browser actions
+        if task_type == "retrieval_only" and action.actionType not in (
+            ActionTypeEnum.READ_FILE,
+            ActionTypeEnum.SEARCH_FILES,
+            ActionTypeEnum.GET_ACTIVE_TAB_INFO,
+            ActionTypeEnum.GET_TAB_CONTENT,
+            ActionTypeEnum.GET_ACTIVE_WINDOW,
+            ActionTypeEnum.LIST_OPEN_WINDOWS,
+        ):
+            return PolicyDecision(
+                decisionId=uuid4(),
+                actionId=action.actionId,
+                decision=PolicyDecisionEnum.DENY,
+                reason="Task is declared retrieval-only; physical computer and browser actions are blocked.",
             )
 
         # 2. Strict allowlist check

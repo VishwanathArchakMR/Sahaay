@@ -42,3 +42,5 @@ async def test_capabilities_endpoint_reports_only_implemented():
         assert "browser_tab_observation" in active
         assert "browser_bounded_scroll_action" in active
         assert "deterministic_source_grounded_retrieval" in active
+        assert "local_document_ingestion" in active
+        assert "combined_retrieval_and_action" in active

@@ -85,3 +85,24 @@ For the bounded browser scroll action:
    - If $\Delta Y == 0$: flags `CONFLICT` (e.g. at document boundary or unscrollable viewport).
    - Rejects any self-attesting completion message.
 7. **Audit Record**: Records immutable entry to `EvidenceLedger` linking task, step, delta, and verification state.
+
+---
+
+## 5. Local Document Ingestion & Deterministic Fact Flow
+1. **User Initiation**: User specifies an authorized document path (`POST /api/v1/sources/ingest-file`).
+2. **Security & Size Verification**: Validates absolute path, ensures file is not in system-critical or credential directories, and enforces `<10MB` limit.
+3. **Format Extraction**:
+   - `.txt` / `.md`: Normalizes line breaks and chunks by double newlines into logical paragraphs with line offset metadata.
+   - `.pdf`: Extracts page text streams using `pypdf`, preserving page numbers.
+4. **Fingerprinting & Registration**: Computes SHA-256 digest of entire file, registers `SourceMetadata(source_type="local_document")`, and generates structured `ContextFact` records with `FactTypeEnum.SOURCE_EXTRACTED` and `is_untrusted_content = True`.
+5. **Deterministic Search**: Searches indexed chunks for keyword tokens, generating match snippets and location references without passing data to neural models.
+
+---
+
+## 6. Combined Retrieval & Action Workflow Data Flow
+1. **User Prompt**: "Verify presence of 'Web APIs' on active tab, then scroll 300px".
+2. **Task Creation**: Orchestrator initializes task with `task_type = "combined_verify_action"`.
+3. **Prerequisite Verification**: Searches context store for required assertion.
+   - **If Confirmed**: Transitions task to `AUTHORIZING`, Action Gate confirms scope and evaluates staleness (`url == current_active_tab_url`), dispatches bounded scroll, independently verifies $\Delta Y$, and transitions to `COMPLETED`.
+   - **If Contradiction / Missing**: Action is strictly withheld. Orchestrator transitions to `HANDOFF_REQUESTED` and returns detailed explanation to the user.
+

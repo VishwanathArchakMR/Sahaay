@@ -32,6 +32,8 @@ async def get_capabilities() -> CapabilityDescriptor:
         "browser_tab_observation",
         "browser_bounded_scroll_action",
         "deterministic_source_grounded_retrieval",
+        "local_document_ingestion",
+        "combined_retrieval_and_action",
     ]
 
     if is_companion_live:

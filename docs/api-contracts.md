@@ -199,10 +199,10 @@ Capture structured UI Automation tree and optional screenshot for an authorized 
 
 ---
 
-## 8. Browser Bridge & Deterministic Search
+## 8. Browser Bridge & Active Tab Tracking
 
 ### `POST /api/v1/browser/observe`
-Ingest real observation from authorized browser tab, register as source, and record context facts.
+Ingest real observation from authorized browser tab, register as source, record observation version, and register context facts.
 * **Request**:
   ```json
   {
@@ -215,8 +215,11 @@ Ingest real observation from authorized browser tab, register as source, and rec
   }
   ```
 
+### `GET /api/v1/browser/active-observation`
+Retrieve currently tracked tab state, observation version, and whether tab navigation has rendered the observation stale (`isStale: true`).
+
 ### `POST /api/v1/browser/action/scroll`
-Propose, authorize via Action Gate, execute bounded scroll, and independently verify postcondition.
+Propose, authorize via Action Gate (evaluating staleness, task type, and boundaries), execute bounded scroll, and independently verify postcondition.
 * **Request**:
   ```json
   {
@@ -229,16 +232,93 @@ Propose, authorize via Action Gate, execute bounded scroll, and independently ve
     "postScrollY": 450
   }
   ```
-* **Response**: Returns authorization status, `actualDeltaY`, `verificationStatus` (`VERIFIED`/`CONFLICT`), and `evidenceId`.
+* **Response**: Returns authorization status, `actualDeltaY`, `verificationStatus` (`VERIFIED`/`CONFLICT`/`REOBSERVE`), and `evidenceId`.
 
-### `POST /api/v1/sources/search`
-Perform deterministic keyword search over ingested facts with snippet extraction and provenance tracking (zero AI model calls).
+---
+
+## 9. Local Document Ingestion & Deterministic Retrieval
+
+### `POST /api/v1/sources/ingest-file`
+User-initiated safe ingestion of authorized local files (`.txt`, `.md`, `.pdf`). Performs path security validation, size enforcement (<10MB), paragraph and page chunking, and SHA-256 fingerprinting.
 * **Request**:
   ```json
   {
-    "query": "documentation",
-    "sourceType": "browser_tab"
+    "filePath": "C:\\docs\\quarterly_report.pdf",
+    "description": "User authorized financial summary"
   }
   ```
-* **Response**: Returns matches with `factId`, `sourceUri`, `sourceTitle`, `matchedSnippet`, and `isModelInference: false`.
+* **Response** (200 OK):
+  ```json
+  {
+    "success": true,
+    "sourceId": "src-doc-12345",
+    "filePath": "C:\\docs\\quarterly_report.pdf",
+    "fileName": "quarterly_report.pdf",
+    "fileSizeBytes": 45020,
+    "checksumSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "totalChunks": 12,
+    "pageCount": 4,
+    "message": "Successfully ingested and indexed 12 text chunks."
+  }
+  ```
+
+### `POST /api/v1/sources/search`
+Perform deterministic keyword search over ingested facts with match location, rich source provenance, and confidence scoring (zero AI inference).
+* **Request**:
+  ```json
+  {
+    "query": "revenue growth",
+    "sourceType": null
+  }
+  ```
+* **Response** (200 OK):
+  ```json
+  {
+    "query": "revenue growth",
+    "totalMatches": 2,
+    "results": [
+      {
+        "factId": "fact-doc-001",
+        "factType": "document_chunk",
+        "sourceId": "src-doc-12345",
+        "sourceType": "local_document",
+        "sourceUri": "file:///C:/docs/quarterly_report.pdf",
+        "sourceTitle": "quarterly_report.pdf",
+        "observedAt": "2026-10-28T10:00:00Z",
+        "matchedSnippet": "...showing strong revenue growth across all segments...",
+        "confidenceScore": 1.0,
+        "matchLocation": "Page 2",
+        "isUntrustedContent": true
+      }
+    ],
+    "isModelInference": false,
+    "limitationNotice": "Showing deterministic keyword extracts only. Semantic synthesis requires Meta model integration (Milestone 04)."
+  }
+  ```
+
+---
+
+## 10. Combined Retrieval & Action Workflow
+
+### `POST /api/v1/tasks/{task_id}/combined/verify-and-scroll`
+Verifies that a required factual assertion is present in ingested source facts before authorizing and dispatching an active computer action. Fails safely with `HANDOFF_REQUESTED` if preconditions are not met or if data conflicts.
+* **Request**:
+  ```json
+  {
+    "requiredTextInSource": "Web APIs",
+    "scrollDeltaY": 300,
+    "url": "https://developer.mozilla.org/en-US/docs/Web/API"
+  }
+  ```
+* **Response** (200 OK):
+  ```json
+  {
+    "taskStatus": "COMPLETED",
+    "preconditionMet": true,
+    "verifiedExcerpt": "Web APIs are typically used with JavaScript...",
+    "actionEvidenceId": "ev-scroll-9876",
+    "actualDeltaY": 300,
+    "message": "Precondition verified in source and action executed successfully."
+  }
+  ```
 

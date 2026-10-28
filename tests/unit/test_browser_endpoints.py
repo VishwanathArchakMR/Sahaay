@@ -85,10 +85,21 @@ async def test_execute_scroll_action_detected_conflict():
         "url": "https://example.com",
         "requestedDeltaY": 300,
         "preScrollY": 200,
-        "postScrollY": 200,  # No movement occurred
+        "postScrollY": 200,
     }
 
     async with AsyncClient(transport=transport, base_url="http://testclient") as client:
+        # Ingest tab observation for example.com first
+        await client.post(
+            "/api/v1/browser/observe",
+            json={
+                "url": "https://example.com",
+                "title": "Example Domain",
+                "scrollPosition": {"x": 0, "y": 200},
+                "documentDimensions": {"width": 800, "height": 600},
+                "visibleTextExcerpt": "Example Domain text",
+            },
+        )
         res = await client.post("/api/v1/browser/action/scroll", json=scroll_req)
         assert res.status_code == 200
         data = res.json()

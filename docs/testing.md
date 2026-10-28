@@ -16,6 +16,9 @@ The automated test suite across Python and .NET validates the security invariant
 | `tests/unit/test_windows_endpoints.py` | Verifies `/api/v1/windows` discovery, active foreground query, UI inspection, and graceful offline fallback | `pytest tests/unit/test_windows_endpoints.py` |
 | `tests/unit/test_browser_endpoints.py` | Verifies real tab observation ingestion, bounded scroll action authorization, postcondition verification, and cancellation denial | `pytest tests/unit/test_browser_endpoints.py` |
 | `tests/unit/test_deterministic_retrieval.py` | Verifies deterministic keyword search, snippet extraction, and exclusion of revoked sources (zero AI models) | `pytest tests/unit/test_deterministic_retrieval.py` |
+| `tests/unit/test_document_ingestion.py` | Validates local file parsing (.txt, .md, .pdf), page/paragraph chunking, checksum verification, 10MB limit, and sensitive path denial | `pytest tests/unit/test_document_ingestion.py` |
+| `tests/unit/test_combined_and_retrieval_tasks.py` | Verifies retrieval-only action blocking, combined verification-before-action flow, and conflict-induced user handoff | `pytest tests/unit/test_combined_and_retrieval_tasks.py` |
+| `tests/security/test_prompt_injection_defense.py` | Validates untrusted content isolation; verifies prompt-injection in pages/docs cannot grant permissions, change tasks, or run commands | `pytest tests/security/test_prompt_injection_defense.py` |
 | `tests/browser/test_extension_contracts.py` | Verifies extension message schema, command allowlist, and 1MB size limit | `pytest tests/browser/test_extension_contracts.py` |
 | `tests/desktop/test_native_host_contracts.py`| Verifies native host stdio 4-byte framing and command allowlist | `pytest tests/desktop/test_native_host_contracts.py` |
 | `tests/security/test_secret_scanning.py` | Scans all repository files to ensure no API keys, private keys, or tokens are committed | `pytest tests/security/test_secret_scanning.py` |
@@ -64,15 +67,17 @@ npm run build
 
 ---
 
-## 3. Real Execution Verification (Stage 02)
+## 3. Real Execution Verification (Milestone 03 — Product Hardening & Unified Experience)
 
 > [!NOTE]
-> - **Exercised & Tested in Stage 02**:
+> - **Exercised & Tested in Milestone 03**:
+>   - Unified Desktop Experience: Single task and conversation console with mode switcher (`retrieval_only`, `action_only`, `combined_verify_action`), active scope drawer, and immutable evidence ledger.
+>   - Local Document Ingestion: Safe local file parsing for `.txt`, `.md`, and `.pdf` via `pypdf`, chunking paragraphs/pages, extracting SHA-256 fingerprints, and blocking sensitive paths.
+>   - Deterministic Retrieval: Exact keyword matching with confidence scoring, match location, rich source provenance, and clear limitation disclaimer.
+>   - Tab Staleness Tracking: Navigation detection requiring re-observation (`PolicyDecisionEnum.REOBSERVE`) before allowing tab-specific actions.
+>   - Combined Workflows: Verifying prerequisite facts in sources before executing actions; halting with user handoff on contradiction.
+>   - Adversarial Defense: Untrusted webpage and document content cannot grant permissions, invoke native commands, or modify task state.
 >   - .NET 10 LTS native companion build (`Sahaay.Contracts`, `Sahaay.Controller`, `Sahaay.NativeHost`).
->   - Win32 `EnumWindows` and `System.Windows.Automation` element hierarchy inspection.
->   - Authenticated `\\.\pipe\SahaayControllerPipe` IPC bridge.
->   - Native messaging host stdio framing and HKCU registration scripts (`register-native-host.ps1`).
->   - Browser extension Manifest V3 bridge, content script DOM extraction, and bounded scroll action.
->   - Action Gate authorization, fresh postcondition verification, and Evidence Ledger auditing.
->   - Deterministic keyword retrieval over ingested context facts with exact provenance.
-> - **Explicitly Deferred to Stage 03**: Multimodal Meta model inference (Llama, Muse Transcribe, Muse Spark). All external model API calls remain disabled and fail closed.
+>   - Authenticated `\\.\pipe\SahaayControllerPipe` IPC bridge and HKCU registration scripts (`register-native-host.ps1`).
+>   - Full automated test suite: 50 Python tests, 8 .NET companion tests, browser extension typecheck, and desktop app build passing with zero errors.
+> - **Explicitly Deferred to Stage 04**: Multimodal Meta model inference (Llama, Muse Transcribe, Muse Spark). All external model API calls remain disabled and fail closed.

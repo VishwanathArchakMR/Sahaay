@@ -31,6 +31,8 @@ VALID_TRANSITIONS: Dict[TaskStatusEnum, set[TaskStatusEnum]] = {
         TaskStatusEnum.PAUSED,
         TaskStatusEnum.CANCELLED,
         TaskStatusEnum.FAILED,
+        TaskStatusEnum.COMPLETED,
+        TaskStatusEnum.HANDOFF_REQUESTED,
     },
     TaskStatusEnum.PROPOSING: {
         TaskStatusEnum.AUTHORIZING,
@@ -169,5 +171,6 @@ class TaskOrchestrator:
             action=action,
             active_grants=active_grants,
             is_task_cancelled=is_cancelled,
+            task_type=task.taskType,
         )
         return decision

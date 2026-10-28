@@ -50,3 +50,28 @@
 | `SENSITIVE_PII` | Email addresses, phone numbers, personal identifiers | Redacted or blocked; requires high-trust grant |
 | `CREDENTIAL` | API keys, passwords, bearer tokens, private keys | **NEVER** (Permanently blocked from outbound transmission) |
 | `HIGHLY_RESTRICTED` | Protected system credentials or financial documents | **NEVER** |
+
+---
+
+## 4. Local Document Ingestion Privacy Controls
+- **User-Initiated Designation**: Documents are ingested strictly upon explicit user request. Sahaay never silently crawls, indexes, or enumerates personal directories or user profiles.
+- **Sensitive Path Guard**: Ingestion strictly forbids system-critical or secret-bearing directories (`C:\Windows\System32`, `AppData`, `.ssh`, `.env`, `id_rsa`).
+- **Memory & Storage Boundaries**: Extracted text chunks are kept strictly within local SQLite storage under the task's permission boundary. Document contents are never transmitted across networks or sent to external endpoints.
+- **Revocation**: Removing a document immediately marks its source record as revoked and purges its indexed chunks from retrieval results.
+
+---
+
+## 5. Milestone 03 Enforcement vs. Future Model Integration
+- **Enforced Now**:
+  - Local-Only Mode (Fail-Closed, zero external network calls).
+  - Deterministic Action Gate authorization for all operations.
+  - Independent postcondition verification (model self-attestation rejected).
+  - Cryptographic Evidence Ledger immutability.
+  - Safe local document parsing (.txt, .md, .pdf) with checksum fingerprinting.
+  - Prompt-injection isolation (untrusted text cannot modify policy or invoke commands).
+  - Tab navigation detection & stale observation rejection.
+- **Deferred to Milestone 04 (Meta Model Integration)**:
+  - Llama model adapters for planning and intent reasoning.
+  - Muse Transcribe / Muse Spark voice audio inference.
+  - Multimodal SAM 3.1 grounding.
+

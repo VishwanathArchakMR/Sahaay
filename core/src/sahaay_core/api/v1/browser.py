@@ -25,6 +25,18 @@ from sahaay_core.verification.verifier import IndependentVerifier
 router = APIRouter(prefix="/browser", tags=["Browser Bridge"])
 adapter = BrowserAdapter()
 
+# In-memory active tab observation tracking
+active_tab_state: Dict[str, Any] = {
+    "url": None,
+    "title": None,
+    "observationVersion": 0,
+    "capturedAt": None,
+    "scrollPosition": {"x": 0, "y": 0},
+    "documentDimensions": {"width": 0, "height": 0},
+    "observationId": None,
+    "isStale": False,
+}
+
 
 class IngestObservationRequest(BaseModel):
     url: str
@@ -47,6 +59,12 @@ class ExecuteScrollActionRequest(BaseModel):
     postScrollY: int
 
 
+@router.get("/active-observation", response_model=Dict[str, Any])
+async def get_active_observation() -> Dict[str, Any]:
+    """Retrieve the latest captured observation state and staleness flag for the active browser tab."""
+    return active_tab_state
+
+
 @router.post("/observe", response_model=Dict[str, Any])
 async def ingest_tab_observation(req: IngestObservationRequest) -> Dict[str, Any]:
     """Ingests real observation from authorized browser tab and records facts into ContextStore."""
@@ -61,12 +79,26 @@ async def ingest_tab_observation(req: IngestObservationRequest) -> Dict[str, Any
             metadata={"documentDimensions": req.documentDimensions},
         )
 
+        # Update active tab observation state and versioning
+        prev_url = active_tab_state.get("url")
+        active_tab_state["observationVersion"] += 1 if prev_url != req.url else 0
+        active_tab_state["url"] = req.url
+        active_tab_state["title"] = req.title
+        active_tab_state["scrollPosition"] = req.scrollPosition
+        active_tab_state["documentDimensions"] = req.documentDimensions
+        active_tab_state["observationId"] = obs_record.get("observationId", str(uuid4()))
+        active_tab_state["capturedAt"] = obs_record.get("timestamp")
+        active_tab_state["isStale"] = False
+
         # Record structured context facts
         f1 = context_store.record_fact(
             fact_type=FactTypeEnum.OBSERVED,
             content=f"Authorized tab '{req.title}' loaded at {req.url}",
             source_reference_id=source_ref.sourceId,
-            metadata={"scrollPosition": req.scrollPosition},
+            metadata={
+                "scrollPosition": req.scrollPosition,
+                "observationVersion": active_tab_state["observationVersion"],
+            },
         )
 
         if req.visibleTextExcerpt:
@@ -75,7 +107,7 @@ async def ingest_tab_observation(req: IngestObservationRequest) -> Dict[str, Any
                 content=req.visibleTextExcerpt,
                 source_reference_id=source_ref.sourceId,
                 derivation_ids=[f1.factId],
-                metadata={"length": len(req.visibleTextExcerpt)},
+                metadata={"length": len(req.visibleTextExcerpt), "isUntrusted": True},
             )
 
         return {
@@ -84,6 +116,8 @@ async def ingest_tab_observation(req: IngestObservationRequest) -> Dict[str, Any
             "sourceId": str(source_ref.sourceId),
             "url": req.url,
             "title": req.title,
+            "observationVersion": active_tab_state["observationVersion"],
+            "isStale": False,
         }
     except Exception as ex:
         raise HTTPException(status_code=400, detail=str(ex)) from ex
@@ -117,6 +151,7 @@ async def execute_and_verify_scroll(
         action=action,
         active_grants=grants,
         is_task_cancelled=(task.status.value == "CANCELLED"),
+        task_type=task.taskType,
     )
 
     if policy_decision.decision != PolicyDecisionEnum.ALLOW:
@@ -124,6 +159,15 @@ async def execute_and_verify_scroll(
             "authorized": False,
             "policyDecision": policy_decision.decision.value,
             "reason": policy_decision.reason,
+            "verified": False,
+        }
+
+    # 3. Check for observation staleness (if active observation exists for a different URL)
+    if active_tab_state.get("url") and active_tab_state.get("url") != req.url:
+        return {
+            "authorized": False,
+            "policyDecision": PolicyDecisionEnum.REOBSERVE.value,
+            "reason": f"Active browser tab navigated from '{req.url}' to '{active_tab_state.get('url')}'. Re-observation required before action.",
             "verified": False,
         }
 

@@ -84,7 +84,8 @@ Execute all quality checks, linters, and unit test suites:
 ```
 This runs:
 - `ruff check core tests`
-- `pytest tests` (36 tests)
+- `pytest tests` (50 automated tests covering unit, security, prompt injection, and contracts)
 - `dotnet test apps/windows-companion/Sahaay.sln` (8 xUnit tests)
 - Browser extension TypeScript typecheck
 - Desktop application TypeScript typecheck
+
