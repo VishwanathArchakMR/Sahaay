@@ -77,7 +77,11 @@ class ActionTypeEnum(str, Enum):
     LIST_OPEN_WINDOWS = "list_open_windows"
     CLICK_DESKTOP_CONTROL = "click_desktop_control"
     TYPE_DESKTOP_TEXT = "type_desktop_text"
+    SET_CONTROL_TEXT = "set_control_text"
+    GET_CONTROL_TEXT = "get_control_text"
     SCROLL_BROWSER_TAB = "scroll_browser_tab"
+    FILL_FORM_FIELDS = "fill_form_fields"
+    GET_FIELD_VALUES = "get_field_values"
 
 
 class Session(BaseModel):

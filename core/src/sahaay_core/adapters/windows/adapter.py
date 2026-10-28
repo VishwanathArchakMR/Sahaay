@@ -62,3 +62,25 @@ class WindowsNativeAdapter:
         if not res.get("success"):
             raise RuntimeError(res.get("error", f"Failed to capture window {hwnd}."))
         return res.get("data", {})
+
+    def set_control_text(
+        self, hwnd: int, text: str, target_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Set text in a window control via UI Automation."""
+        params: Dict[str, Any] = {"hwnd": hwnd, "text": text}
+        if target_id:
+            params["targetId"] = target_id
+        res = self.client.send_command("set_control_text", parameters=params)
+        if not res.get("success"):
+            raise RuntimeError(res.get("error", f"Failed to set control text in window {hwnd}."))
+        return res.get("data", {})
+
+    def get_control_text(self, hwnd: int, target_id: Optional[str] = None) -> Dict[str, Any]:
+        """Read text from a window control via UI Automation."""
+        params: Dict[str, Any] = {"hwnd": hwnd}
+        if target_id:
+            params["targetId"] = target_id
+        res = self.client.send_command("get_control_text", parameters=params)
+        if not res.get("success"):
+            raise RuntimeError(res.get("error", f"Failed to get control text in window {hwnd}."))
+        return res.get("data", {})

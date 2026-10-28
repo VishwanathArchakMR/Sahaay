@@ -80,5 +80,79 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request.command === "fill_form_fields") {
+    try {
+      const fields = (request.fields || request.payload?.fields || {}) as Record<string, string>;
+      const filled: Record<string, string> = {};
+
+      for (const [key, value] of Object.entries(fields)) {
+        // Try finding by id, then name, then aria-label
+        const el = (
+          document.getElementById(key) ||
+          document.querySelector(`[name="${CSS.escape(key)}"]`) ||
+          document.querySelector(`[aria-label="${CSS.escape(key)}"]`) ||
+          document.querySelector(`input#${CSS.escape(key)}`) ||
+          document.querySelector(`textarea#${CSS.escape(key)}`)
+        ) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null;
+
+        if (el) {
+          el.value = String(value);
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+          filled[key] = el.value;
+        }
+      }
+
+      sendResponse({
+        success: true,
+        data: {
+          filled,
+          count: Object.keys(filled).length,
+          requestedCount: Object.keys(fields).length,
+        },
+      });
+    } catch (ex: any) {
+      sendResponse({ success: false, error: ex.message || "Failed to fill form fields." });
+    }
+    return true;
+  }
+
+  if (request.command === "get_field_values") {
+    try {
+      const fieldNames = (request.fieldNames || request.payload?.fieldNames) as string[] | undefined;
+      const values: Record<string, string> = {};
+
+      if (Array.isArray(fieldNames) && fieldNames.length > 0) {
+        for (const name of fieldNames) {
+          const el = (
+            document.getElementById(name) ||
+            document.querySelector(`[name="${CSS.escape(name)}"]`)
+          ) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null;
+          if (el) {
+            values[name] = el.value;
+          }
+        }
+      } else {
+        const inputs = document.querySelectorAll("input, textarea, select");
+        inputs.forEach((node) => {
+          const inputEl = node as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+          const key = inputEl.id || inputEl.name;
+          if (key) {
+            values[key] = inputEl.value;
+          }
+        });
+      }
+
+      sendResponse({
+        success: true,
+        data: { values },
+      });
+    } catch (ex: any) {
+      sendResponse({ success: false, error: ex.message || "Failed to get field values." });
+    }
+    return true;
+  }
+
   return false;
 });
+

@@ -137,6 +137,10 @@ public class PipeServer
 
                 "capture_window_screenshot" => HandleCaptureScreenshot(request),
 
+                "set_control_text" => HandleSetControlText(request),
+
+                "get_control_text" => HandleGetControlText(request),
+
                 _ => new IpcMessageResponse(
                     Id: request.Id,
                     Command: request.Command,
@@ -219,4 +223,85 @@ public class PipeServer
             Error: null
         );
     }
+
+    private static IpcMessageResponse HandleSetControlText(IpcMessageRequest request)
+    {
+        if (request.Parameters == null || !request.Parameters.TryGetValue("hwnd", out var hwndObj))
+        {
+            return new IpcMessageResponse(request.Id, request.Command, false, null, "Missing required parameter 'hwnd'.");
+        }
+
+        long hwnd = 0;
+        if (hwndObj is JsonElement jsonElem && jsonElem.TryGetInt64(out long parsedHwnd))
+        {
+            hwnd = parsedHwnd;
+        }
+        else if (long.TryParse(hwndObj.ToString(), out long parsedStrHwnd))
+        {
+            hwnd = parsedStrHwnd;
+        }
+
+        string? targetId = null;
+        if (request.Parameters.TryGetValue("targetId", out var targetIdObj) && targetIdObj != null)
+        {
+            targetId = targetIdObj.ToString();
+        }
+        else if (request.Parameters.TryGetValue("automationId", out var autoIdObj) && autoIdObj != null)
+        {
+            targetId = autoIdObj.ToString();
+        }
+
+        string text = string.Empty;
+        if (request.Parameters.TryGetValue("text", out var textObj) && textObj != null)
+        {
+            text = textObj.ToString()!;
+        }
+
+        var result = UiAutomationInspector.SetControlText(hwnd, targetId, text);
+        return new IpcMessageResponse(
+            Id: request.Id,
+            Command: request.Command,
+            Success: result.Success,
+            Data: new { verified = result.Success, value = result.ActualText, targetId },
+            Error: result.Error
+        );
+    }
+
+    private static IpcMessageResponse HandleGetControlText(IpcMessageRequest request)
+    {
+        if (request.Parameters == null || !request.Parameters.TryGetValue("hwnd", out var hwndObj))
+        {
+            return new IpcMessageResponse(request.Id, request.Command, false, null, "Missing required parameter 'hwnd'.");
+        }
+
+        long hwnd = 0;
+        if (hwndObj is JsonElement jsonElem && jsonElem.TryGetInt64(out long parsedHwnd))
+        {
+            hwnd = parsedHwnd;
+        }
+        else if (long.TryParse(hwndObj.ToString(), out long parsedStrHwnd))
+        {
+            hwnd = parsedStrHwnd;
+        }
+
+        string? targetId = null;
+        if (request.Parameters.TryGetValue("targetId", out var targetIdObj) && targetIdObj != null)
+        {
+            targetId = targetIdObj.ToString();
+        }
+        else if (request.Parameters.TryGetValue("automationId", out var autoIdObj) && autoIdObj != null)
+        {
+            targetId = autoIdObj.ToString();
+        }
+
+        var result = UiAutomationInspector.GetControlText(hwnd, targetId);
+        return new IpcMessageResponse(
+            Id: request.Id,
+            Command: request.Command,
+            Success: result.Success,
+            Data: new { verified = result.Success, value = result.Text, targetId },
+            Error: result.Error
+        );
+    }
 }
+

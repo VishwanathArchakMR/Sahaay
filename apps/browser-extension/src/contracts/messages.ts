@@ -11,6 +11,8 @@ export const ALLOWED_EXTENSION_COMMANDS = [
   "get_sanitized_dom",
   "get_tab_observation",
   "scroll_tab",
+  "fill_form_fields",
+  "get_field_values",
   "get_active_window",
   "list_open_windows",
   "check_authorization",

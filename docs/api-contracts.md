@@ -322,3 +322,157 @@ Verifies that a required factual assertion is present in ingested source facts b
   }
   ```
 
+---
+
+## 11. Meta & Local Models Diagnostics
+
+### `GET /api/v1/models/status`
+Reports truthful readiness and configuration for all integrated model providers without exposing secrets.
+* **Response** (200 OK):
+  ```json
+  {
+    "metaApi": {
+      "configured": false,
+      "baseUrl": "https://api.meta.ai/v1",
+      "status": "NOT_CONFIGURED"
+    },
+    "museSpark": { "modelId": "muse-spark-1.3", "status": "NOT_CONFIGURED" },
+    "museWonder": { "modelId": "muse-wonder-1.0", "status": "NOT_CONFIGURED" },
+    "museVoice": { "modelId": "muse-voice-transcribe-1.0", "status": "NOT_CONFIGURED" },
+    "sam": { "modelId": "sam-3-1", "status": "NOT_CONFIGURED" },
+    "localLlama": {
+      "runtime": "llama.cpp",
+      "modelPath": "",
+      "status": "MODEL_FILE_MISSING",
+      "host": "127.0.0.1",
+      "port": 8080
+    }
+  }
+  ```
+
+### `POST /api/v1/models/test-connectivity`
+Tests connection to Meta API if configured, subject to Privacy Gateway fail-closed check.
+* **Response** (200 OK):
+  ```json
+  {
+    "metaApi": false,
+    "status": "NOT_CONFIGURED",
+    "message": "Meta API key is not configured in settings or environment."
+  }
+  ```
+
+### `POST /api/v1/models/plan`
+Generates a structured task plan and action proposals via Muse Spark or local fallback.
+* **Request**:
+  ```json
+  {
+    "query": "Transfer electric bill amount to desktop accounting app",
+    "context": "Bill total: INR 2,450.00",
+    "sessionId": "default"
+  }
+  ```
+* **Response** (200 OK):
+  ```json
+  {
+    "goal": "Transfer electric bill amount to desktop accounting app",
+    "detectedLanguage": "en",
+    "mode": "combined_retrieval_and_action",
+    "extractedFacts": { "amount": "2,450.00" },
+    "proposedOperations": [
+      {
+        "actionType": "set_control_text",
+        "target": "Accounting Notepad",
+        "params": { "text": "2,450.00" }
+      }
+    ],
+    "modelProvider": "local_fallback"
+  }
+  ```
+
+### `POST /api/v1/models/transcribe`
+Transcribes audio input using Muse Voice Transcribe pipeline with Indic biasing, returning editable transcript.
+* **Request**:
+  ```json
+  {
+    "audioBase64": "UklGRi...",
+    "languageHint": "kn"
+  }
+  ```
+* **Response** (200 OK):
+  ```json
+  {
+    "transcript": "ವಿದ್ಯುತ್ ಬಿಲ್ ವಿವರಗಳನ್ನು ಪರಿಶೀಲಿಸಿ",
+    "detectedLanguage": "kn",
+    "requiresUserConfirmation": true,
+    "model": "muse-voice-transcribe-1.0"
+  }
+  ```
+
+---
+
+## 12. Cross-Surface Workflows
+
+### `POST /api/v1/workflows/browser-to-desktop`
+Executes end-to-end Browser → Desktop workflow: reads synthetic utility bill from authorized browser tab, grounds fields in provenance, asks authorization, populates desktop target via controller `set_control_text`, reads back, and independently verifies.
+* **Request**:
+  ```json
+  {
+    "tabUrl": "http://127.0.0.1:8000/fixtures/utility_bill.html",
+    "desktopTargetWindow": "Notepad",
+    "desktopTargetControl": "Editor"
+  }
+  ```
+* **Response** (200 OK):
+  ```json
+  {
+    "success": true,
+    "taskId": "task-b2d-123",
+    "lifecycle": ["OBSERVE", "PROPOSE", "AUTHORIZE", "EXECUTE", "VERIFY", "RECORD"],
+    "extractedFields": {
+      "consumer_name": "Aarav Sharma",
+      "account_number": "BLR-UTIL-98421",
+      "amount_due": "INR 2,450.00",
+      "due_date": "November 15, 2026"
+    },
+    "targetApplication": "Notepad",
+    "verifiedContent": "Account: BLR-UTIL-98421 | Consumer: Aarav Sharma | Due: INR 2,450.00 (Due Date: November 15, 2026)",
+    "verificationStatus": "VERIFIED",
+    "evidenceId": "ev-b2d-456"
+  }
+  ```
+
+### `POST /api/v1/workflows/desktop-to-browser`
+Executes end-to-end Desktop → Browser workflow: reads local synthetic invoice document, maps fields, authorizes, fills web form via extension `fill_form_fields`, reads back DOM via `get_field_values`, and independently verifies. Form submission is blocked.
+* **Request**:
+  ```json
+  {
+    "invoiceFilePath": "data/fixtures/invoice_data.json",
+    "formUrl": "http://127.0.0.1:8000/fixtures/bill_pay_form.html"
+  }
+  ```
+* **Response** (200 OK):
+  ```json
+  {
+    "success": true,
+    "taskId": "task-d2b-789",
+    "lifecycle": ["OBSERVE", "PROPOSE", "AUTHORIZE", "EXECUTE", "VERIFY", "RECORD"],
+    "sourceDocument": "invoice_data.json",
+    "populatedFields": {
+      "customerName": "Aarav Sharma",
+      "accountNumber": "BLR-UTIL-98421",
+      "billingPeriod": "October 2026",
+      "amountDue": "2450.00",
+      "dueDate": "2026-11-15"
+    },
+    "verifiedValues": {
+      "customerName": "Aarav Sharma",
+      "accountNumber": "BLR-UTIL-98421",
+      "amountDue": "2450.00"
+    },
+    "verificationStatus": "VERIFIED",
+    "evidenceId": "ev-d2b-101",
+    "formAutoSubmitBlocked": true
+  }
+  ```
+
+

@@ -125,6 +125,62 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
     return true;
   }
 
+  if (validMsg.command === "fill_form_fields") {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const activeTab = tabs[0];
+      if (!activeTab || !activeTab.id) {
+        sendResponse({ success: false, command: "fill_form_fields", error: "No active tab found." });
+        return;
+      }
+
+      chrome.tabs.sendMessage(activeTab.id, { command: "fill_form_fields", payload: validMsg.payload }, (contentRes) => {
+        if (chrome.runtime.lastError || !contentRes || !contentRes.success) {
+          sendResponse({
+            success: false,
+            command: "fill_form_fields",
+            error: chrome.runtime.lastError?.message || contentRes?.error || "Failed to fill form fields.",
+          });
+          return;
+        }
+
+        sendResponse({
+          success: true,
+          command: "fill_form_fields",
+          data: contentRes.data,
+        } as ExtensionMessageResponse);
+      });
+    });
+    return true;
+  }
+
+  if (validMsg.command === "get_field_values") {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const activeTab = tabs[0];
+      if (!activeTab || !activeTab.id) {
+        sendResponse({ success: false, command: "get_field_values", error: "No active tab found." });
+        return;
+      }
+
+      chrome.tabs.sendMessage(activeTab.id, { command: "get_field_values", payload: validMsg.payload }, (contentRes) => {
+        if (chrome.runtime.lastError || !contentRes || !contentRes.success) {
+          sendResponse({
+            success: false,
+            command: "get_field_values",
+            error: chrome.runtime.lastError?.message || contentRes?.error || "Failed to get field values.",
+          });
+          return;
+        }
+
+        sendResponse({
+          success: true,
+          command: "get_field_values",
+          data: contentRes.data,
+        } as ExtensionMessageResponse);
+      });
+    });
+    return true;
+  }
+
   // Forward native commands to NativeHost
   if (validMsg.command === "get_active_window" || validMsg.command === "list_open_windows") {
     try {

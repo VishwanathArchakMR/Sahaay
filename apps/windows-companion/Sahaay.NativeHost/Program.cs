@@ -120,7 +120,7 @@ public class Program
                 null
             ),
 
-            "get_active_window" or "list_open_windows" => ForwardToController(request),
+            "get_active_window" or "list_open_windows" or "inspect_window_elements" or "capture_window_screenshot" or "set_control_text" or "get_control_text" => ForwardToController(request),
 
             _ => new NativeHostMessageResponse(
                 false,

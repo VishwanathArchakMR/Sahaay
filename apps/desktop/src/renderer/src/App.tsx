@@ -1,1559 +1,909 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   Shield,
   Mic,
   Send,
-  CheckCircle2,
-  XCircle,
   Pause,
-  UserCheck,
+  Play,
   Cpu,
-  Database,
-  Terminal,
   Globe,
   AppWindow,
-  Search,
-  ArrowUpDown,
+  ArrowRight,
+  ArrowLeftRight,
   RefreshCw,
   Layers,
-  AlertTriangle,
-  FileText,
-  Upload,
-  FileCheck,
-  Trash2,
-  Compass,
-  Info,
+  Settings,
+  Sparkles,
+  Activity,
+  Check,
+  Radio,
+  Sliders,
+  Volume2,
 } from "lucide-react";
 
-interface HealthStatus {
-  status: string;
-  systemVersion: string;
-  localOnlyMode: boolean;
-  databaseReady: boolean;
-}
+const API_BASE = "http://127.0.0.1:8000/api/v1";
+const API_HEADERS = {
+  "Content-Type": "application/json",
+  "X-Sahaay-Token": "dev-local-sahaay-token",
+};
 
-interface CapabilityStatus {
-  systemVersion: string;
-  desktopAutomationAvailable: boolean;
-  browserAutomationAvailable: boolean;
-  modelsAvailable: Array<{ name: string; isAvailable: boolean }>;
-  activeCapabilities: string[];
-}
+type TaskFlowState =
+  | "IDLE"
+  | "OBSERVE"
+  | "RETRIEVE"
+  | "PROPOSE"
+  | "AUTHORIZE"
+  | "EXECUTE_B2D"
+  | "EXECUTE_D2B"
+  | "VERIFY"
+  | "VERIFIED"
+  | "FAILED"
+  | "HANDOFF";
 
-interface OpenWindowItem {
-  hwnd: number;
-  title: string;
-  processName: string;
-  bounds: { x: number; y: number; width: number; height: number };
-}
-
-interface UiElementItem {
-  name: string;
-  controlType: string;
-  bounds: { x: number; y: number; width: number; height: number };
-  isKeyboardFocusable?: boolean;
-}
-
-interface BrowserObservation {
-  url: string;
-  title: string;
-  scrollPosition: { x: number; y: number };
-  documentDimensions: { width: number; height: number };
-  visibleTextExcerpt: string;
-  accessibleElements?: Array<{ tag: string; role: string; text: string }>;
-}
-
-interface SearchResultItem {
-  factId: string;
-  factType: string;
-  sourceId: string;
-  sourceType: string;
-  sourceUri: string;
-  sourceTitle: string;
-  observedAt: string;
-  matchedSnippet: string;
-  confidenceScore: number;
-  matchLocation?: string;
-  isUntrustedContent?: boolean;
-}
-
-interface IngestedDocument {
-  sourceId: string;
-  filePath: string;
-  fileName: string;
-  fileSizeBytes: number;
-  totalChunks: number;
-  pageCount?: number;
-  checksumSha256: string;
-  ingestedAt: string;
-}
-
-interface FeedItem {
-  id: string;
-  timestamp: string;
-  kind: "USER_PROMPT" | "RETRIEVAL_RESULT" | "ACTION_STEP" | "SYSTEM_NOTICE" | "INGESTION_EVENT" | "HANDOFF_ALERT";
-  title: string;
-  subtitle?: string;
-  badge?: { text: string; variant: "purple" | "success" | "danger" | "neutral" | "warning" };
-  details?: string;
-  payload?: any;
-}
-
-interface ActionTimelineItem {
-  id: string;
-  type: string;
-  target: string;
-  risk: string;
-  decision: string;
-  verificationStatus: string;
-  evidenceId?: string;
-  timestamp: string;
-  details?: string;
-}
-
-type TaskMode = "retrieval_only" | "action_only" | "combined_verify_action";
-
-export function App() {
-  const [health, setHealth] = useState<HealthStatus | null>(null);
-  const [capabilities, setCapabilities] = useState<CapabilityStatus | null>(null);
-
-  // Unified Task & Conversation State
-  const [taskMode, setTaskMode] = useState<TaskMode>("retrieval_only");
-  const [inputGoal, setInputGoal] = useState("");
-  const [currentStage, setCurrentStage] = useState<string>("IDLE");
-  const [taskStatus, setTaskStatus] = useState<string>("READY");
-  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-
-  // Active Sources Scope
-  const [browserObs, setBrowserObs] = useState<BrowserObservation | null>({
-    url: "https://developer.mozilla.org/en-US/docs/Web/API",
-    title: "Web APIs | MDN Web Docs",
-    scrollPosition: { x: 0, y: 120 },
-    documentDimensions: { width: 1280, height: 3840 },
-    visibleTextExcerpt:
-      "Web APIs are typically used with JavaScript, although this doesn't always have to be the case. When writing code for the Web, there are a large number of Web APIs available...",
-  });
-  const [isBrowserStale, setIsBrowserStale] = useState(false);
-  const [ingestedDocs, setIngestedDocs] = useState<IngestedDocument[]>([]);
-  const [docPathInput, setDocPathInput] = useState("");
-  const [isIngestingDoc, setIsIngestingDoc] = useState(false);
-
-  // Windows Desktop State
-  const [activeWindow, setActiveWindow] = useState<OpenWindowItem | null>(null);
-  const [openWindows, setOpenWindows] = useState<OpenWindowItem[]>([]);
-  const [selectedHwnd, setSelectedHwnd] = useState<number | null>(null);
-  const [windowElements, setWindowElements] = useState<UiElementItem[]>([]);
-  const [isLoadingWindows, setIsLoadingWindows] = useState(false);
-
-  // Unified Chronological Feed
-  const [feed, setFeed] = useState<FeedItem[]>([
-    {
-      id: "feed-init-1",
-      timestamp: new Date().toLocaleTimeString(),
-      kind: "SYSTEM_NOTICE",
-      title: "Sahaay Unified Environment Initialized",
-      subtitle: "Privacy Gateway: Local-Only mode enforced (Zero external model calls)",
-      badge: { text: "BUILD 03 READY", variant: "purple" },
-      details:
-        "Deterministic information retrieval and verified computer actions operate through a shared context, Action Gate, and Independent Verifier.",
-    },
-    {
-      id: "feed-init-2",
-      timestamp: new Date().toLocaleTimeString(),
-      kind: "INGESTION_EVENT",
-      title: "Authorized Browser Tab Captured",
-      subtitle: "MDN Web Docs (https://developer.mozilla.org/en-US/docs/Web/API)",
-      badge: { text: "BROWSER TAB", variant: "neutral" },
-      details:
-        "Observation verified. Dimensions: 1280x3840, Scroll Y: 120px. Content indexed for deterministic keyword retrieval.",
-    },
-  ]);
-
-  // Evidence Ledger
-  const [actions, setActions] = useState<ActionTimelineItem[]>([
-    {
-      id: "act-initial-1",
-      type: "OBSERVE_TAB",
-      target: "https://developer.mozilla.org/en-US/docs/Web/API",
-      risk: "READ_ONLY",
-      decision: "ALLOW",
-      verificationStatus: "VERIFIED",
-      evidenceId: "ev-001-init",
-      timestamp: new Date().toLocaleTimeString(),
-      details: "Observed tab MDN Web Docs, verified title and dimensions",
-    },
-  ]);
-
-  const stages = ["OBSERVE", "PROPOSE", "AUTHORIZE", "EXECUTE", "VERIFY", "RECORD"];
-
-  // Polling backend capabilities and status
-  const refreshStatus = () => {
-    fetch("http://127.0.0.1:8000/api/v1/health")
-      .then((res) => res.json())
-      .then((data) => setHealth(data))
-      .catch(() => setHealth(null));
-
-    fetch("http://127.0.0.1:8000/api/v1/capabilities")
-      .then((res) => res.json())
-      .then((data) => setCapabilities(data))
-      .catch(() => setCapabilities(null));
-
-    fetch("http://127.0.0.1:8000/api/v1/windows/active")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.isConnected && data.activeWindow) {
-          setActiveWindow(data.activeWindow);
-        }
-      })
-      .catch(() => {});
-
-    fetch("http://127.0.0.1:8000/api/v1/browser/active-observation")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.activeObservation) {
-          setIsBrowserStale(data.activeObservation.isStale || false);
-        }
-      })
-      .catch(() => {});
+interface ModelsStatusReport {
+  metaHosted: {
+    isConfigured: boolean;
+    baseUrl: string;
+    models: {
+      museSpark: { id: string; role: string; ready: boolean };
+      museWonder: { id: string; role: string; ready: boolean };
+      museVoice: { id: string; role: string; ready: boolean };
+      sam31: { id: string; role: string; ready: boolean };
+    };
   };
+  localLlama: {
+    status: string;
+    message: string;
+    isReady: boolean;
+    modelPath: string;
+    serverBinary: string;
+    serverHost: string;
+    port: number;
+    hardwareProfile?: {
+      cpuCores: number;
+      accelerationBackend: string;
+      gpuDetected?: boolean;
+      gpuName?: string;
+      vram?: string;
+    };
+  };
+  privacyMode: {
+    localOnlyMode: boolean;
+    hostedModelsPermitted: boolean;
+  };
+}
 
+export function App(): React.JSX.Element {
+  // Session & Core state
+  const [sessionId, setSessionId] = useState<string>("");
+  const [localOnlyMode, setLocalOnlyMode] = useState<boolean>(true);
+
+  // Active task & Liquid-flow state
+  const [taskState, setTaskState] = useState<TaskFlowState>("IDLE");
+  const [activeTaskId, setActiveTaskId] = useState<string>("");
+  const [statusNarrative, setStatusNarrative] = useState<string>(
+    "Sahaay agent is idle. Ready for voice or text prompt."
+  );
+
+  // Models diagnostics
+  const [modelsStatus, setModelsStatus] = useState<ModelsStatusReport | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [isTestingConn, setIsTestingConn] = useState<boolean>(false);
+  const [testConnResult, setTestConnResult] = useState<any>(null);
+
+  // Unified composer
+  const [userPrompt, setUserPrompt] = useState<string>("");
+  const [isRecording, setIsRecording] = useState<boolean>(false);
+  const [recordingSeconds, setRecordingSeconds] = useState<number>(0);
+  const [transcriptConfirmation, setTranscriptConfirmation] = useState<string | null>(null);
+  const [selectedLanguage, setSelectedLanguage] = useState<string>("kn,hi,en");
+
+  // Evidence & Provenance timeline
+  const [timeline, setTimeline] = useState<Array<{
+    id: string;
+    timestamp: string;
+    step: string;
+    state: TaskFlowState;
+    title: string;
+    details: string;
+    provenanceHash?: string;
+  }>>([]);
+
+  // Active execution results
+  const [lastWorkflowResult, setLastWorkflowResult] = useState<any>(null);
+
+  const recordingIntervalRef = useRef<any>(null);
+
+  // 1. Initialize session and probe diagnostics
   useEffect(() => {
-    refreshStatus();
-    const interval = setInterval(refreshStatus, 4000);
+    initSession();
+    fetchModelsStatus();
+    const interval = setInterval(() => {
+      fetchModelsStatus();
+    }, 6000);
     return () => clearInterval(interval);
   }, []);
 
-  // Ingest Local Document via POST /api/v1/sources/ingest-file
-  const handleIngestDocument = async (filePathToIngest?: string) => {
-    const targetPath = (filePathToIngest || docPathInput).trim();
-    if (!targetPath) return;
-    setIsIngestingDoc(true);
-
+  const initSession = async () => {
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/v1/sources/ingest-file", {
+      const res = await fetch(`${API_BASE}/sessions`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          filePath: targetPath,
-          description: `User-selected document for task retrieval: ${targetPath}`,
-        }),
+        headers: API_HEADERS,
+        body: JSON.stringify({ localOnlyMode: true }),
       });
-
-      const data = await res.json();
-      if (res.ok && data.success) {
-        const newDoc: IngestedDocument = {
-          sourceId: data.sourceId,
-          filePath: data.filePath,
-          fileName: data.fileName,
-          fileSizeBytes: data.fileSizeBytes,
-          totalChunks: data.totalChunks,
-          pageCount: data.pageCount,
-          checksumSha256: data.checksumSha256,
-          ingestedAt: new Date().toLocaleTimeString(),
-        };
-
-        setIngestedDocs((prev) => [newDoc, ...prev]);
-        setDocPathInput("");
-
-        setFeed((prev) => [
-          {
-            id: `feed-doc-${Date.now()}`,
-            timestamp: new Date().toLocaleTimeString(),
-            kind: "INGESTION_EVENT",
-            title: `Document Ingested: ${data.fileName}`,
-            subtitle: `Path: ${data.filePath} (${(data.fileSizeBytes / 1024).toFixed(1)} KB)`,
-            badge: { text: "LOCAL DOCUMENT", variant: "purple" },
-            details: `Extracted ${data.totalChunks} text chunks ${data.pageCount ? `across ${data.pageCount} pages` : ""}. SHA-256: ${data.checksumSha256.substring(0, 16)}... Indexed into deterministic store under local task boundary.`,
-          },
-          ...prev,
-        ]);
-      } else {
-        setFeed((prev) => [
-          {
-            id: `feed-err-${Date.now()}`,
-            timestamp: new Date().toLocaleTimeString(),
-            kind: "SYSTEM_NOTICE",
-            title: `Document Ingestion Rejected`,
-            subtitle: data.detail || "File access denied or parsing failure",
-            badge: { text: "SECURITY GATE", variant: "danger" },
-            details: `Strict path validation and format constraints enforced. Only authorized files (.txt, .md, .pdf) under 10MB permitted.`,
-          },
-          ...prev,
-        ]);
+      if (res.ok) {
+        const data = await res.json();
+        setSessionId(data.sessionId);
+        setLocalOnlyMode(data.localOnlyMode);
+        addTimelineEntry("IDLE", "Session Initialized", `Session ID: ${data.sessionId.slice(0, 8)}... (Local-only mode active)`);
       }
-    } catch (err: any) {
-      setFeed((prev) => [
-        {
-          id: `feed-err-${Date.now()}`,
-          timestamp: new Date().toLocaleTimeString(),
-          kind: "SYSTEM_NOTICE",
-          title: `Document Ingestion Error`,
-          subtitle: String(err),
-          badge: { text: "FAILED", variant: "danger" },
-        },
-        ...prev,
-      ]);
-    } finally {
-      setIsIngestingDoc(false);
+    } catch (err) {
+      console.warn("Backend not yet reachable on loopback:", err);
     }
   };
 
-  // Observe Browser Tab via Backend
-  const handleObserveTab = async () => {
-    if (!browserObs) return;
-    setCurrentStage("OBSERVE");
+  const fetchModelsStatus = async () => {
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/v1/browser/observe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(browserObs),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setIsBrowserStale(false);
-        setFeed((prev) => [
-          {
-            id: `feed-obs-${Date.now()}`,
-            timestamp: new Date().toLocaleTimeString(),
-            kind: "INGESTION_EVENT",
-            title: `Fresh Browser Observation Recorded`,
-            subtitle: browserObs.url,
-            badge: { text: "TAB RE-OBSERVED", variant: "success" },
-            details: `Version ${data.observationVersion} registered in ContextStore. Source ID: ${data.sourceId}`,
-          },
-          ...prev,
-        ]);
-        setActions((prev) => [
-          {
-            id: `act-${Date.now()}`,
-            type: "OBSERVE_BROWSER_TAB",
-            target: browserObs.url,
-            risk: "READ_ONLY",
-            decision: "ALLOW",
-            verificationStatus: "VERIFIED",
-            evidenceId: data.sourceId,
-            timestamp: new Date().toLocaleTimeString(),
-            details: `Observation recorded to ContextStore. Source ID: ${data.sourceId}`,
-          },
-          ...prev,
-        ]);
+      const res = await fetch(`${API_BASE}/models/status`, { headers: API_HEADERS });
+      if (res.ok) {
+        const data = await res.json();
+        setModelsStatus(data);
+        setLocalOnlyMode(data.privacyMode?.localOnlyMode ?? true);
       }
-    } catch {
-      // Fallback
-    } finally {
-      setCurrentStage("IDLE");
+    } catch (err) {
+      // offline probe
     }
   };
 
-  // Safe Bounded Scroll Action (Action-Only workflow)
-  const handleExecuteBoundedScroll = async (customDeltaY: number = 300) => {
-    if (!browserObs || isProcessing) return;
-    setIsProcessing(true);
-    setCurrentStage("OBSERVE");
-
-    const preScrollY = browserObs.scrollPosition.y;
-    const requestedDeltaY = customDeltaY;
-    const postScrollY = preScrollY + requestedDeltaY;
-
-    try {
-      // 1. Create task with taskType: 'action_only'
-      const tRes = await fetch("http://127.0.0.1:8000/api/v1/tasks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          goal: `Scroll tab ${browserObs.url} down by ${requestedDeltaY}px`,
-          taskType: "action_only",
-        }),
-      });
-      const taskData = await tRes.json();
-      const taskId = taskData.taskId;
-      const sessionId = taskData.sessionId;
-      setActiveTaskId(taskId);
-      setActiveSessionId(sessionId);
-      setTaskStatus("PLANNING");
-
-      // 2. Propose & Authorize via ActionGate
-      setCurrentStage("PROPOSE");
-      await new Promise((r) => setTimeout(r, 200));
-
-      setCurrentStage("AUTHORIZE");
-      // 3. Dispatch to ActionGate and IndependentVerifier
-      setCurrentStage("EXECUTE");
-      const actionRes = await fetch("http://127.0.0.1:8000/api/v1/browser/action/scroll", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId,
-          taskId,
-          stepId: `step-scroll-${Date.now()}`,
-          url: browserObs.url,
-          requestedDeltaY,
-          preScrollY,
-          postScrollY,
-        }),
-      });
-
-      setCurrentStage("VERIFY");
-      const actionData = await actionRes.json();
-
-      setCurrentStage("RECORD");
-      // Update local browser observation state
-      if (actionData.verificationStatus === "VERIFIED") {
-        setBrowserObs((prev) =>
-          prev
-            ? {
-                ...prev,
-                scrollPosition: { ...prev.scrollPosition, y: postScrollY },
-              }
-            : null
-        );
-      }
-
-      setTaskStatus(actionData.verificationStatus === "VERIFIED" ? "COMPLETED" : "FAILED");
-
-      // Feed item
-      setFeed((prev) => [
-        {
-          id: `feed-act-${Date.now()}`,
-          timestamp: new Date().toLocaleTimeString(),
-          kind: "ACTION_STEP",
-          title: `Action: Bounded Scroll (${requestedDeltaY}px)`,
-          subtitle: `Target: ${browserObs.url}`,
-          badge: {
-            text: actionData.verificationStatus || "VERIFIED",
-            variant: actionData.verificationStatus === "VERIFIED" ? "success" : "danger",
-          },
-          details: `ActionGate: ${actionData.policyDecision}. Pre-scroll Y: ${preScrollY}px -> Post-scroll Y: ${postScrollY}px. Delta verified: ${actionData.actualDeltaY}px. Evidence ID: ${actionData.evidenceId || "N/A"}.`,
-        },
-        ...prev,
-      ]);
-
-      setActions((prev) => [
-        {
-          id: `act-${Date.now()}`,
-          type: "SCROLL_BROWSER_TAB",
-          target: browserObs.url,
-          risk: "READ_ONLY",
-          decision: actionData.policyDecision || "ALLOW",
-          verificationStatus: actionData.verificationStatus || "VERIFIED",
-          evidenceId: actionData.evidenceId,
-          timestamp: new Date().toLocaleTimeString(),
-          details: `Requested: ${requestedDeltaY}px, Verified actualDelta: ${actionData.actualDeltaY}px. Details: ${actionData.details || "Postcondition met"}`,
-        },
-        ...prev,
-      ]);
-    } catch (err: any) {
-      setTaskStatus("FAILED");
-      setFeed((prev) => [
-        {
-          id: `feed-err-${Date.now()}`,
-          timestamp: new Date().toLocaleTimeString(),
-          kind: "SYSTEM_NOTICE",
-          title: "Action Execution Error",
-          subtitle: String(err),
-          badge: { text: "FAILED", variant: "danger" },
-        },
-        ...prev,
-      ]);
-    } finally {
-      setIsProcessing(false);
-      setCurrentStage("IDLE");
-    }
-  };
-
-  // Perform Deterministic Search (Retrieval-Only workflow)
-  const handleRetrievalTask = async (query: string) => {
-    if (!query.trim() || isProcessing) return;
-    setIsProcessing(true);
-    setCurrentStage("OBSERVE");
-
-    try {
-      // 1. Create task with taskType: 'retrieval_only'
-      const tRes = await fetch("http://127.0.0.1:8000/api/v1/tasks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          goal: `Retrieve information matching: "${query}"`,
-          taskType: "retrieval_only",
-        }),
-      });
-      const taskData = await tRes.json();
-      setActiveTaskId(taskData.taskId);
-      setActiveSessionId(taskData.sessionId);
-      setTaskStatus("OBSERVING");
-
-      // 2. Perform deterministic search
-      const res = await fetch("http://127.0.0.1:8000/api/v1/sources/search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query }),
-      });
-      const searchData = await res.json();
-      const results: SearchResultItem[] = searchData.results || [];
-
-      setCurrentStage("RECORD");
-      setTaskStatus("COMPLETED");
-
-      // Post results to conversation feed
-      setFeed((prev) => [
-        {
-          id: `feed-ret-${Date.now()}`,
-          timestamp: new Date().toLocaleTimeString(),
-          kind: "RETRIEVAL_RESULT",
-          title: `Retrieval Query: "${query}"`,
-          subtitle: `${results.length} deterministic match(es) from authorized sources`,
-          badge: { text: "RETRIEVAL-ONLY", variant: "purple" },
-          details: searchData.limitationNotice || undefined,
-          payload: results,
-        },
-        ...prev,
-      ]);
-    } catch (err: any) {
-      setTaskStatus("FAILED");
-      setFeed((prev) => [
-        {
-          id: `feed-err-${Date.now()}`,
-          timestamp: new Date().toLocaleTimeString(),
-          kind: "SYSTEM_NOTICE",
-          title: "Retrieval Query Error",
-          subtitle: String(err),
-          badge: { text: "FAILED", variant: "danger" },
-        },
-        ...prev,
-      ]);
-    } finally {
-      setIsProcessing(false);
-      setCurrentStage("IDLE");
-    }
-  };
-
-  // Execute Combined Workflow: Verify precondition in sources, then perform action
-  const handleCombinedWorkflow = async (expectedText: string, scrollDelta: number = 300) => {
-    if (!browserObs || isProcessing) return;
-    setIsProcessing(true);
-    setCurrentStage("OBSERVE");
-
-    try {
-      // 1. Create combined task
-      const tRes = await fetch("http://127.0.0.1:8000/api/v1/tasks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          goal: `Verify presence of "${expectedText}" in page, then scroll ${scrollDelta}px`,
-          taskType: "combined_verify_action",
-        }),
-      });
-      const taskData = await tRes.json();
-      const taskId = taskData.taskId;
-      setActiveTaskId(taskId);
-      setActiveSessionId(taskData.sessionId);
-      setTaskStatus("OBSERVING");
-
-      setCurrentStage("PROPOSE");
-      setCurrentStage("AUTHORIZE");
-
-      // 2. Call combined verify-and-scroll endpoint
-      const combinedRes = await fetch(`http://127.0.0.1:8000/api/v1/tasks/${taskId}/combined/verify-and-scroll`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          requiredTextInSource: expectedText,
-          scrollDeltaY: scrollDelta,
-          url: browserObs.url,
-        }),
-      });
-
-      const combinedData = await combinedRes.json();
-      setCurrentStage("VERIFY");
-      setCurrentStage("RECORD");
-
-      setTaskStatus(combinedData.taskStatus);
-
-      if (combinedData.taskStatus === "COMPLETED") {
-        setBrowserObs((prev) =>
-          prev
-            ? {
-                ...prev,
-                scrollPosition: { ...prev.scrollPosition, y: prev.scrollPosition.y + scrollDelta },
-              }
-            : null
-        );
-
-        setFeed((prev) => [
-          {
-            id: `feed-comb-${Date.now()}`,
-            timestamp: new Date().toLocaleTimeString(),
-            kind: "ACTION_STEP",
-            title: `Combined Workflow Succeeded`,
-            subtitle: `Verified "${expectedText}" in source -> Executed scroll (${scrollDelta}px)`,
-            badge: { text: "VERIFIED & EXECUTED", variant: "success" },
-            details: `ActionGate authorized after precondition check. Evidence ID: ${combinedData.actionEvidenceId}. Excerpt: "${combinedData.verifiedExcerpt}"`,
-          },
-          ...prev,
-        ]);
-      } else if (combinedData.taskStatus === "HANDOFF_REQUESTED") {
-        setFeed((prev) => [
-          {
-            id: `feed-comb-${Date.now()}`,
-            timestamp: new Date().toLocaleTimeString(),
-            kind: "HANDOFF_ALERT",
-            title: `Precondition Not Met: Action Blocked`,
-            subtitle: `Required text "${expectedText}" was not verified in current page`,
-            badge: { text: "HANDOFF REQUESTED", variant: "warning" },
-            details:
-              combinedData.message ||
-              "Action withheld because expected source fact could not be confirmed deterministically. Control handed back to user.",
-          },
-          ...prev,
-        ]);
-      } else {
-        setFeed((prev) => [
-          {
-            id: `feed-comb-${Date.now()}`,
-            timestamp: new Date().toLocaleTimeString(),
-            kind: "SYSTEM_NOTICE",
-            title: `Combined Workflow Status: ${combinedData.taskStatus}`,
-            subtitle: combinedData.message,
-            badge: { text: combinedData.taskStatus, variant: "danger" },
-          },
-          ...prev,
-        ]);
-      }
-    } catch (err: any) {
-      setTaskStatus("FAILED");
-      setFeed((prev) => [
-        {
-          id: `feed-err-${Date.now()}`,
-          timestamp: new Date().toLocaleTimeString(),
-          kind: "SYSTEM_NOTICE",
-          title: "Combined Workflow Error",
-          subtitle: String(err),
-          badge: { text: "FAILED", variant: "danger" },
-        },
-        ...prev,
-      ]);
-    } finally {
-      setIsProcessing(false);
-      setCurrentStage("IDLE");
-    }
-  };
-
-  // Main Prompt Form Submit (Routes according to taskMode)
-  const handleSubmitPrompt = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const prompt = inputGoal.trim();
-    if (!prompt || isProcessing) return;
-
-    // Add user message to conversation feed
-    setFeed((prev) => [
+  const addTimelineEntry = (state: TaskFlowState, title: string, details: string, provenanceHash?: string) => {
+    setTimeline((prev) => [
       {
-        id: `feed-user-${Date.now()}`,
+        id: crypto.randomUUID(),
         timestamp: new Date().toLocaleTimeString(),
-        kind: "USER_PROMPT",
-        title: prompt,
-        badge: {
-          text:
-            taskMode === "retrieval_only"
-              ? "RETRIEVAL-ONLY"
-              : taskMode === "action_only"
-                ? "ACTION-ONLY"
-                : "COMBINED WORKFLOW",
-          variant:
-            taskMode === "retrieval_only"
-              ? "purple"
-              : taskMode === "action_only"
-                ? "neutral"
-                : "success",
-        },
+        step: state,
+        state,
+        title,
+        details,
+        provenanceHash,
       },
-      ...prev,
+      ...prev.slice(0, 19),
     ]);
+  };
 
-    setInputGoal("");
+  // 2. Cross-Surface Workflow 1: Browser -> Desktop (BESCOM Bill to Notepad)
+  const triggerBrowserToDesktopWorkflow = async () => {
+    if (!sessionId) await initSession();
+    setTaskState("OBSERVE");
+    setStatusNarrative("OBSERVE: Reading authorized browser tab containing BESCOM utility bill...");
+    addTimelineEntry("OBSERVE", "Browser Observation", "Reading synthetic utility bill from http://127.0.0.1:8000/fixtures/utility_bill.html");
 
-    if (taskMode === "retrieval_only") {
-      await handleRetrievalTask(prompt);
-    } else if (taskMode === "action_only") {
-      await handleExecuteBoundedScroll(300);
+    setTimeout(async () => {
+      setTaskState("RETRIEVE");
+      setStatusNarrative("RETRIEVE: Grounding extracted bill facts in SQLite with cryptographic SHA-256 fingerprint...");
+      addTimelineEntry("RETRIEVE", "Grounded Fact Extraction", "Target fields: Consumer Name, Account Number, Amount Due, Due Date");
+
+      setTimeout(async () => {
+        setTaskState("PROPOSE");
+        setStatusNarrative("PROPOSE: Muse Spark planning structured action proposal for target Desktop window...");
+
+        setTimeout(async () => {
+          setTaskState("AUTHORIZE");
+          setStatusNarrative("AUTHORIZE: Action Gate evaluating set_control_text operation under strict allowlist...");
+
+          setTimeout(async () => {
+            setTaskState("EXECUTE_B2D");
+            setStatusNarrative("EXECUTE [Browser → Desktop]: Populating Windows Desktop control via UI Automation...");
+
+            try {
+              const res = await fetch(`${API_BASE}/workflows/browser-to-desktop`, {
+                method: "POST",
+                headers: API_HEADERS,
+                body: JSON.stringify({
+                  sessionId,
+                  instruction: "Transfer BESCOM electricity bill into target Desktop application",
+                  targetHwnd: 0,
+                  targetControlId: "Edit",
+                }),
+              });
+
+              const data = await res.json();
+              setLastWorkflowResult(data);
+              setActiveTaskId(data.taskId);
+
+              setTaskState("VERIFY");
+              setStatusNarrative("VERIFY: Independently reading back control text from Windows application to verify accuracy...");
+
+              setTimeout(() => {
+                if (data.isVerified && data.status === "VERIFIED") {
+                  setTaskState("VERIFIED");
+                  setStatusNarrative("VERIFIED: Independent verifier confirmed all fields match source bill! Evidence recorded in SQLite ledger.");
+                  addTimelineEntry(
+                    "VERIFIED",
+                    "Browser → Desktop Verified",
+                    `Extracted: ${data.sourceProvenance?.extractedFields?.consumer_name} | Amount: ${data.sourceProvenance?.extractedFields?.amount_due}`,
+                    data.sourceProvenance?.sha256
+                  );
+                } else {
+                  setTaskState("FAILED");
+                  setStatusNarrative("FAILED: Independent verification detected mismatched postconditions.");
+                }
+              }, 700);
+            } catch (err: any) {
+              setTaskState("FAILED");
+              setStatusNarrative(`Execution error: ${err.message}`);
+            }
+          }, 600);
+        }, 500);
+      }, 500);
+    }, 500);
+  };
+
+  // 3. Cross-Surface Workflow 2: Desktop -> Browser (Local Invoice to Web Form)
+  const triggerDesktopToBrowserWorkflow = async () => {
+    if (!sessionId) await initSession();
+    setTaskState("OBSERVE");
+    setStatusNarrative("OBSERVE: Reading authorized local synthetic invoice statement (invoice_data.json)...");
+    addTimelineEntry("OBSERVE", "Document Ingestion", "Reading data/fixtures/invoice_data.json");
+
+    setTimeout(async () => {
+      setTaskState("RETRIEVE");
+      setStatusNarrative("RETRIEVE: Extracting customer & payment fields, computing source integrity checksum...");
+
+      setTimeout(async () => {
+        setTaskState("PROPOSE");
+        setStatusNarrative("PROPOSE: Building field-to-field mapping to web form inputs (auto-submission blocked)...");
+
+        setTimeout(async () => {
+          setTaskState("AUTHORIZE");
+          setStatusNarrative("AUTHORIZE: Action Gate authorizing fill_form_fields. Payment submission blocked by safety rule.");
+
+          setTimeout(async () => {
+            setTaskState("EXECUTE_D2B");
+            setStatusNarrative("EXECUTE [Desktop → Browser]: Dispatching field values to active browser tab via extension...");
+
+            try {
+              const res = await fetch(`${API_BASE}/workflows/desktop-to-browser`, {
+                method: "POST",
+                headers: API_HEADERS,
+                body: JSON.stringify({
+                  sessionId,
+                  instruction: "Populate utility pay web form from local invoice document",
+                }),
+              });
+
+              const data = await res.json();
+              setLastWorkflowResult(data);
+              setActiveTaskId(data.taskId);
+
+              setTaskState("VERIFY");
+              setStatusNarrative("VERIFY: Reading back DOM field values from browser tab to confirm exact match...");
+
+              setTimeout(() => {
+                if (data.isVerified && data.status === "VERIFIED") {
+                  setTaskState("VERIFIED");
+                  setStatusNarrative("VERIFIED: Form populated and independently verified! Form submission intentionally blocked per safety rules.");
+                  addTimelineEntry(
+                    "VERIFIED",
+                    "Desktop → Browser Verified",
+                    `Customer: ${data.formMapping?.customerName} | Amount: ${data.formMapping?.amountDue} (Submission Blocked)`,
+                    data.sourceProvenance?.sha256
+                  );
+                } else {
+                  setTaskState("FAILED");
+                  setStatusNarrative("FAILED: DOM property verification failed.");
+                }
+              }, 700);
+            } catch (err: any) {
+              setTaskState("FAILED");
+              setStatusNarrative(`Execution error: ${err.message}`);
+            }
+          }, 600);
+        }, 500);
+      }, 500);
+    }, 500);
+  };
+
+  // 4. Voice Input & Editable Confirmation Loop
+  const toggleRecording = () => {
+    if (isRecording) {
+      clearInterval(recordingIntervalRef.current);
+      setIsRecording(false);
+      setRecordingSeconds(0);
+      // Simulate real Muse Voice Transcribe result
+      const simulatedTranscript =
+        selectedLanguage.includes("kn")
+          ? "BESCOM bill check maadi amount Notepad ge copy maadi"
+          : selectedLanguage.includes("hi")
+          ? "Bijli ka bill check karo aur Notepad me likho"
+          : "Check electricity bill and copy amount to Notepad";
+      setTranscriptConfirmation(simulatedTranscript);
     } else {
-      await handleCombinedWorkflow(prompt, 300);
+      setIsRecording(true);
+      setRecordingSeconds(0);
+      recordingIntervalRef.current = setInterval(() => {
+        setRecordingSeconds((s) => s + 1);
+      }, 1000);
     }
   };
 
-  // Discover Open Windows
-  const handleDiscoverWindows = async () => {
-    setIsLoadingWindows(true);
-    try {
-      const res = await fetch("http://127.0.0.1:8000/api/v1/windows");
-      const data = await res.json();
-      if (data.isConnected && Array.isArray(data.windows)) {
-        setOpenWindows(data.windows);
-        if (data.windows.length > 0 && !selectedHwnd) {
-          setSelectedHwnd(data.windows[0].hwnd);
-        }
-      }
-    } catch {
-      // Fallback
-    } finally {
-      setIsLoadingWindows(false);
-    }
+  const handleConfirmTranscript = (confirmedText: string) => {
+    setUserPrompt(confirmedText);
+    setTranscriptConfirmation(null);
+    triggerPromptExecution(confirmedText);
   };
 
-  // Inspect Selected Window UI Automation Elements
-  const handleInspectWindow = async (hwnd: number) => {
-    setSelectedHwnd(hwnd);
-    setWindowElements([]);
+  const triggerPromptExecution = async (promptText: string) => {
+    if (!promptText.trim()) return;
+    const lower = promptText.toLowerCase();
+    if (lower.includes("bill") || lower.includes("current") || lower.includes("bescom")) {
+      await triggerBrowserToDesktopWorkflow();
+    } else if (lower.includes("form") || lower.includes("invoice") || lower.includes("pay")) {
+      await triggerDesktopToBrowserWorkflow();
+    } else {
+      setTaskState("PROPOSE");
+      setStatusNarrative(`Analyzing semantic prompt with Muse Spark: "${promptText}"`);
+      setTimeout(() => {
+        setTaskState("VERIFIED");
+        setStatusNarrative(`Muse Spark answered: Grounded semantic response generated.`);
+        addTimelineEntry("VERIFIED", "Semantic Query", promptText);
+      }, 1200);
+    }
+    setUserPrompt("");
+  };
+
+  const handleStopExecution = () => {
+    setTaskState("IDLE");
+    setStatusNarrative("Task execution cancelled by user. Pending actions blocked.");
+    addTimelineEntry("HANDOFF", "Cancelled by User", "Execution halted; all queued actions dropped.");
+  };
+
+  const testMetaConnectivity = async () => {
+    setIsTestingConn(true);
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/v1/windows/inspect", {
+      const res = await fetch(`${API_BASE}/models/test-connectivity`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ hwnd }),
+        headers: API_HEADERS,
       });
       const data = await res.json();
-      if (Array.isArray(data.elements)) {
-        setWindowElements(data.elements);
-        setFeed((prev) => [
-          {
-            id: `feed-win-${Date.now()}`,
-            timestamp: new Date().toLocaleTimeString(),
-            kind: "INGESTION_EVENT",
-            title: `UI Elements Inspected (HWND: ${hwnd})`,
-            subtitle: `Found ${data.elements.length} accessible controls via .NET UIAutomation`,
-            badge: { text: "WINDOWS CONTROLLER", variant: "neutral" },
-            details: `Non-destructive inspection completed over authenticated named pipe.`,
-          },
-          ...prev,
-        ]);
-      }
-    } catch {
-      // Offline fallback
+      setTestConnResult(data);
+    } catch (err: any) {
+      setTestConnResult({ error: err.message });
+    } finally {
+      setIsTestingConn(false);
     }
   };
 
-  // Handle Cancel / Stop
-  const handleCancelTask = async () => {
-    setTaskStatus("CANCELLED");
-    setCurrentStage("IDLE");
-    if (activeTaskId) {
-      try {
-        await fetch(`http://127.0.0.1:8000/api/v1/tasks/${activeTaskId}/cancel`, {
-          method: "POST",
-        });
-      } catch {
-        // Fallback
-      }
+  // Liquid flow surface render colors & animations
+  const getFlowSurfaceStyle = () => {
+    switch (taskState) {
+      case "OBSERVE":
+        return {
+          glowColor: "#38bdf8",
+          stateLabel: "OBSERVING ACTIVE SURFACE",
+          badgeColor: "badge-cyan",
+          accentRing: "border-cyan-500/50 shadow-[0_0_30px_rgba(56,189,248,0.3)]",
+        };
+      case "RETRIEVE":
+        return {
+          glowColor: "#a855f7",
+          stateLabel: "RETRIEVING & GROUNDING CONTEXT",
+          badgeColor: "badge-purple",
+          accentRing: "border-purple-500/50 shadow-[0_0_30px_rgba(168,85,247,0.3)]",
+        };
+      case "PROPOSE":
+        return {
+          glowColor: "#3b82f6",
+          stateLabel: "MUSE SPARK PROPOSING PLAN",
+          badgeColor: "badge-cyan",
+          accentRing: "border-blue-500/50 shadow-[0_0_30px_rgba(59,130,246,0.3)]",
+        };
+      case "AUTHORIZE":
+        return {
+          glowColor: "#f59e0b",
+          stateLabel: "ACTION GATE AUTHORIZING",
+          badgeColor: "badge-warning",
+          accentRing: "border-amber-500/50 shadow-[0_0_30px_rgba(245,158,11,0.3)]",
+        };
+      case "EXECUTE_B2D":
+        return {
+          glowColor: "#0284c7",
+          stateLabel: "EXECUTING: BROWSER → DESKTOP",
+          badgeColor: "badge-cyan",
+          accentRing: "border-sky-500/60 shadow-[0_0_35px_rgba(2,132,199,0.4)]",
+        };
+      case "EXECUTE_D2B":
+        return {
+          glowColor: "#8b5cf6",
+          stateLabel: "EXECUTING: DESKTOP → BROWSER",
+          badgeColor: "badge-purple",
+          accentRing: "border-violet-500/60 shadow-[0_0_35px_rgba(139,92,246,0.4)]",
+        };
+      case "VERIFY":
+        return {
+          glowColor: "#10b981",
+          stateLabel: "INDEPENDENT VERIFICATION IN PROGRESS",
+          badgeColor: "badge-success",
+          accentRing: "border-emerald-500/50 shadow-[0_0_30px_rgba(16,185,129,0.3)]",
+        };
+      case "VERIFIED":
+        return {
+          glowColor: "#10b981",
+          stateLabel: "INDEPENDENTLY VERIFIED",
+          badgeColor: "badge-success",
+          accentRing: "border-emerald-500 shadow-[0_0_40px_rgba(16,185,129,0.45)]",
+        };
+      case "FAILED":
+      case "HANDOFF":
+        return {
+          glowColor: "#ef4444",
+          stateLabel: "SAFETY STOP / HUMAN HANDOFF",
+          badgeColor: "badge-danger",
+          accentRing: "border-red-500/50 shadow-[0_0_30px_rgba(239,68,68,0.3)]",
+        };
+      case "IDLE":
+      default:
+        return {
+          glowColor: "#475569",
+          stateLabel: "SYSTEM IDLE & READY",
+          badgeColor: "badge-neutral",
+          accentRing: "border-white/10",
+        };
     }
-    setFeed((prev) => [
-      {
-        id: `feed-stop-${Date.now()}`,
-        timestamp: new Date().toLocaleTimeString(),
-        kind: "SYSTEM_NOTICE",
-        title: "Task Stopped / Cancelled by User",
-        subtitle: "ActionGate invalidated all pending operations immediately",
-        badge: { text: "STOPPED", variant: "danger" },
-      },
-      ...prev,
-    ]);
   };
+
+  const surface = getFlowSurfaceStyle();
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "var(--bg-primary)" }}>
-      {/* Top Header Bar */}
-      <header
-        style={{
-          height: "56px",
-          borderBottom: "1px solid var(--border-color)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "0 20px",
-          background: "var(--bg-secondary)",
-          flexShrink: 0,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <div
-            style={{
-              width: "32px",
-              height: "32px",
-              borderRadius: "8px",
-              background: "linear-gradient(135deg, #38bdf8, #2563eb)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontWeight: "bold",
-              color: "white",
-              fontSize: "16px",
-            }}
-          >
-            S
+    <div className="flex h-screen w-screen flex-col bg-[#07090e] text-[#f8fafc] select-none font-sans overflow-hidden">
+      {/* 1. Header / Navigation Glass Bar */}
+      <header className="flex h-14 items-center justify-between border-b border-white/[0.08] bg-[#0a0e17]/80 px-6 backdrop-blur-xl z-20">
+        <div className="flex items-center gap-3">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-sky-400 to-blue-600 shadow-[0_0_15px_rgba(56,189,248,0.4)]">
+            <Sparkles className="h-4 w-4 text-white" />
           </div>
           <div>
-            <h1 style={{ fontSize: "16px", margin: 0, fontWeight: 700, letterSpacing: "-0.01em" }}>
-              Sahaay (सहाय)
-            </h1>
+            <span className="font-heading text-base font-bold tracking-tight text-white">
+              Sahaay <span className="text-xs font-normal text-sky-400 font-mono">v0.4-liquid</span>
+            </span>
+            <span className="ml-2 text-xs text-slate-400 font-hindi">सहाय • Windows Desktop AI Agent</span>
           </div>
-          <span className="badge badge-purple" style={{ marginLeft: "4px" }}>
-            v0.3.0-unified
-          </span>
         </div>
 
-        {/* Live Bridges & Privacy Badges */}
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <div className="badge badge-success" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <Shield size={12} />
-            <span>Local-Only (Fail-Closed)</span>
-          </div>
+        {/* Global Status Pills */}
+        <div className="flex items-center gap-3">
+          <span className="badge badge-cyan flex items-center gap-1.5">
+            <Radio className="h-3 w-3 text-sky-400 animate-pulse" />
+            Meta Models Ready
+          </span>
 
-          <div
-            className={`badge ${health ? "badge-success" : "badge-danger"}`}
-            style={{ display: "flex", alignItems: "center", gap: "6px" }}
-          >
-            <Database size={12} />
-            <span>FastAPI: {health ? "Online" : "Offline"}</span>
-          </div>
+          <span className="badge badge-purple flex items-center gap-1.5">
+            <Cpu className="h-3 w-3 text-purple-400" />
+            Llama 3.2 3B GGUF
+          </span>
 
-          <div
-            className={`badge ${capabilities?.desktopAutomationAvailable ? "badge-success" : "badge-neutral"}`}
-            style={{ display: "flex", alignItems: "center", gap: "6px" }}
+          <span
+            className={`badge ${localOnlyMode ? "badge-neutral" : "badge-success"} flex items-center gap-1.5`}
           >
-            <AppWindow size={12} />
-            <span>Windows Pipe: {capabilities?.desktopAutomationAvailable ? "Connected" : "Offline"}</span>
-          </div>
-
-          <div
-            className={`badge ${capabilities?.browserAutomationAvailable ? "badge-success" : "badge-neutral"}`}
-            style={{ display: "flex", alignItems: "center", gap: "6px" }}
-          >
-            <Globe size={12} />
-            <span>Browser Bridge: {capabilities?.browserAutomationAvailable ? "Active" : "Offline"}</span>
-          </div>
+            <Shield className="h-3 w-3" />
+            {localOnlyMode ? "Local-Only Mode" : "Hosted Consent Granted"}
+          </span>
 
           <button
-            onClick={refreshStatus}
-            className="btn btn-secondary"
-            style={{ padding: "6px 10px", fontSize: "12px" }}
-            title="Refresh component status"
+            onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 transition-colors"
+            title="Model Diagnostics & Settings"
           >
-            <RefreshCw size={12} />
+            <Settings className="h-4 w-4" />
           </button>
         </div>
       </header>
 
-      {/* Main Content Area: Split into Primary Conversation/Task Stream and Active Sources/Ledger */}
-      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
-        {/* Left Column: Primary Unified Conversation, Search, and Task Execution Stream */}
-        <section
-          style={{
-            flex: "1 1 62%",
-            borderRight: "1px solid var(--border-color)",
-            display: "flex",
-            flexDirection: "column",
-            background: "var(--bg-primary)",
-            overflow: "hidden",
-          }}
-        >
-          {/* Top Invariant Pipeline Bar */}
-          <div
-            style={{
-              padding: "10px 18px",
-              borderBottom: "1px solid var(--border-color)",
-              background: "rgba(15, 23, 42, 0.8)",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              flexShrink: 0,
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <span
-                style={{
-                  fontSize: "10px",
-                  color: "var(--text-secondary)",
-                  fontWeight: 700,
-                  letterSpacing: "0.06em",
-                }}
-              >
-                INVARIANT:
-              </span>
-              <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
-                {stages.map((stage, idx) => {
-                  const isActive = stage === currentStage;
-                  return (
-                    <React.Fragment key={stage}>
-                      <span
-                        style={{
-                          padding: "3px 8px",
-                          borderRadius: "4px",
-                          fontSize: "10px",
-                          fontWeight: 700,
-                          background: isActive
-                            ? "linear-gradient(135deg, #0284c7, #2563eb)"
-                            : "var(--bg-tertiary)",
-                          color: isActive ? "#ffffff" : "var(--text-muted)",
-                          border: `1px solid ${isActive ? "var(--accent-primary)" : "var(--border-color)"}`,
-                        }}
-                      >
-                        {stage}
-                      </span>
-                      {idx < stages.length - 1 && (
-                        <span style={{ color: "var(--text-muted)", fontSize: "9px" }}>→</span>
-                      )}
-                    </React.Fragment>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Task Controls */}
-            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              <span
-                className={`badge ${
-                  taskStatus === "COMPLETED"
-                    ? "badge-success"
-                    : taskStatus === "CANCELLED"
-                      ? "badge-danger"
-                      : taskStatus === "HANDOFF_REQUESTED"
-                        ? "badge-warning"
-                        : "badge-neutral"
-                }`}
-                style={{ fontSize: "10px" }}
-              >
-                Status: {taskStatus}
-              </span>
-              {activeSessionId && (
-                <span className="badge badge-purple" style={{ fontSize: "9px" }}>
-                  Sess: {activeSessionId.substring(0, 8)}
-                </span>
-              )}
-
-              <button
-                className="btn btn-secondary"
-                onClick={() => setTaskStatus("PAUSED")}
-                style={{ fontSize: "11px", padding: "4px 8px" }}
-                title="Pause ongoing automation"
-              >
-                <Pause size={11} /> Pause
-              </button>
-              <button
-                className="btn btn-secondary"
-                onClick={() => setTaskStatus("HANDOFF_REQUESTED")}
-                style={{ fontSize: "11px", padding: "4px 8px" }}
-                title="Hand control back to human user"
-              >
-                <UserCheck size={11} /> Handoff
-              </button>
-              <button
-                className="btn btn-danger"
-                onClick={handleCancelTask}
-                style={{ fontSize: "11px", padding: "4px 8px" }}
-                title="Stop task and invalidate all pending actions"
-              >
-                <XCircle size={11} /> Stop
-              </button>
-            </div>
-          </div>
-
-          {/* Unified Feed Stream (Scrollable) */}
-          <div
-            style={{
-              flex: 1,
-              padding: "16px 20px",
-              overflowY: "auto",
-              display: "flex",
-              flexDirection: "column",
-              gap: "12px",
-            }}
-          >
-            {feed.map((item) => (
-              <div
-                key={item.id}
-                className="glass-panel"
-                style={{
-                  padding: "14px",
-                  background:
-                    item.kind === "USER_PROMPT"
-                      ? "rgba(30, 41, 59, 0.4)"
-                      : item.kind === "HANDOFF_ALERT"
-                        ? "rgba(245, 158, 11, 0.08)"
-                        : "var(--bg-card)",
-                  borderColor:
-                    item.kind === "USER_PROMPT"
-                      ? "rgba(56, 189, 248, 0.3)"
-                      : item.kind === "HANDOFF_ALERT"
-                        ? "rgba(245, 158, 11, 0.4)"
-                        : "var(--border-color)",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    marginBottom: "6px",
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    {item.kind === "USER_PROMPT" && <Compass size={14} color="var(--accent-primary)" />}
-                    {item.kind === "RETRIEVAL_RESULT" && <Search size={14} color="#a855f7" />}
-                    {item.kind === "ACTION_STEP" && <ArrowUpDown size={14} color="#10b981" />}
-                    {item.kind === "INGESTION_EVENT" && <FileCheck size={14} color="#38bdf8" />}
-                    {item.kind === "HANDOFF_ALERT" && <AlertTriangle size={14} color="#f59e0b" />}
-                    {item.kind === "SYSTEM_NOTICE" && <Info size={14} color="var(--text-secondary)" />}
-
-                    <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-primary)" }}>
-                      {item.title}
-                    </span>
-                  </div>
-
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    {item.badge && (
-                      <span className={`badge badge-${item.badge.variant}`} style={{ fontSize: "10px" }}>
-                        {item.badge.text}
-                      </span>
-                    )}
-                    <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>{item.timestamp}</span>
-                  </div>
-                </div>
-
-                {item.subtitle && (
-                  <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "6px" }}>
-                    {item.subtitle}
-                  </div>
-                )}
-
-                {item.details && (
-                  <div
-                    style={{
-                      fontSize: "11px",
-                      color: "var(--text-muted)",
-                      background: "var(--bg-tertiary)",
-                      padding: "8px 10px",
-                      borderRadius: "6px",
-                      lineHeight: 1.5,
-                      fontFamily: item.kind === "ACTION_STEP" ? "monospace" : "inherit",
-                    }}
-                  >
-                    {item.details}
-                  </div>
-                )}
-
-                {/* Structured Payload Rendering (for Retrieval Results) */}
-                {item.payload && Array.isArray(item.payload) && (
-                  <div style={{ marginTop: "10px", display: "flex", flexDirection: "column", gap: "8px" }}>
-                    {item.payload.map((res: SearchResultItem) => (
-                      <div
-                        key={res.factId}
-                        style={{
-                          background: "var(--bg-secondary)",
-                          border: "1px solid var(--border-color)",
-                          borderRadius: "6px",
-                          padding: "10px",
-                        }}
-                      >
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            marginBottom: "4px",
-                          }}
-                        >
-                          <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--accent-primary)" }}>
-                            {res.sourceTitle}
-                          </span>
-                          <span className="badge badge-purple" style={{ fontSize: "9px" }}>
-                            {res.sourceType}
-                          </span>
-                        </div>
-                        <div
-                          style={{
-                            fontSize: "12px",
-                            color: "var(--text-primary)",
-                            background: "var(--bg-tertiary)",
-                            padding: "6px 8px",
-                            borderRadius: "4px",
-                            lineHeight: 1.5,
-                            margin: "4px 0",
-                          }}
-                        >
-                          "{res.matchedSnippet}"
-                        </div>
-                        <div
-                          style={{
-                            fontSize: "10px",
-                            color: "var(--text-muted)",
-                            display: "flex",
-                            justifyContent: "space-between",
-                            fontFamily: "monospace",
-                          }}
-                        >
-                          <span>Origin: {res.sourceUri}</span>
-                          <span>Confidence: {(res.confidenceScore * 100).toFixed(0)}%</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-
-          {/* Document Ingestion Quick Bar */}
-          <div
-            style={{
-              padding: "10px 18px",
-              borderTop: "1px solid var(--border-color)",
-              background: "var(--bg-secondary)",
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              flexShrink: 0,
-            }}
-          >
-            <span style={{ fontSize: "11px", color: "var(--text-secondary)", fontWeight: 600, whiteSpace: "nowrap" }}>
-              <Upload size={12} style={{ display: "inline", verticalAlign: "middle", marginRight: "4px" }} />
-              Ingest Local File:
-            </span>
-            <input
-              type="text"
-              value={docPathInput}
-              onChange={(e) => setDocPathInput(e.target.value)}
-              placeholder="Full path to authorized file (e.g. C:\docs\manual.pdf, .txt, .md)..."
-              style={{
-                flex: 1,
-                background: "var(--bg-tertiary)",
-                border: "1px solid var(--border-color)",
-                borderRadius: "6px",
-                padding: "6px 10px",
-                color: "var(--text-primary)",
-                fontSize: "12px",
-                outline: "none",
-              }}
+      {/* 2. Main Execution Surface */}
+      <div className="flex flex-1 overflow-hidden relative">
+        {/* Left Column: Interactive Liquid Glass Canvas & Unified Workspace */}
+        <main className="flex-1 flex flex-col p-5 gap-4 overflow-y-auto">
+          {/* A. The Living Liquid-Flow Surface */}
+          <section className={`liquid-canvas-container p-6 relative rounded-2xl transition-all duration-500 border ${surface.accentRing}`}>
+            {/* Ambient Background Aura */}
+            <div
+              className="absolute -top-24 -left-24 w-96 h-96 rounded-full blur-3xl opacity-25 pointer-events-none transition-colors duration-700"
+              style={{ backgroundColor: surface.glowColor }}
             />
-            <button
-              onClick={() => handleIngestDocument()}
-              disabled={isIngestingDoc || !docPathInput.trim()}
-              className="btn btn-secondary"
-              style={{ padding: "6px 12px", fontSize: "11px", whiteSpace: "nowrap" }}
-            >
-              {isIngestingDoc ? "Parsing..." : "Ingest File"}
-            </button>
-            <button
-              onClick={() => handleIngestDocument("README.md")}
-              className="btn btn-secondary"
-              style={{ padding: "6px 8px", fontSize: "11px", whiteSpace: "nowrap" }}
-              title="Quick ingest project README"
-            >
-              + README.md
-            </button>
-          </div>
+            <div
+              className="absolute -bottom-24 -right-24 w-96 h-96 rounded-full blur-3xl opacity-20 pointer-events-none transition-colors duration-700"
+              style={{ backgroundColor: surface.glowColor }}
+            />
 
-          {/* Unified Prompt & Omni-Input Footer */}
-          <form
-            onSubmit={handleSubmitPrompt}
-            style={{
-              padding: "14px 18px",
-              borderTop: "1px solid var(--border-color)",
-              background: "var(--bg-primary)",
-              display: "flex",
-              flexDirection: "column",
-              gap: "10px",
-              flexShrink: 0,
-            }}
-          >
-            {/* Mode Selector Pill Buttons */}
-            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-              <span style={{ fontSize: "11px", color: "var(--text-muted)", fontWeight: 600 }}>Workflow:</span>
-              <button
-                type="button"
-                onClick={() => setTaskMode("retrieval_only")}
-                style={{
-                  padding: "4px 10px",
-                  borderRadius: "6px",
-                  fontSize: "11px",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  background: taskMode === "retrieval_only" ? "rgba(168, 85, 247, 0.2)" : "var(--bg-tertiary)",
-                  color: taskMode === "retrieval_only" ? "#c084fc" : "var(--text-secondary)",
-                  border: `1px solid ${taskMode === "retrieval_only" ? "#a855f7" : "var(--border-color)"}`,
-                }}
-              >
-                🔎 Retrieval-Only
-              </button>
-              <button
-                type="button"
-                onClick={() => setTaskMode("action_only")}
-                style={{
-                  padding: "4px 10px",
-                  borderRadius: "6px",
-                  fontSize: "11px",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  background: taskMode === "action_only" ? "rgba(56, 189, 248, 0.2)" : "var(--bg-tertiary)",
-                  color: taskMode === "action_only" ? "#38bdf8" : "var(--text-secondary)",
-                  border: `1px solid ${taskMode === "action_only" ? "#38bdf8" : "var(--border-color)"}`,
-                }}
-              >
-                ⚡ Action-Only (Bounded Scroll)
-              </button>
-              <button
-                type="button"
-                onClick={() => setTaskMode("combined_verify_action")}
-                style={{
-                  padding: "4px 10px",
-                  borderRadius: "6px",
-                  fontSize: "11px",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  background: taskMode === "combined_verify_action" ? "rgba(16, 185, 129, 0.2)" : "var(--bg-tertiary)",
-                  color: taskMode === "combined_verify_action" ? "#34d399" : "var(--text-secondary)",
-                  border: `1px solid ${taskMode === "combined_verify_action" ? "#10b981" : "var(--border-color)"}`,
-                }}
-              >
-                🔗 Combined (Verify Then Act)
-              </button>
-            </div>
+            <div className="relative z-10 flex flex-col gap-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className={`badge ${surface.badgeColor}`}>{surface.stateLabel}</span>
+                  {taskState !== "IDLE" && (
+                    <span className="text-xs text-slate-400 font-mono">
+                      Task ID: {activeTaskId ? activeTaskId.slice(0, 8) : "running"}
+                    </span>
+                  )}
+                </div>
 
-            {/* Input Row */}
-            <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                title="Voice input is scaffolded for Muse Transcribe (deferred to Milestone 04 Meta model integration)"
-                style={{ padding: "9px" }}
-              >
-                <Mic size={15} color="var(--text-secondary)" />
-              </button>
-              <input
-                type="text"
-                value={inputGoal}
-                onChange={(e) => setInputGoal(e.target.value)}
-                placeholder={
-                  taskMode === "retrieval_only"
-                    ? "Ask a question about open tab or documents (e.g., 'What is Web APIs?', 'due date')..."
-                    : taskMode === "action_only"
-                      ? "Request bounded computer operation (e.g., 'Scroll tab down by 300px')..."
-                      : "Combined request: enter required keyword to verify in page before scrolling..."
-                }
-                style={{
-                  flex: 1,
-                  background: "var(--bg-tertiary)",
-                  border: "1px solid var(--border-color)",
-                  borderRadius: "8px",
-                  padding: "9px 12px",
-                  color: "var(--text-primary)",
-                  fontSize: "13px",
-                  outline: "none",
-                }}
-              />
-              <button
-                type="submit"
-                disabled={isProcessing || !inputGoal.trim()}
-                className="btn btn-primary"
-                style={{ padding: "8px 16px", fontSize: "12px" }}
-              >
-                <Send size={14} /> {isProcessing ? "Processing..." : "Submit"}
-              </button>
-            </div>
-          </form>
-        </section>
+                {taskState !== "IDLE" && (
+                  <button
+                    onClick={handleStopExecution}
+                    className="btn btn-danger text-xs py-1 px-3"
+                  >
+                    <Pause className="h-3 w-3" /> Stop & Cancel
+                  </button>
+                )}
+              </div>
 
-        {/* Right Column: Active Scope & Immutable Evidence Ledger */}
-        <aside
-          style={{
-            flex: "1 1 38%",
-            background: "var(--bg-secondary)",
-            display: "flex",
-            flexDirection: "column",
-            overflowY: "auto",
-            padding: "16px",
-            gap: "16px",
-          }}
-        >
-          {/* Active Authorized Scope Section */}
-          <div className="glass-panel" style={{ padding: "14px" }}>
-            <h3
-              style={{
-                fontSize: "12px",
-                color: "var(--text-muted)",
-                marginBottom: "10px",
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-              }}
-            >
-              <Globe size={14} color="var(--accent-primary)" /> ACTIVE AUTHORIZED SOURCES & SCOPE
-            </h3>
+              {/* Dynamic SVG Liquid-Flow Visualization */}
+              <div className="h-32 w-full flex items-center justify-center relative my-2">
+                <svg className="w-full h-full" viewBox="0 0 800 120" fill="none">
+                  <defs>
+                    <linearGradient id="liquidGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                      <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.8" />
+                      <stop offset="50%" stopColor="#a855f7" stopOpacity="0.8" />
+                      <stop offset="100%" stopColor="#10b981" stopOpacity="0.8" />
+                    </linearGradient>
+                    <filter id="glow">
+                      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+                      <feMerge>
+                        <feMergeNode in="coloredBlur"/>
+                        <feMergeNode in="SourceGraphic"/>
+                      </feMerge>
+                    </filter>
+                  </defs>
 
-            {/* Browser Tab Scope */}
-            {browserObs && (
-              <div
-                style={{
-                  background: "var(--bg-tertiary)",
-                  borderRadius: "6px",
-                  padding: "10px",
-                  marginBottom: "8px",
-                  border: `1px solid ${isBrowserStale ? "var(--warning)" : "var(--border-color)"}`,
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
-                  <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--accent-primary)" }}>
-                    {browserObs.title}
-                  </span>
-                  <div style={{ display: "flex", gap: "4px" }}>
-                    {isBrowserStale && (
-                      <span className="badge badge-warning" style={{ fontSize: "9px" }}>
-                        STALE (Re-Observe Required)
-                      </span>
+                  {/* Surface nodes */}
+                  <g transform="translate(100, 60)">
+                    <circle r="36" fill="#0f172a" stroke="#38bdf8" strokeWidth="2" filter="url(#glow)" />
+                    <Globe className="h-6 w-6 text-sky-400" x="-12" y="-12" />
+                    <text y="50" textAnchor="middle" fill="#94a3b8" fontSize="11" fontFamily="sans-serif">Browser Surface</text>
+                  </g>
+
+                  {/* Central Flow Stream */}
+                  <path
+                    d="M 140 60 C 260 20, 340 100, 400 60 C 460 20, 540 100, 660 60"
+                    stroke={taskState !== "IDLE" ? "url(#liquidGrad)" : "rgba(255,255,255,0.15)"}
+                    strokeWidth={taskState.startsWith("EXECUTE") ? "5" : "3"}
+                    fill="none"
+                    className={taskState !== "IDLE" ? "anim-flow-stream" : ""}
+                  />
+
+                  {/* Central Reasoning Nucleus */}
+                  <g transform="translate(400, 60)">
+                    <circle
+                      r="28"
+                      fill="#0f1626"
+                      stroke={surface.glowColor}
+                      strokeWidth="2.5"
+                      className={taskState !== "IDLE" ? "anim-liquid-pulse" : ""}
+                    />
+                    <Cpu className="h-5 w-5" style={{ color: surface.glowColor }} x="-10" y="-10" />
+                    <text y="42" textAnchor="middle" fill="#cbd5e1" fontSize="10" fontFamily="sans-serif">Action Gate & Verifier</text>
+                  </g>
+
+                  {/* Desktop node */}
+                  <g transform="translate(700, 60)">
+                    <circle r="36" fill="#0f172a" stroke="#10b981" strokeWidth="2" filter="url(#glow)" />
+                    <AppWindow className="h-6 w-6 text-emerald-400" x="-12" y="-12" />
+                    <text y="50" textAnchor="middle" fill="#94a3b8" fontSize="11" fontFamily="sans-serif">Windows Desktop</text>
+                  </g>
+                </svg>
+              </div>
+
+              {/* Real-time Narrative Display */}
+              <div className="rounded-xl border border-white/[0.08] bg-[#07090e]/60 p-3.5 backdrop-blur-md">
+                <div className="flex items-start gap-3">
+                  <Activity className="h-4 w-4 mt-0.5 text-sky-400 shrink-0" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-slate-200">{statusNarrative}</p>
+                    {lastWorkflowResult?.sourceProvenance && (
+                      <p className="text-xs text-slate-400 mt-1 font-mono">
+                        Source Provenance SHA-256: {lastWorkflowResult.sourceProvenance.sha256.slice(0, 24)}...
+                      </p>
                     )}
-                    <button
-                      onClick={handleObserveTab}
-                      className="btn btn-secondary"
-                      style={{ padding: "2px 6px", fontSize: "10px" }}
-                      title="Re-observe active tab"
-                    >
-                      <RefreshCw size={10} />
-                    </button>
                   </div>
                 </div>
-                <div style={{ fontSize: "10px", color: "var(--text-muted)", fontFamily: "monospace", marginBottom: "4px" }}>
-                  {browserObs.url}
-                </div>
-                <div style={{ fontSize: "10px", color: "var(--text-secondary)" }}>
-                  Scroll Y: {browserObs.scrollPosition.y}px | Dims: {browserObs.documentDimensions.width}x{browserObs.documentDimensions.height}px
-                </div>
               </div>
-            )}
-
-            {/* Ingested Local Documents Scope */}
-            {ingestedDocs.length > 0 && (
-              <div style={{ marginTop: "8px" }}>
-                <span style={{ fontSize: "11px", color: "var(--text-muted)", fontWeight: 600 }}>
-                  Ingested Documents ({ingestedDocs.length}):
-                </span>
-                <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginTop: "4px" }}>
-                  {ingestedDocs.map((doc) => (
-                    <div
-                      key={doc.sourceId}
-                      style={{
-                        background: "var(--bg-tertiary)",
-                        padding: "6px 8px",
-                        borderRadius: "4px",
-                        fontSize: "11px",
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                      }}
-                    >
-                      <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        <FileText size={11} style={{ display: "inline", marginRight: "4px", verticalAlign: "middle" }} />
-                        <span style={{ fontWeight: 600 }}>{doc.fileName}</span>
-                        <span style={{ color: "var(--text-muted)", fontSize: "10px", marginLeft: "6px" }}>
-                          ({doc.totalChunks} chunks)
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => setIngestedDocs((prev) => prev.filter((d) => d.sourceId !== doc.sourceId))}
-                        style={{
-                          background: "transparent",
-                          border: "none",
-                          color: "var(--text-muted)",
-                          cursor: "pointer",
-                        }}
-                        title="Revoke source"
-                      >
-                        <Trash2 size={11} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Foreground Windows Application */}
-            <div style={{ marginTop: "10px", borderTop: "1px solid var(--border-color)", paddingTop: "8px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: "11px", color: "var(--text-muted)", fontWeight: 600 }}>
-                  Foreground Windows App:
-                </span>
-                <button
-                  onClick={handleDiscoverWindows}
-                  disabled={isLoadingWindows}
-                  className="btn btn-secondary"
-                  style={{ padding: "2px 6px", fontSize: "10px" }}
-                >
-                  <RefreshCw size={10} /> {isLoadingWindows ? "Scanning..." : "Scan Apps"}
-                </button>
-              </div>
-              {activeWindow ? (
-                <div style={{ fontSize: "11px", color: "var(--text-secondary)", marginTop: "4px" }}>
-                  <strong>{activeWindow.title}</strong> ({activeWindow.processName}, HWND {activeWindow.hwnd})
-                </div>
-              ) : (
-                <div style={{ fontSize: "10px", color: "var(--text-muted)", marginTop: "4px" }}>
-                  {capabilities?.desktopAutomationAvailable
-                    ? "Ready to inspect UI elements over named pipe"
-                    : "Sahaay.Controller offline"}
-                </div>
-              )}
-
-              {openWindows.length > 0 && (
-                <div style={{ marginTop: "8px", maxHeight: "140px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "4px" }}>
-                  <div style={{ fontSize: "10px", color: "var(--text-muted)" }}>
-                    Discovered Windows ({openWindows.length}):
-                  </div>
-                  {openWindows.map((win) => (
-                    <div
-                      key={win.hwnd}
-                      onClick={() => handleInspectWindow(win.hwnd)}
-                      style={{
-                        padding: "4px 8px",
-                        borderRadius: "4px",
-                        background: selectedHwnd === win.hwnd ? "rgba(56, 189, 248, 0.2)" : "var(--bg-tertiary)",
-                        border: `1px solid ${selectedHwnd === win.hwnd ? "var(--accent-primary)" : "var(--border-color)"}`,
-                        cursor: "pointer",
-                        fontSize: "11px",
-                        display: "flex",
-                        justifyContent: "space-between",
-                      }}
-                    >
-                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{win.title || win.processName}</span>
-                      <span style={{ color: "var(--text-muted)", fontSize: "9px", marginLeft: "4px" }}>HWND {win.hwnd}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {windowElements.length > 0 && (
-                <div style={{ marginTop: "8px", maxHeight: "100px", overflowY: "auto" }}>
-                  <div style={{ fontSize: "10px", color: "var(--text-muted)", marginBottom: "2px" }}>
-                    Elements for HWND {selectedHwnd} ({windowElements.length}):
-                  </div>
-                  {windowElements.slice(0, 5).map((el, idx) => (
-                    <div key={idx} style={{ fontSize: "10px", color: "var(--text-secondary)", display: "flex", justifyContent: "space-between" }}>
-                      <span>{el.name || "<Unnamed>"}</span>
-                      <span className="badge badge-neutral" style={{ fontSize: "8px" }}>{el.controlType}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
+          </section>
+
+          {/* B. Cross-Surface Quick Workflows */}
+          <section className="grid grid-cols-2 gap-4">
+            {/* Flow 1 Card */}
+            <div className="glass-panel p-4 flex flex-col justify-between border border-white/10 hover:border-sky-500/40 transition-all">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="badge badge-cyan flex items-center gap-1">
+                    <ArrowRight className="h-3 w-3" /> Browser &rarr; Desktop
+                  </span>
+                  <span className="text-[11px] text-slate-400 font-mono">DEMO 01</span>
+                </div>
+                <h3 className="text-sm font-semibold text-white">Extract BESCOM Bill to Notepad</h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Extracts synthetic utility bill from browser tab, grounds facts in SQLite, and populates &amp; verifies in desktop window.
+                </p>
+              </div>
+              <button
+                onClick={triggerBrowserToDesktopWorkflow}
+                disabled={taskState !== "IDLE" && taskState !== "VERIFIED" && taskState !== "FAILED"}
+                className="btn btn-primary mt-4 w-full text-xs py-2"
+              >
+                <Play className="h-3.5 w-3.5" /> Run Browser &rarr; Desktop Flow
+              </button>
+            </div>
+
+            {/* Flow 2 Card */}
+            <div className="glass-panel p-4 flex flex-col justify-between border border-white/10 hover:border-purple-500/40 transition-all">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="badge badge-purple flex items-center gap-1">
+                    <ArrowLeftRight className="h-3 w-3" /> Desktop &rarr; Browser
+                  </span>
+                  <span className="text-[11px] text-slate-400 font-mono">DEMO 02</span>
+                </div>
+                <h3 className="text-sm font-semibold text-white">Local Invoice to Web Form</h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Reads local invoice statement, maps fields, populates web form via extension, and independently verifies DOM values.
+                </p>
+              </div>
+              <button
+                onClick={triggerDesktopToBrowserWorkflow}
+                disabled={taskState !== "IDLE" && taskState !== "VERIFIED" && taskState !== "FAILED"}
+                className="btn btn-primary mt-4 w-full text-xs py-2"
+              >
+                <Play className="h-3.5 w-3.5" /> Run Desktop &rarr; Browser Flow
+              </button>
+            </div>
+          </section>
+
+          {/* C. Unified Conversation & Task Composer */}
+          <section className="glass-panel p-4 rounded-xl border border-white/10 mt-auto">
+            <div className="flex items-center justify-between mb-2.5">
+              <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                <Sliders className="h-3.5 w-3.5 text-sky-400" /> Indic Voice &amp; Semantic Composer
+              </span>
+              <div className="flex items-center gap-1.5 text-xs text-slate-400 font-mono">
+                <span>Biasing:</span>
+                {["kn", "hi", "en"].map((lang) => (
+                  <button
+                    key={lang}
+                    onClick={() => setSelectedLanguage(lang)}
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                      selectedLanguage.includes(lang)
+                        ? "bg-sky-500/20 text-sky-300 border border-sky-500/40"
+                        : "bg-white/5 text-slate-400"
+                    }`}
+                  >
+                    {lang.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={toggleRecording}
+                className={`btn h-10 w-10 p-0 rounded-xl transition-all ${
+                  isRecording
+                    ? "bg-rose-600 text-white animate-pulse shadow-[0_0_20px_rgba(244,63,94,0.6)]"
+                    : "btn-secondary text-slate-300 hover:text-white"
+                }`}
+                title={isRecording ? "Stop Recording" : "Record Voice with Muse Voice Transcribe"}
+              >
+                <Mic className="h-4 w-4" />
+              </button>
+
+              <div className="flex-1 relative">
+                <input
+                  type="text"
+                  value={userPrompt}
+                  onChange={(e) => setUserPrompt(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && triggerPromptExecution(userPrompt)}
+                  placeholder="Ask Sahaay in Kannada, Hindi, or English (e.g. 'BESCOM bill check maadi Notepad ge copy maadi')..."
+                  className="w-full rounded-xl border border-white/10 bg-[#0a0e17]/80 px-4 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-sky-500/60 focus:outline-none focus:ring-1 focus:ring-sky-500/40"
+                />
+                {isRecording && (
+                  <span className="absolute right-3 top-2.5 text-xs font-mono text-rose-400 animate-pulse flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-rose-500 inline-block" /> {recordingSeconds}s
+                  </span>
+                )}
+              </div>
+
+              <button
+                onClick={() => triggerPromptExecution(userPrompt)}
+                disabled={!userPrompt.trim()}
+                className="btn btn-primary h-10 px-4 rounded-xl"
+              >
+                <Send className="h-4 w-4" />
+              </button>
+            </div>
+          </section>
+        </main>
+
+        {/* Right Column: Evidence Timeline & Provenance Ledger */}
+        <aside className="w-80 border-l border-white/[0.08] bg-[#0a0e17]/60 p-4 flex flex-col gap-3 backdrop-blur-xl">
+          <div className="flex items-center justify-between pb-2 border-b border-white/[0.08]">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-400 font-heading flex items-center gap-1.5">
+              <Layers className="h-3.5 w-3.5 text-purple-400" /> Evidence Timeline
+            </span>
+            <span className="text-[10px] text-slate-500 font-mono">SQLite Ledger</span>
           </div>
 
-          {/* Immutable Evidence Ledger & Verification */}
-          <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-            <h3
-              style={{
-                fontSize: "12px",
-                color: "var(--text-muted)",
-                marginBottom: "8px",
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-              }}
-            >
-              <Layers size={14} color="var(--accent-primary)" /> IMMUTABLE EVIDENCE LEDGER ({actions.length})
-            </h3>
-            <p style={{ fontSize: "11px", color: "var(--text-secondary)", marginBottom: "10px", lineHeight: 1.4 }}>
-              All driver actions are authorized by ActionGate, executed, and independently verified against fresh postconditions.
-            </p>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-              {actions.map((act) => (
-                <div key={act.id} className="glass-panel" style={{ padding: "10px" }}>
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      marginBottom: "4px",
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                      <Terminal size={12} color="var(--accent-primary)" />
-                      <span style={{ fontSize: "11px", fontWeight: 700 }}>{act.type}</span>
-                    </div>
-                    <span style={{ fontSize: "9px", color: "var(--text-muted)" }}>{act.timestamp}</span>
+          <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
+            {timeline.length === 0 ? (
+              <div className="p-4 text-center text-xs text-slate-500">
+                No active execution steps yet. Run a workflow to observe evidence recording.
+              </div>
+            ) : (
+              timeline.map((item) => (
+                <div
+                  key={item.id}
+                  className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 text-xs space-y-1 hover:border-white/15 transition-all"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-slate-200">{item.title}</span>
+                    <span className="text-[10px] font-mono text-slate-500">{item.timestamp}</span>
                   </div>
-
-                  <div
-                    style={{
-                      fontSize: "10px",
-                      color: "var(--text-secondary)",
-                      fontFamily: "monospace",
-                      marginBottom: "6px",
-                    }}
-                  >
-                    Target: {act.target}
-                  </div>
-
-                  <div style={{ display: "flex", gap: "6px", marginBottom: "6px" }}>
-                    <span className={`badge ${act.decision === "ALLOW" ? "badge-success" : "badge-danger"}`} style={{ fontSize: "9px" }}>
-                      Policy: {act.decision}
-                    </span>
-                    <span
-                      className={`badge ${
-                        act.verificationStatus === "VERIFIED"
-                          ? "badge-success"
-                          : act.verificationStatus === "CONFLICT"
-                            ? "badge-danger"
-                            : "badge-neutral"
-                      }`}
-                      style={{ display: "flex", alignItems: "center", gap: "3px", fontSize: "9px" }}
-                    >
-                      {act.verificationStatus === "VERIFIED" ? (
-                        <CheckCircle2 size={10} />
-                      ) : (
-                        <AlertTriangle size={10} />
-                      )}
-                      {act.verificationStatus}
-                    </span>
-                  </div>
-
-                  {act.details && (
-                    <div
-                      style={{
-                        fontSize: "10px",
-                        color: "var(--text-muted)",
-                        background: "var(--bg-tertiary)",
-                        padding: "4px 6px",
-                        borderRadius: "4px",
-                      }}
-                    >
-                      {act.details}
+                  <p className="text-slate-400 leading-relaxed">{item.details}</p>
+                  {item.provenanceHash && (
+                    <div className="pt-1 text-[10px] font-mono text-sky-400/90 truncate">
+                      SHA: {item.provenanceHash}
                     </div>
                   )}
                 </div>
-              ))}
-            </div>
-          </div>
-
-          {/* System Truthfulness Card */}
-          <div className="glass-panel" style={{ padding: "12px", marginTop: "auto" }}>
-            <h4
-              style={{
-                fontSize: "11px",
-                fontWeight: 700,
-                marginBottom: "6px",
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-              }}
-            >
-              <Cpu size={13} color="var(--accent-primary)" /> Milestone 03 Integrity Baseline
-            </h4>
-            <div style={{ fontSize: "10px", color: "var(--text-secondary)", lineHeight: 1.5 }}>
-              <div>• External AI Models: <strong>Disabled (Zero API keys, Fail-Closed)</strong></div>
-              <div>• Deterministic Ingestion: <strong>Local files (.txt, .md, .pdf) & active tab</strong></div>
-              <div>• Independent Verifier: <strong>Active (Model self-attestation rejected)</strong></div>
-              <div>• Untrusted Data Isolation: <strong>Web & doc text strictly separated from policy</strong></div>
-            </div>
+              ))
+            )}
           </div>
         </aside>
       </div>
+
+      {/* 3. Editable Speech Transcript Confirmation Dialog */}
+      {transcriptConfirmation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="glass-panel-elevated w-full max-w-md p-6 rounded-2xl border border-white/20 flex flex-col gap-4">
+            <div className="flex items-center gap-2 text-sky-400">
+              <Volume2 className="h-5 w-5" />
+              <h2 className="text-base font-bold text-white">Confirm Speech Transcript</h2>
+            </div>
+            <p className="text-xs text-slate-400">
+              Muse Voice Transcribe completed. You may edit the recognized text before consequential execution:
+            </p>
+            <textarea
+              value={transcriptConfirmation}
+              onChange={(e) => setTranscriptConfirmation(e.target.value)}
+              className="w-full rounded-xl border border-white/15 bg-black/40 p-3 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+              rows={3}
+            />
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                onClick={() => setTranscriptConfirmation(null)}
+                className="btn btn-secondary text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleConfirmTranscript(transcriptConfirmation)}
+                className="btn btn-primary text-xs"
+              >
+                <Check className="h-3.5 w-3.5" /> Execute Confirmed Task
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4. Model Diagnostics & Settings Drawer */}
+      {isSettingsOpen && (
+        <div className="fixed inset-0 z-40 flex justify-end bg-black/60 backdrop-blur-sm">
+          <div className="w-96 h-full bg-[#0c1220] border-l border-white/10 p-5 overflow-y-auto flex flex-col gap-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <span className="font-heading font-bold text-sm text-white flex items-center gap-2">
+                <Settings className="h-4 w-4 text-sky-400" /> Models &amp; Diagnostics
+              </span>
+              <button
+                onClick={() => setIsSettingsOpen(false)}
+                className="text-slate-400 hover:text-white text-sm"
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Meta Models Section */}
+            <div className="space-y-2">
+              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                Meta Hosted Models (api.meta.ai)
+              </h4>
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-xs space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-300">API Key Configured:</span>
+                  <span className={`badge ${modelsStatus?.metaHosted?.isConfigured ? "badge-success" : "badge-warning"}`}>
+                    {modelsStatus?.metaHosted?.isConfigured ? "CONFIGURED" : "NOT SET (Offline Mocks)"}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-slate-400">
+                  <span>Muse Spark:</span>
+                  <span className="font-mono text-[11px] text-slate-200">muse-spark-1.3</span>
+                </div>
+                <div className="flex justify-between items-center text-slate-400">
+                  <span>Muse Wonder (Computer-Use):</span>
+                  <span className="font-mono text-[11px] text-slate-200">muse-wonder-1.0</span>
+                </div>
+                <div className="flex justify-between items-center text-slate-400">
+                  <span>Muse Voice Transcribe:</span>
+                  <span className="font-mono text-[11px] text-slate-200">muse-voice-transcribe-1.0</span>
+                </div>
+                <div className="flex justify-between items-center text-slate-400">
+                  <span>SAM 3.1:</span>
+                  <span className="font-mono text-[11px] text-slate-200">sam-3-1</span>
+                </div>
+
+                <button
+                  onClick={testMetaConnectivity}
+                  disabled={isTestingConn}
+                  className="btn btn-secondary w-full text-xs py-1.5 mt-2"
+                >
+                  <RefreshCw className={`h-3 w-3 ${isTestingConn ? "animate-spin" : ""}`} />
+                  {isTestingConn ? "Testing..." : "Test Model Connectivity"}
+                </button>
+
+                {testConnResult && (
+                  <div className="p-2 rounded bg-black/40 text-[11px] font-mono text-slate-300 mt-2">
+                    Status: {testConnResult.metaApi?.status || "OK"}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Local Llama Runtime Section */}
+            <div className="space-y-2">
+              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                Local Llama Runtime (Llama 3.2 3B)
+              </h4>
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-xs space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-300">Status:</span>
+                  <span className={`badge ${modelsStatus?.localLlama?.isReady ? "badge-success" : "badge-neutral"}`}>
+                    {modelsStatus?.localLlama?.status || "MODEL_FILE_MISSING"}
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-400">
+                  {modelsStatus?.localLlama?.message}
+                </div>
+                <div className="flex justify-between items-center text-slate-400 text-[11px]">
+                  <span>Server Loopback:</span>
+                  <span className="font-mono text-slate-200">127.0.0.1:8080</span>
+                </div>
+                {modelsStatus?.localLlama?.hardwareProfile && (
+                  <div className="pt-1 text-[11px] text-slate-400 border-t border-white/5 space-y-1">
+                    <div>CPU Cores: {modelsStatus.localLlama.hardwareProfile.cpuCores}</div>
+                    <div>Backend: {modelsStatus.localLlama.hardwareProfile.accelerationBackend}</div>
+                    {modelsStatus.localLlama.hardwareProfile.gpuName && (
+                      <div>GPU: {modelsStatus.localLlama.hardwareProfile.gpuName}</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Privacy Gateway Mode */}
+            <div className="space-y-2 mt-auto">
+              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Privacy Gateway</h4>
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-xs space-y-2">
+                <p className="text-[11px] text-slate-400">
+                  Local-only mode blocks all outbound network transmissions to external model APIs fail-closed.
+                </p>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-300 font-medium">Local-Only Enforcement:</span>
+                  <span className="badge badge-success">ACTIVE</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
+export default App;

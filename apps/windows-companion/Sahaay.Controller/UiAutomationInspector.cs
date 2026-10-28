@@ -91,4 +91,101 @@ public static class UiAutomationInspector
             Console.Error.WriteLine($"[UIAutomation] Error reading element: {ex.Message}");
         }
     }
+
+    public static (bool Success, string ActualText, string? Error) SetControlText(long hwnd, string? targetIdentifier, string text)
+    {
+        try
+        {
+            var windowHandle = new IntPtr(hwnd);
+            var root = AutomationElement.FromHandle(windowHandle);
+            if (root == null)
+            {
+                return (false, string.Empty, $"Window HWND {hwnd} not found.");
+            }
+
+            AutomationElement? target = null;
+            if (!string.IsNullOrWhiteSpace(targetIdentifier))
+            {
+                target = root.FindFirst(TreeScope.Descendants,
+                    new PropertyCondition(AutomationElement.AutomationIdProperty, targetIdentifier));
+                if (target == null)
+                {
+                    target = root.FindFirst(TreeScope.Descendants,
+                        new PropertyCondition(AutomationElement.NameProperty, targetIdentifier));
+                }
+            }
+
+            if (target == null)
+            {
+                target = root.FindFirst(TreeScope.Descendants,
+                    new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Edit))
+                    ?? root.FindFirst(TreeScope.Descendants,
+                    new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Document));
+            }
+
+            if (target == null)
+            {
+                return (false, string.Empty, "No editable control found in target window.");
+            }
+
+            if (target.TryGetCurrentPattern(ValuePattern.Pattern, out object? patternObj) && patternObj is ValuePattern valPattern)
+            {
+                valPattern.SetValue(text);
+                return (true, valPattern.Current.Value, null);
+            }
+
+            target.SetFocus();
+            return (true, text, null);
+        }
+        catch (Exception ex)
+        {
+            return (false, string.Empty, $"Failed to set control text: {ex.Message}");
+        }
+    }
+
+    public static (bool Success, string Text, string? Error) GetControlText(long hwnd, string? targetIdentifier)
+    {
+        try
+        {
+            var windowHandle = new IntPtr(hwnd);
+            var root = AutomationElement.FromHandle(windowHandle);
+            if (root == null)
+            {
+                return (false, string.Empty, $"Window HWND {hwnd} not found.");
+            }
+
+            AutomationElement? target = null;
+            if (!string.IsNullOrWhiteSpace(targetIdentifier))
+            {
+                target = root.FindFirst(TreeScope.Descendants,
+                    new PropertyCondition(AutomationElement.AutomationIdProperty, targetIdentifier))
+                    ?? root.FindFirst(TreeScope.Descendants,
+                    new PropertyCondition(AutomationElement.NameProperty, targetIdentifier));
+            }
+
+            if (target == null)
+            {
+                target = root.FindFirst(TreeScope.Descendants,
+                    new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Edit))
+                    ?? root.FindFirst(TreeScope.Descendants,
+                    new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Document));
+            }
+
+            if (target == null)
+            {
+                return (false, string.Empty, "No readable control found in target window.");
+            }
+
+            if (target.TryGetCurrentPattern(ValuePattern.Pattern, out object? patternObj) && patternObj is ValuePattern valPattern)
+            {
+                return (true, valPattern.Current.Value, null);
+            }
+
+            return (true, target.Current.Name ?? string.Empty, null);
+        }
+        catch (Exception ex)
+        {
+            return (false, string.Empty, $"Failed to get control text: {ex.Message}");
+        }
+    }
 }

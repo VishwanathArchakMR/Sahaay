@@ -110,3 +110,37 @@ Sahaay supports three deterministic operational workflows through one single orc
 - **Omni-Input Bar**: Single input area with mode switches (`Retrieval-Only`, `Action-Only`, `Combined Workflow`), document attachment triggers, and scaffolded voice input.
 - **Truthful Status Presentation**: Clear disclaimer cards stating that semantic synthesis requires Meta model integration (Milestone 04) and showing deterministic keyword extractions only.
 
+---
+
+## 10. Meta Model Integration Architecture
+Sahaay connects to the documented Meta Model API (`https://api.meta.ai/v1`) using `MODEL_API_KEY`:
+- **Muse Spark (`muse-spark-1.3`)**: Semantic reasoning, multilingual Indic understanding (Kannada, Hindi, code-switched), grounded context extraction, contradiction detection, and typed action proposals.
+- **Muse Wonder (`muse-wonder-1.0`)**: Screenshot-based computer-use proposal path via Meta's Responses API `computer` tool protocol. Coordinates are strictly validated against screen dimensions and mapped to typed `ActionContract` proposals for deterministic Action Gate evaluation.
+- **Muse Voice Transcribe (`muse-voice-transcribe-1.0`)**: Audio transcription pipeline with Indic language biasing and mandatory editable transcript confirmation prior to any task execution.
+- **SAM 3.1 (`sam-3-1`)**: Optional visual grounding adapter for segmenting interactive UI elements and returning bounded geometry.
+- **Privacy Gateway Enforcement**: Every outbound request to Meta is evaluated by the Privacy Gateway. Local-only mode fails closed unconditionally, and sensitive credentials/PII are redacted prior to network dispatch.
+
+---
+
+## 11. Local Llama 3.2 3B Runtime
+When local-only mode is selected or hosted models are unauthorized:
+- **Selected Model**: Llama 3.2 3B Instruct, Q4_K_M GGUF.
+- **Runtime**: `llama.cpp` `llama-server.exe` bound exclusively to loopback `127.0.0.1:8080`.
+- **Hardware Profiling**: Detects CPU cores, physical RAM, and NVIDIA GPU/CUDA availability (e.g. RTX 3050 Laptop GPU with 4GB VRAM), falling back cleanly to CPU inference.
+- **Truthful Status**: Accurately reports `NOT_CONFIGURED`, `MODEL_FILE_MISSING`, `RUNTIME_MISSING`, `STARTING`, `READY`, or `STOPPED`.
+
+---
+
+## 12. Cross-Surface Execution Architecture (Browser ↔ Desktop)
+Cross-surface workflows maintain strict provenance, authorization, and verification:
+- **Browser → Desktop**: Authorized browser tab observation reads synthetic utility bill facts, grounds them in SHA-256 provenance, prompts for user authorization, populates a designated Windows desktop application control via the Windows companion (`set_control_text`), reads back the control text (`get_control_text`), and verifies equality before recording in the Evidence Ledger.
+- **Desktop → Browser**: Authorized local document facts (e.g. synthetic invoice) are mapped to browser form fields, validated by the Action Gate, populated via extension content script (`fill_form_fields`), verified via readback (`get_field_values`), and recorded. Form auto-submission is blocked.
+
+---
+
+## 13. Liquid Glass Living Execution Surface
+- **Visual Design**: Deep charcoal/obsidian canvas (`#08090c`), layered translucent glassmorphism (`backdrop-filter: blur(16px)`), subtle 1px border illumination, and responsive glowing SVG liquid streams.
+- **Event-Driven Flow**: Living liquid surface reflects live backend task transitions (`IDLE`, `OBSERVE`, `RETRIEVE`, `PROPOSE`, `AUTHORIZE`, `EXECUTE`, `VERIFY`, `VERIFIED`, `FAILED`/`HANDOFF`). Success illumination is locked until independent verification succeeds.
+- **Accessibility**: Full `@media (prefers-reduced-motion: reduce)` support with instant static indicators and readable semantic badges.
+
+

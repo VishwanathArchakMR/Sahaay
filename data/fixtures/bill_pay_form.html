@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Sahaay Utility Pay - Verification Target Form</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0b0f19; color: #f8fafc; padding: 2rem; }
+    .form-card { max-width: 600px; margin: 0 auto; background: #131b2e; border: 1px solid #1e293b; border-radius: 12px; padding: 2rem; box-shadow: 0 10px 30px rgba(0,0,0,0.6); }
+    h1 { color: #38bdf8; font-size: 1.4rem; margin-top: 0; }
+    .info-banner { background: #0369a1; color: #e0f2fe; padding: 0.75rem; border-radius: 6px; font-size: 0.85rem; margin-bottom: 1.5rem; }
+    .form-group { margin-bottom: 1.25rem; }
+    label { display: block; font-size: 0.85rem; color: #94a3b8; margin-bottom: 0.35rem; font-weight: 500; }
+    input { width: 100%; box-sizing: border-box; background: #0b0f19; border: 1px solid #334155; border-radius: 6px; padding: 0.65rem 0.85rem; color: #f8fafc; font-size: 0.95rem; }
+    input:focus { outline: none; border-color: #38bdf8; box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2); }
+    .btn { background: #0284c7; color: white; border: none; border-radius: 6px; padding: 0.75rem 1.5rem; font-size: 0.95rem; font-weight: 600; cursor: pointer; }
+    .badge { background: #10b981; color: white; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; }
+  </style>
+</head>
+<body>
+  <div class="form-card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+      <h1>Sahaay Utility Pay Demo Form</h1>
+      <span class="badge">TARGET VERIFIER</span>
+    </div>
+    <div class="info-banner">
+      <strong>Controlled Verification Target:</strong> Form fields will be populated by Desktop &rarr; Browser cross-surface execution and verified independently via DOM property readback. Form submission is purposefully prevented in demo mode.
+    </div>
+
+    <form id="utilityPaymentForm" onsubmit="event.preventDefault(); return false;">
+      <div class="form-group">
+        <label for="customerName">Customer Name</label>
+        <input type="text" id="customerName" name="customerName" placeholder="Enter full name" autocomplete="off" />
+      </div>
+
+      <div class="form-group">
+        <label for="accountNumber">Account / Consumer ID</label>
+        <input type="text" id="accountNumber" name="accountNumber" placeholder="e.g. BLR-UTIL-98421" autocomplete="off" />
+      </div>
+
+      <div class="form-group">
+        <label for="billingPeriod">Billing Period</label>
+        <input type="text" id="billingPeriod" name="billingPeriod" placeholder="e.g. October 2026" autocomplete="off" />
+      </div>
+
+      <div class="form-group">
+        <label for="amountDue">Amount Due</label>
+        <input type="text" id="amountDue" name="amountDue" placeholder="e.g. INR 2,450.00" autocomplete="off" />
+      </div>
+
+      <div class="form-group">
+        <label for="dueDate">Due Date</label>
+        <input type="text" id="dueDate" name="dueDate" placeholder="e.g. Nov 15, 2026" autocomplete="off" />
+      </div>
+
+      <div style="margin-top: 1.5rem; display: flex; justify-content: flex-end;">
+        <button type="button" class="btn" id="verifyButton" onclick="alert('Submission intentionally disabled in Sahaay safety mode.')">Ready for Verification</button>
+      </div>
+    </form>
+  </div>
+</body>
+</html>

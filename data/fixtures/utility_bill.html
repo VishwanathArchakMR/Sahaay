@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Karnataka Power Distribution - Consumer Electricity Bill</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; padding: 2rem; }
+    .bill-card { max-width: 650px; margin: 0 auto; background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 2rem; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+    h1 { color: #38bdf8; font-size: 1.5rem; margin-top: 0; border-bottom: 1px solid #334155; padding-bottom: 0.75rem; }
+    .field-row { display: flex; justify-content: space-between; padding: 0.6rem 0; border-bottom: 1px solid #1e293b; }
+    .field-label { color: #94a3b8; font-size: 0.9rem; }
+    .field-value { font-weight: 600; color: #f1f5f9; }
+    .highlight-due { color: #f43f5e; font-size: 1.25rem; font-weight: 700; }
+    .badge { background: #0284c7; color: white; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.75rem; }
+  </style>
+</head>
+<body>
+  <div class="bill-card" id="utility-bill-container">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <h1>Bengaluru Electricity Supply (BESCOM)</h1>
+      <span class="badge">DEMO FIXTURE</span>
+    </div>
+    <p style="color: #94a3b8; font-size: 0.85rem;">Synthetic demonstration fixture for verified cross-surface extraction. No real financial credentials or payment accounts.</p>
+
+    <div class="field-row">
+      <span class="field-label">Consumer Name:</span>
+      <span class="field-value" id="field-consumer-name">Aarav Sharma</span>
+    </div>
+    <div class="field-row">
+      <span class="field-label">Account / Consumer ID:</span>
+      <span class="field-value" id="field-account-number">BLR-UTIL-98421</span>
+    </div>
+    <div class="field-row">
+      <span class="field-label">Billing Period:</span>
+      <span class="field-value" id="field-billing-period">October 2026</span>
+    </div>
+    <div class="field-row">
+      <span class="field-label">Tariff Plan:</span>
+      <span class="field-value" id="field-tariff">LT-2(a) Domestic Urban</span>
+    </div>
+    <div class="field-row">
+      <span class="field-label">Due Date:</span>
+      <span class="field-value" id="field-due-date">Nov 15, 2026</span>
+    </div>
+    <div class="field-row" style="margin-top: 1rem; border-top: 2px dashed #475569; padding-top: 1rem;">
+      <span class="field-label" style="font-size: 1.1rem; color: #e2e8f0;">Total Amount Due:</span>
+      <span class="field-value highlight-due" id="field-amount-due">INR 2,450.00</span>
+    </div>
+  </div>
+</body>
+</html>

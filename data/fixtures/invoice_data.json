@@ -1,0 +1,19 @@
+{
+  "documentId": "DOC-LOCAL-2026-8812",
+  "documentTitle": "Bangalore BESCOM Electricity Statement - October 2026",
+  "sourceType": "local_document",
+  "fileFormat": "json",
+  "extractedFields": {
+    "customerName": "Aarav Sharma",
+    "accountNumber": "BLR-UTIL-98421",
+    "billingPeriod": "October 2026",
+    "amountDue": "INR 2,450.00",
+    "dueDate": "Nov 15, 2026",
+    "tariff": "LT-2(a) Domestic Urban"
+  },
+  "provenance": {
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "authorizedByUser": true,
+    "classification": "synthetic_demo"
+  }
+}

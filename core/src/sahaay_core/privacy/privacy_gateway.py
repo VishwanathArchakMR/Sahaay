@@ -22,8 +22,12 @@ CREDENTIAL_REGEX = re.compile(
 PII_EMAIL_REGEX = re.compile(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+")
 PII_PHONE_REGEX = re.compile(r"\b(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b")
 
-# Configured provider allowlist (empty in stage 1 - no live external providers)
-ALLOWED_EXTERNAL_DESTINATIONS: List[str] = []
+# Configured provider allowlist for external model inference
+ALLOWED_EXTERNAL_DESTINATIONS: List[str] = [
+    "https://api.meta.ai/v1",
+    "https://api.meta.ai",
+    "meta_model_api",
+]
 
 
 class PrivacyGateway:
@@ -71,7 +75,17 @@ class PrivacyGateway:
                 reason="Local-only mode is active. Outbound transmission is strictly prohibited.",
             )
 
-        # 2. Stage 01 check: no external destinations permitted in initial baseline
+        # 2. Credentials can NEVER be transmitted outbound regardless of destination or consent
+        if classification == DataClassificationEnum.CREDENTIAL:
+            return PrivacyDecision(
+                decisionId=uuid4(),
+                allowTransmission=False,
+                destination=destination,
+                dataClassification=classification,
+                reason="Detected credentials in payload; external transmission forbidden.",
+            )
+
+        # 3. Allowlist check for external providers
         if destination not in ALLOWED_EXTERNAL_DESTINATIONS:
             return PrivacyDecision(
                 decisionId=uuid4(),
@@ -81,7 +95,7 @@ class PrivacyGateway:
                 reason=f"Destination '{destination}' is not in configured provider allowlist.",
             )
 
-        # 3. Payload size limitation
+        # 4. Payload size limitation
         if len(content.encode("utf-8")) > max_payload_bytes:
             return PrivacyDecision(
                 decisionId=uuid4(),
@@ -89,16 +103,6 @@ class PrivacyGateway:
                 destination=destination,
                 dataClassification=classification,
                 reason=f"Payload size exceeds permitted maximum of {max_payload_bytes} bytes.",
-            )
-
-        # 4. Credentials can NEVER be transmitted outbound
-        if classification == DataClassificationEnum.CREDENTIAL:
-            return PrivacyDecision(
-                decisionId=uuid4(),
-                allowTransmission=False,
-                destination=destination,
-                dataClassification=classification,
-                reason="Detected credentials in payload; external transmission forbidden.",
             )
 
         # 5. Verify explicit consent grant

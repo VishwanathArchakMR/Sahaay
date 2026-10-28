@@ -29,7 +29,11 @@ PERMITTED_ACTIONS = {
     ActionTypeEnum.LIST_OPEN_WINDOWS,
     ActionTypeEnum.CLICK_DESKTOP_CONTROL,
     ActionTypeEnum.TYPE_DESKTOP_TEXT,
+    ActionTypeEnum.SET_CONTROL_TEXT,
+    ActionTypeEnum.GET_CONTROL_TEXT,
     ActionTypeEnum.SCROLL_BROWSER_TAB,
+    ActionTypeEnum.FILL_FORM_FIELDS,
+    ActionTypeEnum.GET_FIELD_VALUES,
 }
 
 # Operations that are strictly read-only and require lower scope threshold
@@ -41,6 +45,8 @@ READ_ONLY_ACTIONS = {
     ActionTypeEnum.GET_ACTIVE_WINDOW,
     ActionTypeEnum.LIST_OPEN_WINDOWS,
     ActionTypeEnum.SCROLL_BROWSER_TAB,
+    ActionTypeEnum.GET_CONTROL_TEXT,
+    ActionTypeEnum.GET_FIELD_VALUES,
 }
 
 

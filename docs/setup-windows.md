@@ -76,7 +76,24 @@ npm run dev
 
 ---
 
-## 5. Running Quality Checks and Test Suites
+---
+
+## 5. Model Environment Configuration (Optional)
+
+Configure Meta Model API and Local Llama in environment or settings:
+```powershell
+# Optional: Set Meta Model API Key for live hosted inference
+$env:MODEL_API_KEY = "your-meta-api-key"
+
+# Optional: Set local llama.cpp paths
+$env:LOCAL_LLAMA_MODEL_PATH = "C:\models\Llama-3.2-3B-Instruct-Q4_K_M.gguf"
+$env:LLAMA_SERVER_PATH = "C:\tools\llama.cpp\llama-server.exe"
+```
+When keys or weights are not provided, Sahaay operates in truthful offline mode with validated deterministic fallback workflows and fixtures.
+
+---
+
+## 6. Running Quality Checks and Test Suites
 
 Execute all quality checks, linters, and unit test suites:
 ```powershell
@@ -84,8 +101,9 @@ Execute all quality checks, linters, and unit test suites:
 ```
 This runs:
 - `ruff check core tests`
-- `pytest tests` (50 automated tests covering unit, security, prompt injection, and contracts)
-- `dotnet test apps/windows-companion/Sahaay.sln` (8 xUnit tests)
-- Browser extension TypeScript typecheck
-- Desktop application TypeScript typecheck
+- `pytest tests` (64 automated tests covering unit, security, privacy, models, and cross-surface workflows)
+- `dotnet test apps/windows-companion/Sahaay.sln` (9 xUnit tests)
+- Browser extension TypeScript typecheck and Vite build
+- Desktop application TypeScript typecheck and Vite build
+
 

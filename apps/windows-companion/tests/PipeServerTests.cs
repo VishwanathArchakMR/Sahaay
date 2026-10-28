@@ -48,14 +48,27 @@ public class PipeServerTests
     }
 
     [Fact]
-    public void HandleRequest_ListOpenWindows_ExecutesWithoutCrashing()
+    public void HandleRequest_SetControlText_FailsGracefully_WhenHwndMissing()
     {
-        var req = new IpcMessageRequest("req-4", "list_open_windows", "sess-1", null, null, null);
+        var req = new IpcMessageRequest("req-5", "set_control_text", "sess-1", null, null, null);
         string json = JsonSerializer.Serialize(req);
 
         var res = PipeServer.HandleRequest(json);
 
-        Assert.True(res.Success);
-        Assert.NotNull(res.Data);
+        Assert.False(res.Success);
+        Assert.Contains("Missing required parameter 'hwnd'", res.Error);
+    }
+
+    [Fact]
+    public void HandleRequest_GetControlText_FailsGracefully_WhenHwndMissing()
+    {
+        var req = new IpcMessageRequest("req-6", "get_control_text", "sess-1", null, null, null);
+        string json = JsonSerializer.Serialize(req);
+
+        var res = PipeServer.HandleRequest(json);
+
+        Assert.False(res.Success);
+        Assert.Contains("Missing required parameter 'hwnd'", res.Error);
     }
 }
+

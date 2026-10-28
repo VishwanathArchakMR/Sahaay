@@ -28,6 +28,22 @@ class Settings(BaseSettings):
     local_only_mode: bool = True
     strict_consent: bool = True
     log_redaction: bool = True
+    hosted_models_permitted: bool = False
+
+    # Meta Hosted Model API Settings
+    model_api_key: str = ""
+    meta_api_base_url: str = "https://api.meta.ai/v1"
+    muse_spark_model_id: str = "muse-spark-1.3"
+    muse_wonder_model_id: str = "muse-wonder-1.0"
+    muse_voice_model_id: str = "muse-voice-transcribe-1.0"
+    sam_model_id: str = "sam-3-1"
+
+    # Local Llama Runtime Settings (Llama 3.2 3B Instruct Q4_K_M GGUF)
+    local_llama_model_path: str = ""
+    llama_server_path: str = ""
+    llama_server_host: str = "127.0.0.1"
+    llama_server_port: int = 8080
+    local_llama_context_size: int = 4096
 
     model_config = SettingsConfigDict(
         env_prefix="SAHAAY_",
@@ -38,11 +54,15 @@ class Settings(BaseSettings):
 
     def initialize_paths_and_tokens(self) -> None:
         """Ensure directories exist and launch token is populated."""
+        import os
+
         self.temp_media_dir.mkdir(parents=True, exist_ok=True)
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         if not self.api_token:
             # Generate unguessable 32-byte hex token for this launch
             self.api_token = secrets.token_hex(32)
+        if not self.model_api_key:
+            self.model_api_key = os.environ.get("MODEL_API_KEY", "")
 
 
 # Global settings singleton
