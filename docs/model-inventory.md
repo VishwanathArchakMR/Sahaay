@@ -10,7 +10,7 @@ In Milestone 06, Sahaay uses the **Meta Model API** (`https://api.meta.ai/v1`) a
 | **Muse Image** | `muse-image-1.0` via **Meta Model API** (`https://api.meta.ai/v1/images/generations`) | Visual storytelling for Task Passports, step illustrations, and visual workflow routes | **INTEGRATED & TESTED** (Requires `MODEL_API_KEY`; obsidian vector SVG fallback when offline) |
 | **Muse Wonder** | `muse-wonder-1.0` via Meta Model API | Computer-use action proposal parsing with strict Action Gate boundary enforcement | **INTEGRATED & TESTED** (Mock/Live adaptive) |
 | **Muse Voice Transcribe** | `muse-voice-transcribe-1.0` via Meta Model API | Speech transcription with language biasing and mandatory editable confirmation dialog | **INTEGRATED & TESTED** (Mock/Live adaptive) |
-| **SAM 3.1** | `sam-3-1` via Meta Model API | Visual grounding of UI elements and bounding box translation | **INTEGRATED & TESTED** (Mock/Live adaptive) |
+| **SAM 3.1** | `sam-3.1` via Meta Model API | Visual grounding of UI elements and bounding box translation | **INTEGRATED & TESTED** (Mock/Live adaptive) |
 | **Local Llama 3.2 3B** | Quantized GGUF via `llama-server.exe` loopback (`127.0.0.1:8080`) | Offline planning and fact extraction when Local-Only Mode is active | **INTEGRATED & TESTED** (Lifecycle manager probes weights & hardware) |
 
 ---
@@ -27,7 +27,7 @@ A single authoritative credential configuration is used across the Meta hosted m
      - `muse-image-1.0` (Milestone storytelling & Task Passport)
      - `muse-voice-transcribe-1.0` (Speech-to-text with Kannada/Hindi/English biasing)
      - `muse-wonder-1.0` (Computer-use visual action proposal)
-     - `sam-3-1` (Element visual segmentation)
+     - `sam-3.1` (Element visual segmentation)
    - Schema enforcement: Local Pydantic validation of `StructuredTaskPlan` against the central Capability Registry.
    - Security & Fail-closed: Never hardcodes credentials. When unconfigured or offline, truthfully reports `NOT_CONFIGURED` or `LOCAL_FALLBACK`. Abstract prompts scrub PII/credentials before transmission.
 

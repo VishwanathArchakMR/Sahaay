@@ -1,0 +1,802 @@
+[
+  {
+    "taskId": "ugui_note_01",
+    "category": "document_editing",
+    "appName": "Notepad",
+    "userIntent": "Type project meeting notes",
+    "groundTruthAction": "set_text",
+    "groundTruthTargetId": "15",
+    "controlType": "DocumentEdit",
+    "groundTruthValue": "Project Kickoff: Discuss architecture and timeline.",
+    "uiAutomationControl": {
+      "automationId": "15",
+      "name": "notes",
+      "controlType": "DocumentEdit",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_note_02",
+    "category": "document_editing",
+    "appName": "Notepad",
+    "userIntent": "Click File menu in Notepad",
+    "groundTruthAction": "click_control",
+    "groundTruthTargetId": "FileMenu",
+    "controlType": "MenuItem",
+    "groundTruthValue": null,
+    "uiAutomationControl": {
+      "automationId": "FileMenu",
+      "name": "Notepad",
+      "controlType": "MenuItem",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_note_03",
+    "category": "document_editing",
+    "appName": "Notepad",
+    "userIntent": "Click Save button in Save As dialog",
+    "groundTruthAction": "click_control",
+    "groundTruthTargetId": "1",
+    "controlType": "Button",
+    "groundTruthValue": null,
+    "uiAutomationControl": {
+      "automationId": "1",
+      "name": "dialog",
+      "controlType": "Button",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_note_04",
+    "category": "document_editing",
+    "appName": "Notepad",
+    "userIntent": "Enter filename notes_2026.txt in Save dialog",
+    "groundTruthAction": "set_text",
+    "groundTruthTargetId": "1001",
+    "controlType": "Edit",
+    "groundTruthValue": "notes_2026.txt",
+    "uiAutomationControl": {
+      "automationId": "1001",
+      "name": "dialog",
+      "controlType": "Edit",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_note_05",
+    "category": "document_editing",
+    "appName": "Notepad",
+    "userIntent": "Click Edit menu in Notepad",
+    "groundTruthAction": "click_control",
+    "groundTruthTargetId": "EditMenu",
+    "controlType": "MenuItem",
+    "groundTruthValue": null,
+    "uiAutomationControl": {
+      "automationId": "EditMenu",
+      "name": "Notepad",
+      "controlType": "MenuItem",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_note_06",
+    "category": "document_editing",
+    "appName": "Notepad",
+    "userIntent": "Click Find next button",
+    "groundTruthAction": "click_control",
+    "groundTruthTargetId": "1",
+    "controlType": "Button",
+    "groundTruthValue": null,
+    "uiAutomationControl": {
+      "automationId": "1",
+      "name": "button",
+      "controlType": "Button",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_note_07",
+    "category": "document_editing",
+    "appName": "Notepad",
+    "userIntent": "Clear document text in Notepad editor",
+    "groundTruthAction": "set_text",
+    "groundTruthTargetId": "15",
+    "controlType": "DocumentEdit",
+    "groundTruthValue": "",
+    "uiAutomationControl": {
+      "automationId": "15",
+      "name": "editor",
+      "controlType": "DocumentEdit",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_note_08",
+    "category": "document_editing",
+    "appName": "Notepad",
+    "userIntent": "Select Word Wrap in Format menu",
+    "groundTruthAction": "click_control",
+    "groundTruthTargetId": "WordWrapItem",
+    "controlType": "MenuItem",
+    "groundTruthValue": null,
+    "uiAutomationControl": {
+      "automationId": "WordWrapItem",
+      "name": "menu",
+      "controlType": "MenuItem",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_note_09",
+    "category": "document_editing",
+    "appName": "Notepad",
+    "userIntent": "Click Cancel in Save changes dialog",
+    "groundTruthAction": "click_control",
+    "groundTruthTargetId": "2",
+    "controlType": "Button",
+    "groundTruthValue": null,
+    "uiAutomationControl": {
+      "automationId": "2",
+      "name": "dialog",
+      "controlType": "Button",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_note_10",
+    "category": "document_editing",
+    "appName": "Notepad",
+    "userIntent": "Click Don't Save button in exit confirmation",
+    "groundTruthAction": "click_control",
+    "groundTruthTargetId": "CommandButton_7",
+    "controlType": "Button",
+    "groundTruthValue": null,
+    "uiAutomationControl": {
+      "automationId": "CommandButton_7",
+      "name": "confirmation",
+      "controlType": "Button",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_calc_01",
+    "category": "calculator",
+    "appName": "Calculator",
+    "userIntent": "Click number 7 button in Calculator",
+    "groundTruthAction": "click_control",
+    "groundTruthTargetId": "num7Button",
+    "controlType": "Button",
+    "groundTruthValue": null,
+    "uiAutomationControl": {
+      "automationId": "num7Button",
+      "name": "Calculator",
+      "controlType": "Button",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_calc_02",
+    "category": "calculator",
+    "appName": "Calculator",
+    "userIntent": "Click multiply button in Calculator",
+    "groundTruthAction": "click_control",
+    "groundTruthTargetId": "multiplyButton",
+    "controlType": "Button",
+    "groundTruthValue": null,
+    "uiAutomationControl": {
+      "automationId": "multiplyButton",
+      "name": "Calculator",
+      "controlType": "Button",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_calc_03",
+    "category": "calculator",
+    "appName": "Calculator",
+    "userIntent": "Click number 5 button in Calculator",
+    "groundTruthAction": "click_control",
+    "groundTruthTargetId": "num5Button",
+    "controlType": "Button",
+    "groundTruthValue": null,
+    "uiAutomationControl": {
+      "automationId": "num5Button",
+      "name": "Calculator",
+      "controlType": "Button",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_calc_04",
+    "category": "calculator",
+    "appName": "Calculator",
+    "userIntent": "Click equal button in Calculator",
+    "groundTruthAction": "click_control",
+    "groundTruthTargetId": "equalButton",
+    "controlType": "Button",
+    "groundTruthValue": null,
+    "uiAutomationControl": {
+      "automationId": "equalButton",
+      "name": "Calculator",
+      "controlType": "Button",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_calc_05",
+    "category": "calculator",
+    "appName": "Calculator",
+    "userIntent": "Click Clear entry button in Calculator",
+    "groundTruthAction": "click_control",
+    "groundTruthTargetId": "clearEntryButton",
+    "controlType": "Button",
+    "groundTruthValue": null,
+    "uiAutomationControl": {
+      "automationId": "clearEntryButton",
+      "name": "Calculator",
+      "controlType": "Button",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_calc_06",
+    "category": "calculator",
+    "appName": "Calculator",
+    "userIntent": "Click square root button in Calculator",
+    "groundTruthAction": "click_control",
+    "groundTruthTargetId": "squareRootButton",
+    "controlType": "Button",
+    "groundTruthValue": null,
+    "uiAutomationControl": {
+      "automationId": "squareRootButton",
+      "name": "Calculator",
+      "controlType": "Button",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_calc_07",
+    "category": "calculator",
+    "appName": "Calculator",
+    "userIntent": "Click add button in Calculator",
+    "groundTruthAction": "click_control",
+    "groundTruthTargetId": "plusButton",
+    "controlType": "Button",
+    "groundTruthValue": null,
+    "uiAutomationControl": {
+      "automationId": "plusButton",
+      "name": "Calculator",
+      "controlType": "Button",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_calc_08",
+    "category": "calculator",
+    "appName": "Calculator",
+    "userIntent": "Click memory store button in Calculator",
+    "groundTruthAction": "click_control",
+    "groundTruthTargetId": "memStoreButton",
+    "controlType": "Button",
+    "groundTruthValue": null,
+    "uiAutomationControl": {
+      "automationId": "memStoreButton",
+      "name": "Calculator",
+      "controlType": "Button",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_calc_09",
+    "category": "calculator",
+    "appName": "Calculator",
+    "userIntent": "Click memory recall button in Calculator",
+    "groundTruthAction": "click_control",
+    "groundTruthTargetId": "memRecallButton",
+    "controlType": "Button",
+    "groundTruthValue": null,
+    "uiAutomationControl": {
+      "automationId": "memRecallButton",
+      "name": "Calculator",
+      "controlType": "Button",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_calc_10",
+    "category": "calculator",
+    "appName": "Calculator",
+    "userIntent": "Click Scientific mode in Calculator navigation",
+    "groundTruthAction": "click_control",
+    "groundTruthTargetId": "scientificNavButton",
+    "controlType": "Button",
+    "groundTruthValue": null,
+    "uiAutomationControl": {
+      "automationId": "scientificNavButton",
+      "name": "navigation",
+      "controlType": "Button",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_comp_01",
+    "category": "windows_companion",
+    "appName": "WindowsSystem",
+    "userIntent": "Set system volume to 65%",
+    "groundTruthAction": "set_volume",
+    "groundTruthTargetId": "SystemMasterVolume",
+    "controlType": "Slider",
+    "groundTruthValue": 65,
+    "uiAutomationControl": {
+      "automationId": "SystemMasterVolume",
+      "name": "65%",
+      "controlType": "Slider",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_comp_02",
+    "category": "windows_companion",
+    "appName": "WindowsSystem",
+    "userIntent": "Set system volume to 25%",
+    "groundTruthAction": "set_volume",
+    "groundTruthTargetId": "SystemMasterVolume",
+    "controlType": "Slider",
+    "groundTruthValue": 25,
+    "uiAutomationControl": {
+      "automationId": "SystemMasterVolume",
+      "name": "25%",
+      "controlType": "Slider",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_comp_03",
+    "category": "windows_companion",
+    "appName": "WindowsSystem",
+    "userIntent": "Mute system audio volume to 0%",
+    "groundTruthAction": "set_volume",
+    "groundTruthTargetId": "SystemMasterVolume",
+    "controlType": "Slider",
+    "groundTruthValue": 0,
+    "uiAutomationControl": {
+      "automationId": "SystemMasterVolume",
+      "name": "0%",
+      "controlType": "Slider",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_comp_04",
+    "category": "windows_companion",
+    "appName": "WindowsSystem",
+    "userIntent": "Launch Notepad desktop application",
+    "groundTruthAction": "launch_app",
+    "groundTruthTargetId": "ShellExecute",
+    "controlType": "Application",
+    "groundTruthValue": "notepad.exe",
+    "uiAutomationControl": {
+      "automationId": "ShellExecute",
+      "name": "application",
+      "controlType": "Application",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_comp_05",
+    "category": "windows_companion",
+    "appName": "WindowsSystem",
+    "userIntent": "Launch Calculator application",
+    "groundTruthAction": "launch_app",
+    "groundTruthTargetId": "ShellExecute",
+    "controlType": "Application",
+    "groundTruthValue": "calc.exe",
+    "uiAutomationControl": {
+      "automationId": "ShellExecute",
+      "name": "application",
+      "controlType": "Application",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_comp_06",
+    "category": "windows_companion",
+    "appName": "WindowsSystem",
+    "userIntent": "Set system volume to 80%",
+    "groundTruthAction": "set_volume",
+    "groundTruthTargetId": "SystemMasterVolume",
+    "controlType": "Slider",
+    "groundTruthValue": 80,
+    "uiAutomationControl": {
+      "automationId": "SystemMasterVolume",
+      "name": "80%",
+      "controlType": "Slider",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_comp_07",
+    "category": "windows_companion",
+    "appName": "WindowsSystem",
+    "userIntent": "Set system volume to 50%",
+    "groundTruthAction": "set_volume",
+    "groundTruthTargetId": "SystemMasterVolume",
+    "controlType": "Slider",
+    "groundTruthValue": 50,
+    "uiAutomationControl": {
+      "automationId": "SystemMasterVolume",
+      "name": "50%",
+      "controlType": "Slider",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_comp_08",
+    "category": "windows_companion",
+    "appName": "WindowsSystem",
+    "userIntent": "Launch Microsoft Edge browser",
+    "groundTruthAction": "launch_app",
+    "groundTruthTargetId": "ShellExecute",
+    "controlType": "Application",
+    "groundTruthValue": "msedge.exe",
+    "uiAutomationControl": {
+      "automationId": "ShellExecute",
+      "name": "browser",
+      "controlType": "Application",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_comp_09",
+    "category": "windows_companion",
+    "appName": "WindowsSystem",
+    "userIntent": "Launch Google Chrome browser",
+    "groundTruthAction": "launch_app",
+    "groundTruthTargetId": "ShellExecute",
+    "controlType": "Application",
+    "groundTruthValue": "chrome.exe",
+    "uiAutomationControl": {
+      "automationId": "ShellExecute",
+      "name": "browser",
+      "controlType": "Application",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_comp_10",
+    "category": "windows_companion",
+    "appName": "WindowsSystem",
+    "userIntent": "Set system volume to 10%",
+    "groundTruthAction": "set_volume",
+    "groundTruthTargetId": "SystemMasterVolume",
+    "controlType": "Slider",
+    "groundTruthValue": 10,
+    "uiAutomationControl": {
+      "automationId": "SystemMasterVolume",
+      "name": "10%",
+      "controlType": "Slider",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_exp_01",
+    "category": "file_explorer",
+    "appName": "FileExplorer",
+    "userIntent": "Click Documents folder in quick access navigation",
+    "groundTruthAction": "click_control",
+    "groundTruthTargetId": "DocumentsFolderItem",
+    "controlType": "TreeItem",
+    "groundTruthValue": null,
+    "uiAutomationControl": {
+      "automationId": "DocumentsFolderItem",
+      "name": "navigation",
+      "controlType": "TreeItem",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_exp_02",
+    "category": "file_explorer",
+    "appName": "FileExplorer",
+    "userIntent": "Enter search query invoice in Explorer search box",
+    "groundTruthAction": "set_text",
+    "groundTruthTargetId": "SearchBoxEdit",
+    "controlType": "Edit",
+    "groundTruthValue": "invoice",
+    "uiAutomationControl": {
+      "automationId": "SearchBoxEdit",
+      "name": "box",
+      "controlType": "Edit",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_exp_03",
+    "category": "file_explorer",
+    "appName": "FileExplorer",
+    "userIntent": "Click New folder button in toolbar",
+    "groundTruthAction": "click_control",
+    "groundTruthTargetId": "NewFolderButton",
+    "controlType": "Button",
+    "groundTruthValue": null,
+    "uiAutomationControl": {
+      "automationId": "NewFolderButton",
+      "name": "toolbar",
+      "controlType": "Button",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_exp_04",
+    "category": "file_explorer",
+    "appName": "FileExplorer",
+    "userIntent": "Enter folder name Financial_Records_2026",
+    "groundTruthAction": "set_text",
+    "groundTruthTargetId": "RenameItemEdit",
+    "controlType": "Edit",
+    "groundTruthValue": "Financial_Records_2026",
+    "uiAutomationControl": {
+      "automationId": "RenameItemEdit",
+      "name": "Financial_Records_2026",
+      "controlType": "Edit",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_exp_05",
+    "category": "file_explorer",
+    "appName": "FileExplorer",
+    "userIntent": "Click Refresh button in address bar",
+    "groundTruthAction": "click_control",
+    "groundTruthTargetId": "RefreshButton",
+    "controlType": "Button",
+    "groundTruthValue": null,
+    "uiAutomationControl": {
+      "automationId": "RefreshButton",
+      "name": "bar",
+      "controlType": "Button",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_exp_06",
+    "category": "file_explorer",
+    "appName": "FileExplorer",
+    "userIntent": "Click Back navigation button in Explorer",
+    "groundTruthAction": "click_control",
+    "groundTruthTargetId": "BackNavButton",
+    "controlType": "Button",
+    "groundTruthValue": null,
+    "uiAutomationControl": {
+      "automationId": "BackNavButton",
+      "name": "Explorer",
+      "controlType": "Button",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_exp_07",
+    "category": "file_explorer",
+    "appName": "FileExplorer",
+    "userIntent": "Click Forward navigation button in Explorer",
+    "groundTruthAction": "click_control",
+    "groundTruthTargetId": "ForwardNavButton",
+    "controlType": "Button",
+    "groundTruthValue": null,
+    "uiAutomationControl": {
+      "automationId": "ForwardNavButton",
+      "name": "Explorer",
+      "controlType": "Button",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_exp_08",
+    "category": "file_explorer",
+    "appName": "FileExplorer",
+    "userIntent": "Click Up to parent folder button",
+    "groundTruthAction": "click_control",
+    "groundTruthTargetId": "UpFolderButton",
+    "controlType": "Button",
+    "groundTruthValue": null,
+    "uiAutomationControl": {
+      "automationId": "UpFolderButton",
+      "name": "button",
+      "controlType": "Button",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_exp_09",
+    "category": "file_explorer",
+    "appName": "FileExplorer",
+    "userIntent": "Click Sort by date modified in view options",
+    "groundTruthAction": "click_control",
+    "groundTruthTargetId": "SortDateOption",
+    "controlType": "MenuItem",
+    "groundTruthValue": null,
+    "uiAutomationControl": {
+      "automationId": "SortDateOption",
+      "name": "options",
+      "controlType": "MenuItem",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_exp_10",
+    "category": "file_explorer",
+    "appName": "FileExplorer",
+    "userIntent": "Click Properties button in ribbon",
+    "groundTruthAction": "click_control",
+    "groundTruthTargetId": "PropertiesRibbonBtn",
+    "controlType": "Button",
+    "groundTruthValue": null,
+    "uiAutomationControl": {
+      "automationId": "PropertiesRibbonBtn",
+      "name": "ribbon",
+      "controlType": "Button",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_cross_01",
+    "category": "cross_surface",
+    "appName": "CrossSurface",
+    "userIntent": "Copy bill amount from browser observation and save to Notepad",
+    "groundTruthAction": "set_text",
+    "groundTruthTargetId": "15",
+    "controlType": "DocumentEdit",
+    "groundTruthValue": "Electricity Bill Due: INR 1450.50",
+    "uiAutomationControl": {
+      "automationId": "15",
+      "name": "Notepad",
+      "controlType": "DocumentEdit",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_cross_02",
+    "category": "cross_surface",
+    "appName": "CrossSurface",
+    "userIntent": "Copy transaction confirmation ID from browser and append to Notepad log",
+    "groundTruthAction": "set_text",
+    "groundTruthTargetId": "15",
+    "controlType": "DocumentEdit",
+    "groundTruthValue": "Confirmation ID: TXN_8923419827",
+    "uiAutomationControl": {
+      "automationId": "15",
+      "name": "log",
+      "controlType": "DocumentEdit",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_cross_03",
+    "category": "cross_surface",
+    "appName": "CrossSurface",
+    "userIntent": "Record total payment calculation in Notepad",
+    "groundTruthAction": "set_text",
+    "groundTruthTargetId": "15",
+    "controlType": "DocumentEdit",
+    "groundTruthValue": "Total Utility Expenses: INR 2890.00",
+    "uiAutomationControl": {
+      "automationId": "15",
+      "name": "Notepad",
+      "controlType": "DocumentEdit",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_cross_04",
+    "category": "cross_surface",
+    "appName": "CrossSurface",
+    "userIntent": "Click Save button in Notepad to persist cross-surface summary",
+    "groundTruthAction": "click_control",
+    "groundTruthTargetId": "FileSaveBtn",
+    "controlType": "Button",
+    "groundTruthValue": null,
+    "uiAutomationControl": {
+      "automationId": "FileSaveBtn",
+      "name": "summary",
+      "controlType": "Button",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_cross_05",
+    "category": "cross_surface",
+    "appName": "CrossSurface",
+    "userIntent": "Enter meeting schedule summary into Notepad editor",
+    "groundTruthAction": "set_text",
+    "groundTruthTargetId": "15",
+    "controlType": "DocumentEdit",
+    "groundTruthValue": "Meeting at 3:00 PM with Sahaay Team",
+    "uiAutomationControl": {
+      "automationId": "15",
+      "name": "editor",
+      "controlType": "DocumentEdit",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_cross_06",
+    "category": "cross_surface",
+    "appName": "CrossSurface",
+    "userIntent": "Launch Calculator to verify invoice sum",
+    "groundTruthAction": "launch_app",
+    "groundTruthTargetId": "ShellExecute",
+    "controlType": "Application",
+    "groundTruthValue": "calc.exe",
+    "uiAutomationControl": {
+      "automationId": "ShellExecute",
+      "name": "sum",
+      "controlType": "Application",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_cross_07",
+    "category": "cross_surface",
+    "appName": "CrossSurface",
+    "userIntent": "Click number 1 in Calculator for invoice verification",
+    "groundTruthAction": "click_control",
+    "groundTruthTargetId": "num1Button",
+    "controlType": "Button",
+    "groundTruthValue": null,
+    "uiAutomationControl": {
+      "automationId": "num1Button",
+      "name": "verification",
+      "controlType": "Button",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_cross_08",
+    "category": "cross_surface",
+    "appName": "CrossSurface",
+    "userIntent": "Click plus in Calculator for second line item",
+    "groundTruthAction": "click_control",
+    "groundTruthTargetId": "plusButton",
+    "controlType": "Button",
+    "groundTruthValue": null,
+    "uiAutomationControl": {
+      "automationId": "plusButton",
+      "name": "item",
+      "controlType": "Button",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_cross_09",
+    "category": "cross_surface",
+    "appName": "CrossSurface",
+    "userIntent": "Set audio volume to 30% for quiet working mode",
+    "groundTruthAction": "set_volume",
+    "groundTruthTargetId": "SystemMasterVolume",
+    "controlType": "Slider",
+    "groundTruthValue": 30,
+    "uiAutomationControl": {
+      "automationId": "SystemMasterVolume",
+      "name": "mode",
+      "controlType": "Slider",
+      "isEnabled": true
+    }
+  },
+  {
+    "taskId": "ugui_cross_10",
+    "category": "cross_surface",
+    "appName": "CrossSurface",
+    "userIntent": "Save verified summary to desktop file summary.txt",
+    "groundTruthAction": "set_text",
+    "groundTruthTargetId": "1001",
+    "controlType": "Edit",
+    "groundTruthValue": "summary.txt",
+    "uiAutomationControl": {
+      "automationId": "1001",
+      "name": "summary.txt",
+      "controlType": "Edit",
+      "isEnabled": true
+    }
+  }
+]

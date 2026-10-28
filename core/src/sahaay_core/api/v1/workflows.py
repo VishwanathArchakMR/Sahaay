@@ -13,7 +13,7 @@ OBSERVE -> PROPOSE -> AUTHORIZE -> EXECUTE -> VERIFY -> RECORD.
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException
@@ -36,6 +36,7 @@ from sahaay_core.contracts.models import (
     VerificationStatusEnum,
 )
 from sahaay_core.models.meta.muse_spark import muse_spark
+from sahaay_core.orchestration.dag_engine import TaskDAGNode, dag_engine
 from sahaay_core.policy.action_gate import ActionGate
 from sahaay_core.verification.verifier import IndependentVerifier
 
@@ -584,6 +585,124 @@ async def execute_desktop_to_browser(req: DesktopToBrowserRequest) -> Dict[str, 
             "readbackValues": filled_fields,
             "verified": is_verified,
         },
+        "structuredPlan": structured_plan.model_dump(),
+        "passport": passport.model_dump(),
+    }
+
+
+class ExecuteGoalRequest(BaseModel):
+    sessionId: UUID
+    goal: str
+    workflowMode: str = "understand_and_act"  # ask, do, understand_and_act
+    context: Optional[str] = ""
+    isFixtureMode: Optional[bool] = None
+
+
+@router.post("/execute-goal")
+async def execute_goal(req: ExecuteGoalRequest) -> Dict[str, Any]:
+    """Unified natural-language task execution endpoint supporting Ask, Do, and Understand+Act modes.
+
+    1. UNDERSTAND: Decomposes goal into dependent tasks via Meta Muse Spark 1.3 or deterministic local grounding.
+    2. VALIDATE & BUILD DAG: Checks capability registration and dependencies, preventing cyclic plans.
+    3. OBSERVE & AUTHORIZE: Enforces fresh observations and Action Gate authorization without auto-granting wildcards.
+    4. EXECUTE: Dispatches permitted capabilities across Windows, Browser, Local Documents, and Internet.
+    5. VERIFY & RECORD: Performs independent verification and persists cryptographic evidence in SQLite.
+    6. EXPLAIN: Updates the Task Passport and evidence ledger.
+    """
+    session = active_sessions.get(req.sessionId)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    # Map workflow mode to TaskContract taskType
+    mode = req.workflowMode.lower().strip()
+    if mode == "ask":
+        task_type = "retrieval_only"
+    elif mode == "do":
+        task_type = "action_only"
+    else:
+        task_type = "combined_retrieval_and_action"
+
+    task = orchestrator.create_task(
+        session_id=req.sessionId,
+        goal=req.goal,
+        task_type=task_type,
+    )
+    task_id = task.taskId
+    grants = active_grants.get(req.sessionId, [])
+
+    # 1. UNDERSTAND & PLAN
+    orchestrator.transition_state(task_id, TaskStatusEnum.PLANNING)
+    structured_plan = await muse_spark.generate_plan(
+        task=task,
+        context=req.context or "",
+        active_grants=grants,
+    )
+
+    # 2. CONSTRUCT DAG
+    orchestrator.transition_state(task_id, TaskStatusEnum.OBSERVING)
+    dag_nodes: List[TaskDAGNode] = []
+    prev_step_ids: List[str] = []
+
+    for idx, step_prop in enumerate(structured_plan.steps):
+        # Sequential dependency by default
+        deps = list(prev_step_ids) if prev_step_ids else []
+        node = TaskDAGNode(
+            step_id=step_prop.step_id,
+            sequence_number=idx + 1,
+            capability_id=step_prop.capability,
+            action_type=step_prop.action_type,
+            instruction=step_prop.purpose or step_prop.title,
+            intended_outcome=step_prop.expected_postconditions[0]
+            if step_prop.expected_postconditions
+            else "",
+            dependencies=deps,
+            parameters=dict(step_prop.parameters),
+            target_surface=step_prop.target_surface,
+            risk_category="HIGH" if step_prop.requires_human_approval else "LOW",
+            requires_human_confirmation=step_prop.requires_human_approval,
+            timeout_seconds=10.0,
+            is_idempotent=True,
+            status=TaskStatusEnum.CREATED,
+        )
+        dag_nodes.append(node)
+        prev_step_ids.append(node.step_id)
+
+    # 3. EXECUTE DAG WITH DETERMINISTIC STATE MACHINE
+    orchestrator.transition_state(task_id, TaskStatusEnum.PROPOSING)
+    orchestrator.transition_state(task_id, TaskStatusEnum.AUTHORIZING)
+    orchestrator.transition_state(task_id, TaskStatusEnum.EXECUTING)
+
+    report = await dag_engine.execute_dag(
+        task=task,
+        nodes=dag_nodes,
+        active_grants=grants,
+    )
+
+    # 4. EXPLAIN & RECORD PASSPORT
+    passport = register_or_update_passport(
+        task_id=str(task_id),
+        goal=req.goal,
+        workflow_mode=task_type,
+        direction="Integrated Windows Agent Execution",
+        extracted_fields=report.accumulated_facts,
+        verification_status="VERIFIED" if report.is_success else "FAILED",
+        evidence_id=report.evidence_ids[0] if report.evidence_ids else None,
+        target_app_or_url="Windows Desktop & Browser",
+        source_ref="Sahaay Native Shared Runtime",
+    )
+
+    return {
+        "workflow": "execute-goal",
+        "taskId": str(task_id),
+        "status": report.final_status.value,
+        "isVerified": report.is_success,
+        "mode": req.workflowMode,
+        "completedSteps": report.completed_steps_count,
+        "totalSteps": report.total_steps_count,
+        "stepResults": report.step_results,
+        "accumulatedFacts": report.accumulated_facts,
+        "evidenceIds": report.evidence_ids,
+        "error": report.error,
         "structuredPlan": structured_plan.model_dump(),
         "passport": passport.model_dump(),
     }

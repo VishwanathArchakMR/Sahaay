@@ -79,3 +79,5 @@ data/storage/*
 Thumbs.db
 Desktop.ini
 $RECYCLE.BIN/
+scratch/
+

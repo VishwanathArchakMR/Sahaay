@@ -1,0 +1,1269 @@
+[
+  {
+    "taskId": "m2w_shop_01",
+    "domain": "shopping",
+    "userIntent": "Add the wireless noise-canceling headphones to cart",
+    "groundTruthTargetId": "cart-add-btn",
+    "groundTruthAction": "CLICK",
+    "expectedRole": "button",
+    "groundTruthValue": null,
+    "candidateElements": [
+      {
+        "id": "cart-add-btn",
+        "role": "button",
+        "ariaLabel": "Add to cart",
+        "text": "Add to Cart",
+        "name": "addToCart"
+      },
+      {
+        "id": "wishlist-btn",
+        "role": "button",
+        "ariaLabel": "Add to wishlist",
+        "text": "Save",
+        "name": "wishlist"
+      },
+      {
+        "id": "qty-select",
+        "role": "combobox",
+        "ariaLabel": "Quantity",
+        "text": "1",
+        "name": "quantity"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_shop_02",
+    "domain": "shopping",
+    "userIntent": "Search for ergonomic mechanical keyboard",
+    "groundTruthTargetId": "search-input",
+    "groundTruthAction": "TYPE",
+    "expectedRole": "textbox",
+    "groundTruthValue": "ergonomic mechanical keyboard",
+    "candidateElements": [
+      {
+        "id": "search-input",
+        "role": "textbox",
+        "ariaLabel": "Search products",
+        "placeholder": "Search catalog...",
+        "name": "q"
+      },
+      {
+        "id": "search-submit",
+        "role": "button",
+        "ariaLabel": "Submit search",
+        "text": "Search",
+        "name": "submit"
+      },
+      {
+        "id": "category-filter",
+        "role": "combobox",
+        "ariaLabel": "Categories",
+        "text": "All",
+        "name": "cat"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_shop_03",
+    "domain": "shopping",
+    "userIntent": "Select shoe size 10 from the size dropdown",
+    "groundTruthTargetId": "size-selector",
+    "groundTruthAction": "SELECT",
+    "expectedRole": "combobox",
+    "groundTruthValue": "10",
+    "candidateElements": [
+      {
+        "id": "size-selector",
+        "role": "combobox",
+        "ariaLabel": "Select size",
+        "name": "size",
+        "text": "Size 10"
+      },
+      {
+        "id": "color-selector",
+        "role": "combobox",
+        "ariaLabel": "Select color",
+        "name": "color",
+        "text": "Black"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_shop_04",
+    "domain": "shopping",
+    "userIntent": "Apply discount code SAHAAY2026",
+    "groundTruthTargetId": "promo-code-input",
+    "groundTruthAction": "TYPE",
+    "expectedRole": "textbox",
+    "groundTruthValue": "SAHAAY2026",
+    "candidateElements": [
+      {
+        "id": "promo-code-input",
+        "role": "textbox",
+        "ariaLabel": "Enter coupon or promo code",
+        "placeholder": "Promo code",
+        "name": "coupon"
+      },
+      {
+        "id": "apply-coupon-btn",
+        "role": "button",
+        "ariaLabel": "Apply coupon",
+        "text": "Apply",
+        "name": "apply"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_shop_05",
+    "domain": "shopping",
+    "userIntent": "Click Proceed to Checkout",
+    "groundTruthTargetId": "checkout-button",
+    "groundTruthAction": "CLICK",
+    "expectedRole": "button",
+    "groundTruthValue": null,
+    "candidateElements": [
+      {
+        "id": "checkout-button",
+        "role": "button",
+        "ariaLabel": "Proceed to checkout",
+        "text": "Proceed to Checkout",
+        "name": "checkout"
+      },
+      {
+        "id": "continue-shopping",
+        "role": "link",
+        "ariaLabel": "Continue shopping",
+        "text": "Back to store",
+        "name": "continue"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_shop_06",
+    "domain": "shopping",
+    "userIntent": "Filter products by 4 stars and above",
+    "groundTruthTargetId": "rating-4star-filter",
+    "groundTruthAction": "CLICK",
+    "expectedRole": "checkbox",
+    "groundTruthValue": null,
+    "candidateElements": [
+      {
+        "id": "rating-4star-filter",
+        "role": "checkbox",
+        "ariaLabel": "Filter by 4 stars and above",
+        "text": "4 stars & up",
+        "name": "rating4"
+      },
+      {
+        "id": "rating-3star-filter",
+        "role": "checkbox",
+        "ariaLabel": "Filter by 3 stars and above",
+        "text": "3 stars & up",
+        "name": "rating3"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_shop_07",
+    "domain": "shopping",
+    "userIntent": "Remove the second item from shopping bag",
+    "groundTruthTargetId": "remove-item-2",
+    "groundTruthAction": "CLICK",
+    "expectedRole": "button",
+    "groundTruthValue": null,
+    "candidateElements": [
+      {
+        "id": "remove-item-1",
+        "role": "button",
+        "ariaLabel": "Remove USB Cable",
+        "text": "Remove",
+        "name": "removeItem1"
+      },
+      {
+        "id": "remove-item-2",
+        "role": "button",
+        "ariaLabel": "Remove Leather Wallet",
+        "text": "Remove",
+        "name": "removeItem2"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_shop_08",
+    "domain": "shopping",
+    "userIntent": "Sort items by price low to high",
+    "groundTruthTargetId": "sort-dropdown",
+    "groundTruthAction": "SELECT",
+    "expectedRole": "combobox",
+    "groundTruthValue": "price_asc",
+    "candidateElements": [
+      {
+        "id": "sort-dropdown",
+        "role": "combobox",
+        "ariaLabel": "Sort results by",
+        "name": "sort",
+        "text": "Price: Low to High"
+      },
+      {
+        "id": "view-toggle",
+        "role": "button",
+        "ariaLabel": "Grid view",
+        "name": "view"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_shop_09",
+    "domain": "shopping",
+    "userIntent": "Change order quantity to 3",
+    "groundTruthTargetId": "cart-qty-input",
+    "groundTruthAction": "TYPE",
+    "expectedRole": "textbox",
+    "groundTruthValue": "3",
+    "candidateElements": [
+      {
+        "id": "cart-qty-input",
+        "role": "textbox",
+        "ariaLabel": "Item quantity",
+        "name": "quantity",
+        "text": "1"
+      },
+      {
+        "id": "update-cart-btn",
+        "role": "button",
+        "ariaLabel": "Update cart",
+        "text": "Update",
+        "name": "update"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_shop_10",
+    "domain": "shopping",
+    "userIntent": "Accept terms of sale and click place order",
+    "groundTruthTargetId": "place-order-btn",
+    "groundTruthAction": "CLICK",
+    "expectedRole": "button",
+    "groundTruthValue": null,
+    "candidateElements": [
+      {
+        "id": "terms-checkbox",
+        "role": "checkbox",
+        "ariaLabel": "I accept terms of sale",
+        "name": "acceptTerms"
+      },
+      {
+        "id": "place-order-btn",
+        "role": "button",
+        "ariaLabel": "Place your order",
+        "text": "Place Order",
+        "name": "placeOrder"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_travel_01",
+    "domain": "travel",
+    "userIntent": "Enter departure airport BLR (Bengaluru)",
+    "groundTruthTargetId": "flight-origin-input",
+    "groundTruthAction": "TYPE",
+    "expectedRole": "textbox",
+    "groundTruthValue": "BLR",
+    "candidateElements": [
+      {
+        "id": "flight-origin-input",
+        "role": "textbox",
+        "ariaLabel": "Departure airport or city",
+        "placeholder": "From where?",
+        "name": "origin"
+      },
+      {
+        "id": "flight-dest-input",
+        "role": "textbox",
+        "ariaLabel": "Destination airport or city",
+        "placeholder": "To where?",
+        "name": "destination"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_travel_02",
+    "domain": "travel",
+    "userIntent": "Enter destination city DEL (Delhi)",
+    "groundTruthTargetId": "flight-dest-input",
+    "groundTruthAction": "TYPE",
+    "expectedRole": "textbox",
+    "groundTruthValue": "DEL",
+    "candidateElements": [
+      {
+        "id": "flight-origin-input",
+        "role": "textbox",
+        "ariaLabel": "Departure airport or city",
+        "placeholder": "From where?",
+        "name": "origin"
+      },
+      {
+        "id": "flight-dest-input",
+        "role": "textbox",
+        "ariaLabel": "Destination airport or city",
+        "placeholder": "To where?",
+        "name": "destination"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_travel_03",
+    "domain": "travel",
+    "userIntent": "Select direct non-stop flights only",
+    "groundTruthTargetId": "nonstop-flight-checkbox",
+    "groundTruthAction": "CLICK",
+    "expectedRole": "checkbox",
+    "groundTruthValue": null,
+    "candidateElements": [
+      {
+        "id": "nonstop-flight-checkbox",
+        "role": "checkbox",
+        "ariaLabel": "Non-stop flights only",
+        "text": "Direct only",
+        "name": "directOnly"
+      },
+      {
+        "id": "onestop-checkbox",
+        "role": "checkbox",
+        "ariaLabel": "1 stop or fewer",
+        "text": "1 Stop",
+        "name": "oneStop"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_travel_04",
+    "domain": "travel",
+    "userIntent": "Select 2 adults for passenger count",
+    "groundTruthTargetId": "passenger-count-select",
+    "groundTruthAction": "SELECT",
+    "expectedRole": "combobox",
+    "groundTruthValue": "2",
+    "candidateElements": [
+      {
+        "id": "passenger-count-select",
+        "role": "combobox",
+        "ariaLabel": "Number of passengers",
+        "name": "passengers",
+        "text": "2 Adults"
+      },
+      {
+        "id": "cabin-class-select",
+        "role": "combobox",
+        "ariaLabel": "Cabin class",
+        "name": "cabin",
+        "text": "Economy"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_travel_05",
+    "domain": "travel",
+    "userIntent": "Pick departure date 2026-11-15",
+    "groundTruthTargetId": "dep-date-picker",
+    "groundTruthAction": "TYPE",
+    "expectedRole": "textbox",
+    "groundTruthValue": "2026-11-15",
+    "candidateElements": [
+      {
+        "id": "dep-date-picker",
+        "role": "textbox",
+        "ariaLabel": "Departure date",
+        "placeholder": "YYYY-MM-DD",
+        "name": "depDate"
+      },
+      {
+        "id": "return-date-picker",
+        "role": "textbox",
+        "ariaLabel": "Return date",
+        "placeholder": "YYYY-MM-DD",
+        "name": "retDate"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_travel_06",
+    "domain": "travel",
+    "userIntent": "Search for available flights",
+    "groundTruthTargetId": "search-flights-btn",
+    "groundTruthAction": "CLICK",
+    "expectedRole": "button",
+    "groundTruthValue": null,
+    "candidateElements": [
+      {
+        "id": "search-flights-btn",
+        "role": "button",
+        "ariaLabel": "Search flights",
+        "text": "Search Flights",
+        "name": "searchFlights"
+      },
+      {
+        "id": "reset-search-btn",
+        "role": "button",
+        "ariaLabel": "Reset search form",
+        "text": "Reset",
+        "name": "reset"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_travel_07",
+    "domain": "travel",
+    "userIntent": "Select hotel with free cancellation",
+    "groundTruthTargetId": "free-cancel-filter",
+    "groundTruthAction": "CLICK",
+    "expectedRole": "checkbox",
+    "groundTruthValue": null,
+    "candidateElements": [
+      {
+        "id": "free-cancel-filter",
+        "role": "checkbox",
+        "ariaLabel": "Free cancellation filter",
+        "text": "Free cancellation",
+        "name": "freeCancellation"
+      },
+      {
+        "id": "breakfast-filter",
+        "role": "checkbox",
+        "ariaLabel": "Breakfast included filter",
+        "text": "Breakfast included",
+        "name": "breakfast"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_travel_08",
+    "domain": "travel",
+    "userIntent": "Choose Deluxe King Room",
+    "groundTruthTargetId": "select-deluxe-room-btn",
+    "groundTruthAction": "CLICK",
+    "expectedRole": "button",
+    "groundTruthValue": null,
+    "candidateElements": [
+      {
+        "id": "select-standard-room-btn",
+        "role": "button",
+        "ariaLabel": "Book Standard Room",
+        "text": "Book",
+        "name": "bookStandard"
+      },
+      {
+        "id": "select-deluxe-room-btn",
+        "role": "button",
+        "ariaLabel": "Book Deluxe King Room",
+        "text": "Book",
+        "name": "bookDeluxe"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_travel_09",
+    "domain": "travel",
+    "userIntent": "Filter hotels by swimming pool amenity",
+    "groundTruthTargetId": "amenity-pool-checkbox",
+    "groundTruthAction": "CLICK",
+    "expectedRole": "checkbox",
+    "groundTruthValue": null,
+    "candidateElements": [
+      {
+        "id": "amenity-pool-checkbox",
+        "role": "checkbox",
+        "ariaLabel": "Swimming pool amenity",
+        "text": "Pool",
+        "name": "pool"
+      },
+      {
+        "id": "amenity-gym-checkbox",
+        "role": "checkbox",
+        "ariaLabel": "Fitness center gym",
+        "text": "Gym",
+        "name": "gym"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_travel_10",
+    "domain": "travel",
+    "userIntent": "Confirm hotel reservation",
+    "groundTruthTargetId": "confirm-booking-btn",
+    "groundTruthAction": "CLICK",
+    "expectedRole": "button",
+    "groundTruthValue": null,
+    "candidateElements": [
+      {
+        "id": "confirm-booking-btn",
+        "role": "button",
+        "ariaLabel": "Confirm and reserve hotel",
+        "text": "Confirm Booking",
+        "name": "confirm"
+      },
+      {
+        "id": "edit-guests-btn",
+        "role": "button",
+        "ariaLabel": "Edit guest details",
+        "text": "Edit Guests",
+        "name": "editGuests"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_fin_01",
+    "domain": "finance",
+    "userIntent": "Enter utility consumer account ID 987654321",
+    "groundTruthTargetId": "account-number-input",
+    "groundTruthAction": "TYPE",
+    "expectedRole": "textbox",
+    "groundTruthValue": "987654321",
+    "candidateElements": [
+      {
+        "id": "account-number-input",
+        "role": "textbox",
+        "ariaLabel": "Consumer Account Number",
+        "placeholder": "Enter 9-digit account ID",
+        "name": "accountNumber"
+      },
+      {
+        "id": "verify-account-btn",
+        "role": "button",
+        "ariaLabel": "Verify account details",
+        "text": "Verify",
+        "name": "verify"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_fin_02",
+    "domain": "finance",
+    "userIntent": "Enter electricity bill payment amount 1450.50",
+    "groundTruthTargetId": "bill-amount-input",
+    "groundTruthAction": "TYPE",
+    "expectedRole": "textbox",
+    "groundTruthValue": "1450.50",
+    "candidateElements": [
+      {
+        "id": "bill-amount-input",
+        "role": "textbox",
+        "ariaLabel": "Payment Amount in INR",
+        "placeholder": "0.00",
+        "name": "amount"
+      },
+      {
+        "id": "min-due-btn",
+        "role": "button",
+        "ariaLabel": "Pay minimum due",
+        "text": "Min Due",
+        "name": "minDue"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_fin_03",
+    "domain": "finance",
+    "userIntent": "Select UPI as payment method",
+    "groundTruthTargetId": "upi-payment-radio",
+    "groundTruthAction": "CLICK",
+    "expectedRole": "radio",
+    "groundTruthValue": null,
+    "candidateElements": [
+      {
+        "id": "upi-payment-radio",
+        "role": "radio",
+        "ariaLabel": "Pay using UPI",
+        "text": "UPI / QR",
+        "name": "payMethod"
+      },
+      {
+        "id": "card-payment-radio",
+        "role": "radio",
+        "ariaLabel": "Pay using Credit or Debit Card",
+        "text": "Cards",
+        "name": "payMethod"
+      },
+      {
+        "id": "netbanking-radio",
+        "role": "radio",
+        "ariaLabel": "Pay using Net Banking",
+        "text": "Net Banking",
+        "name": "payMethod"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_fin_04",
+    "domain": "finance",
+    "userIntent": "Enter UPI ID user@okhdfcbank",
+    "groundTruthTargetId": "upi-vpa-input",
+    "groundTruthAction": "TYPE",
+    "expectedRole": "textbox",
+    "groundTruthValue": "user@okhdfcbank",
+    "candidateElements": [
+      {
+        "id": "upi-vpa-input",
+        "role": "textbox",
+        "ariaLabel": "Virtual Payment Address UPI ID",
+        "placeholder": "name@bank",
+        "name": "upiId"
+      },
+      {
+        "id": "verify-upi-btn",
+        "role": "button",
+        "ariaLabel": "Verify UPI ID",
+        "text": "Verify",
+        "name": "verifyUpi"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_fin_05",
+    "domain": "finance",
+    "userIntent": "Click Pay Now button",
+    "groundTruthTargetId": "pay-now-btn",
+    "groundTruthAction": "CLICK",
+    "expectedRole": "button",
+    "groundTruthValue": null,
+    "candidateElements": [
+      {
+        "id": "pay-now-btn",
+        "role": "button",
+        "ariaLabel": "Pay bill now",
+        "text": "Pay Now",
+        "name": "payNow"
+      },
+      {
+        "id": "cancel-pay-btn",
+        "role": "button",
+        "ariaLabel": "Cancel payment",
+        "text": "Cancel",
+        "name": "cancel"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_fin_06",
+    "domain": "finance",
+    "userIntent": "Download payment receipt PDF",
+    "groundTruthTargetId": "download-receipt-link",
+    "groundTruthAction": "CLICK",
+    "expectedRole": "link",
+    "groundTruthValue": null,
+    "candidateElements": [
+      {
+        "id": "download-receipt-link",
+        "role": "link",
+        "ariaLabel": "Download PDF receipt",
+        "text": "Download Receipt (PDF)",
+        "name": "receiptPdf"
+      },
+      {
+        "id": "print-receipt-btn",
+        "role": "button",
+        "ariaLabel": "Print receipt",
+        "text": "Print",
+        "name": "printReceipt"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_fin_07",
+    "domain": "finance",
+    "userIntent": "Submit electric meter reading 4820",
+    "groundTruthTargetId": "meter-reading-input",
+    "groundTruthAction": "TYPE",
+    "expectedRole": "textbox",
+    "groundTruthValue": "4820",
+    "candidateElements": [
+      {
+        "id": "meter-reading-input",
+        "role": "textbox",
+        "ariaLabel": "Current meter reading (kWh)",
+        "placeholder": "e.g. 4800",
+        "name": "meterReading"
+      },
+      {
+        "id": "submit-reading-btn",
+        "role": "button",
+        "ariaLabel": "Submit meter reading",
+        "text": "Submit Reading",
+        "name": "submitMeter"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_fin_08",
+    "domain": "finance",
+    "userIntent": "Toggle automatic monthly bill payment",
+    "groundTruthTargetId": "autopay-switch",
+    "groundTruthAction": "CLICK",
+    "expectedRole": "switch",
+    "groundTruthValue": null,
+    "candidateElements": [
+      {
+        "id": "autopay-switch",
+        "role": "switch",
+        "ariaLabel": "Enable automatic recurring payment",
+        "text": "AutoPay",
+        "name": "autoPayEnabled"
+      },
+      {
+        "id": "email-alerts-switch",
+        "role": "switch",
+        "ariaLabel": "Receive email alerts",
+        "text": "Email Alerts",
+        "name": "emailAlerts"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_fin_09",
+    "domain": "finance",
+    "userIntent": "Filter transactions from last 30 days",
+    "groundTruthTargetId": "date-range-filter",
+    "groundTruthAction": "SELECT",
+    "expectedRole": "combobox",
+    "groundTruthValue": "30_days",
+    "candidateElements": [
+      {
+        "id": "date-range-filter",
+        "role": "combobox",
+        "ariaLabel": "Transaction date range filter",
+        "name": "dateRange",
+        "text": "Last 30 Days"
+      },
+      {
+        "id": "txn-type-filter",
+        "role": "combobox",
+        "ariaLabel": "Transaction type filter",
+        "name": "txnType",
+        "text": "All Transactions"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_fin_10",
+    "domain": "finance",
+    "userIntent": "Search payee named BESCOM Electricity",
+    "groundTruthTargetId": "search-payee-input",
+    "groundTruthAction": "TYPE",
+    "expectedRole": "textbox",
+    "groundTruthValue": "BESCOM Electricity",
+    "candidateElements": [
+      {
+        "id": "search-payee-input",
+        "role": "textbox",
+        "ariaLabel": "Search registered billers and payees",
+        "placeholder": "Search biller...",
+        "name": "searchBiller"
+      },
+      {
+        "id": "add-new-biller-btn",
+        "role": "button",
+        "ariaLabel": "Add new biller",
+        "text": "+ Add Biller",
+        "name": "addBiller"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_prod_01",
+    "domain": "productivity",
+    "userIntent": "Enter full legal name Jane Doe",
+    "groundTruthTargetId": "applicant-name-input",
+    "groundTruthAction": "TYPE",
+    "expectedRole": "textbox",
+    "groundTruthValue": "Jane Doe",
+    "candidateElements": [
+      {
+        "id": "applicant-name-input",
+        "role": "textbox",
+        "ariaLabel": "Full legal name",
+        "placeholder": "Full Name",
+        "name": "fullName"
+      },
+      {
+        "id": "applicant-email-input",
+        "role": "textbox",
+        "ariaLabel": "Email address",
+        "placeholder": "you@domain.com",
+        "name": "email"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_prod_02",
+    "domain": "productivity",
+    "userIntent": "Enter email address jane.doe@example.com",
+    "groundTruthTargetId": "applicant-email-input",
+    "groundTruthAction": "TYPE",
+    "expectedRole": "textbox",
+    "groundTruthValue": "jane.doe@example.com",
+    "candidateElements": [
+      {
+        "id": "applicant-name-input",
+        "role": "textbox",
+        "ariaLabel": "Full legal name",
+        "placeholder": "Full Name",
+        "name": "fullName"
+      },
+      {
+        "id": "applicant-email-input",
+        "role": "textbox",
+        "ariaLabel": "Email address",
+        "placeholder": "you@domain.com",
+        "name": "email"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_prod_03",
+    "domain": "productivity",
+    "userIntent": "Select Bengaluru as preferred office location",
+    "groundTruthTargetId": "job-location-select",
+    "groundTruthAction": "SELECT",
+    "expectedRole": "combobox",
+    "groundTruthValue": "Bengaluru",
+    "candidateElements": [
+      {
+        "id": "job-location-select",
+        "role": "combobox",
+        "ariaLabel": "Preferred job location",
+        "name": "location",
+        "text": "Bengaluru, India"
+      },
+      {
+        "id": "job-role-select",
+        "role": "combobox",
+        "ariaLabel": "Target role",
+        "name": "role",
+        "text": "Software Engineer"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_prod_04",
+    "domain": "productivity",
+    "userIntent": "Upload resume file resume.pdf",
+    "groundTruthTargetId": "resume-upload-input",
+    "groundTruthAction": "TYPE",
+    "expectedRole": "file",
+    "groundTruthValue": "resume.pdf",
+    "candidateElements": [
+      {
+        "id": "resume-upload-input",
+        "role": "button",
+        "ariaLabel": "Upload resume document (PDF or DOCX)",
+        "name": "resumeFile",
+        "text": "Upload Resume"
+      },
+      {
+        "id": "cover-letter-input",
+        "role": "textbox",
+        "ariaLabel": "Cover letter text",
+        "placeholder": "Why are you interested?",
+        "name": "coverLetter"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_prod_05",
+    "domain": "productivity",
+    "userIntent": "Accept privacy consent policy",
+    "groundTruthTargetId": "privacy-consent-checkbox",
+    "groundTruthAction": "CLICK",
+    "expectedRole": "checkbox",
+    "groundTruthValue": null,
+    "candidateElements": [
+      {
+        "id": "privacy-consent-checkbox",
+        "role": "checkbox",
+        "ariaLabel": "I consent to privacy policy data processing",
+        "name": "consent"
+      },
+      {
+        "id": "marketing-checkbox",
+        "role": "checkbox",
+        "ariaLabel": "Receive job alerts by email",
+        "name": "jobAlerts"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_prod_06",
+    "domain": "productivity",
+    "userIntent": "Submit job application",
+    "groundTruthTargetId": "submit-application-btn",
+    "groundTruthAction": "CLICK",
+    "expectedRole": "button",
+    "groundTruthValue": null,
+    "candidateElements": [
+      {
+        "id": "submit-application-btn",
+        "role": "button",
+        "ariaLabel": "Submit your application",
+        "text": "Submit Application",
+        "name": "submitApp"
+      },
+      {
+        "id": "save-draft-btn",
+        "role": "button",
+        "ariaLabel": "Save application as draft",
+        "text": "Save Draft",
+        "name": "saveDraft"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_prod_07",
+    "domain": "productivity",
+    "userIntent": "Switch UI theme to dark mode",
+    "groundTruthTargetId": "dark-theme-toggle",
+    "groundTruthAction": "CLICK",
+    "expectedRole": "button",
+    "groundTruthValue": null,
+    "candidateElements": [
+      {
+        "id": "dark-theme-toggle",
+        "role": "button",
+        "ariaLabel": "Switch to dark mode theme",
+        "name": "themeToggle",
+        "text": "Dark Mode"
+      },
+      {
+        "id": "lang-selector",
+        "role": "combobox",
+        "ariaLabel": "Language selector",
+        "name": "lang",
+        "text": "English"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_prod_08",
+    "domain": "productivity",
+    "userIntent": "Search API documentation for authentication tokens",
+    "groundTruthTargetId": "docs-search-input",
+    "groundTruthAction": "TYPE",
+    "expectedRole": "textbox",
+    "groundTruthValue": "authentication tokens",
+    "candidateElements": [
+      {
+        "id": "docs-search-input",
+        "role": "textbox",
+        "ariaLabel": "Search developer documentation",
+        "placeholder": "Search docs...",
+        "name": "searchDocs"
+      },
+      {
+        "id": "api-version-select",
+        "role": "combobox",
+        "ariaLabel": "Select API version",
+        "name": "apiVersion",
+        "text": "v1.3"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_prod_09",
+    "domain": "productivity",
+    "userIntent": "Filter issues by label bug",
+    "groundTruthTargetId": "label-filter-dropdown",
+    "groundTruthAction": "SELECT",
+    "expectedRole": "combobox",
+    "groundTruthValue": "bug",
+    "candidateElements": [
+      {
+        "id": "label-filter-dropdown",
+        "role": "combobox",
+        "ariaLabel": "Filter by label",
+        "name": "label",
+        "text": "bug"
+      },
+      {
+        "id": "author-filter-dropdown",
+        "role": "combobox",
+        "ariaLabel": "Filter by author",
+        "name": "author",
+        "text": "all"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_prod_10",
+    "domain": "productivity",
+    "userIntent": "Save document draft changes",
+    "groundTruthTargetId": "save-draft-btn",
+    "groundTruthAction": "CLICK",
+    "expectedRole": "button",
+    "groundTruthValue": null,
+    "candidateElements": [
+      {
+        "id": "save-draft-btn",
+        "role": "button",
+        "ariaLabel": "Save document draft",
+        "text": "Save Draft",
+        "name": "saveDraft"
+      },
+      {
+        "id": "publish-doc-btn",
+        "role": "button",
+        "ariaLabel": "Publish document live",
+        "text": "Publish",
+        "name": "publish"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_media_01",
+    "domain": "media",
+    "userIntent": "Play tutorial video",
+    "groundTruthTargetId": "video-play-button",
+    "groundTruthAction": "CLICK",
+    "expectedRole": "button",
+    "groundTruthValue": null,
+    "candidateElements": [
+      {
+        "id": "video-play-button",
+        "role": "button",
+        "ariaLabel": "Play video",
+        "name": "play",
+        "text": "Play"
+      },
+      {
+        "id": "video-mute-button",
+        "role": "button",
+        "ariaLabel": "Mute video audio",
+        "name": "mute",
+        "text": "Mute"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_media_02",
+    "domain": "media",
+    "userIntent": "Mute video audio volume",
+    "groundTruthTargetId": "video-mute-button",
+    "groundTruthAction": "CLICK",
+    "expectedRole": "button",
+    "groundTruthValue": null,
+    "candidateElements": [
+      {
+        "id": "video-play-button",
+        "role": "button",
+        "ariaLabel": "Play video",
+        "name": "play",
+        "text": "Play"
+      },
+      {
+        "id": "video-mute-button",
+        "role": "button",
+        "ariaLabel": "Mute video audio",
+        "name": "mute",
+        "text": "Mute"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_media_03",
+    "domain": "media",
+    "userIntent": "Turn on closed captions subtitles",
+    "groundTruthTargetId": "subtitles-toggle-button",
+    "groundTruthAction": "CLICK",
+    "expectedRole": "button",
+    "groundTruthValue": null,
+    "candidateElements": [
+      {
+        "id": "subtitles-toggle-button",
+        "role": "button",
+        "ariaLabel": "Enable closed captions subtitles",
+        "name": "captions",
+        "text": "CC"
+      },
+      {
+        "id": "settings-button",
+        "role": "button",
+        "ariaLabel": "Video playback settings",
+        "name": "settings",
+        "text": "Settings"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_media_04",
+    "domain": "media",
+    "userIntent": "Skip to next music track",
+    "groundTruthTargetId": "next-track-btn",
+    "groundTruthAction": "CLICK",
+    "expectedRole": "button",
+    "groundTruthValue": null,
+    "candidateElements": [
+      {
+        "id": "prev-track-btn",
+        "role": "button",
+        "ariaLabel": "Previous track",
+        "name": "prev",
+        "text": "Prev"
+      },
+      {
+        "id": "next-track-btn",
+        "role": "button",
+        "ariaLabel": "Next track",
+        "name": "next",
+        "text": "Next"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_media_05",
+    "domain": "media",
+    "userIntent": "Subscribe to channel",
+    "groundTruthTargetId": "subscribe-channel-btn",
+    "groundTruthAction": "CLICK",
+    "expectedRole": "button",
+    "groundTruthValue": null,
+    "candidateElements": [
+      {
+        "id": "subscribe-channel-btn",
+        "role": "button",
+        "ariaLabel": "Subscribe to Sahaay AI channel",
+        "name": "subscribe",
+        "text": "Subscribe"
+      },
+      {
+        "id": "bell-notification-btn",
+        "role": "button",
+        "ariaLabel": "Enable notifications bell",
+        "name": "notifications",
+        "text": "Notify"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_media_06",
+    "domain": "media",
+    "userIntent": "Search for classical instrumental playlist",
+    "groundTruthTargetId": "media-search-input",
+    "groundTruthAction": "TYPE",
+    "expectedRole": "textbox",
+    "groundTruthValue": "classical instrumental",
+    "candidateElements": [
+      {
+        "id": "media-search-input",
+        "role": "textbox",
+        "ariaLabel": "Search songs, albums, and artists",
+        "placeholder": "Search music...",
+        "name": "searchQuery"
+      },
+      {
+        "id": "voice-search-btn",
+        "role": "button",
+        "ariaLabel": "Search by voice",
+        "name": "voiceSearch",
+        "text": "Voice"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_media_07",
+    "domain": "media",
+    "userIntent": "Add current song to Favorites playlist",
+    "groundTruthTargetId": "add-to-favorites-btn",
+    "groundTruthAction": "CLICK",
+    "expectedRole": "button",
+    "groundTruthValue": null,
+    "candidateElements": [
+      {
+        "id": "add-to-favorites-btn",
+        "role": "button",
+        "ariaLabel": "Add to Favorites playlist",
+        "name": "favorite",
+        "text": "Like"
+      },
+      {
+        "id": "share-song-btn",
+        "role": "button",
+        "ariaLabel": "Share song link",
+        "name": "share",
+        "text": "Share"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_media_08",
+    "domain": "media",
+    "userIntent": "Change video quality to 1080p",
+    "groundTruthTargetId": "video-quality-select",
+    "groundTruthAction": "SELECT",
+    "expectedRole": "combobox",
+    "groundTruthValue": "1080p",
+    "candidateElements": [
+      {
+        "id": "video-quality-select",
+        "role": "combobox",
+        "ariaLabel": "Video streaming quality",
+        "name": "quality",
+        "text": "1080p Full HD"
+      },
+      {
+        "id": "playback-speed-select",
+        "role": "combobox",
+        "ariaLabel": "Playback speed",
+        "name": "speed",
+        "text": "1.0x Normal"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_media_09",
+    "domain": "media",
+    "userIntent": "Bookmark current article",
+    "groundTruthTargetId": "bookmark-article-btn",
+    "groundTruthAction": "CLICK",
+    "expectedRole": "button",
+    "groundTruthValue": null,
+    "candidateElements": [
+      {
+        "id": "bookmark-article-btn",
+        "role": "button",
+        "ariaLabel": "Bookmark this article for later",
+        "name": "bookmark",
+        "text": "Bookmark"
+      },
+      {
+        "id": "print-article-btn",
+        "role": "button",
+        "ariaLabel": "Print this article",
+        "name": "print",
+        "text": "Print"
+      }
+    ]
+  },
+  {
+    "taskId": "m2w_media_10",
+    "domain": "media",
+    "userIntent": "Collapse navigation sidebar",
+    "groundTruthTargetId": "collapse-sidebar-btn",
+    "groundTruthAction": "CLICK",
+    "expectedRole": "button",
+    "groundTruthValue": null,
+    "candidateElements": [
+      {
+        "id": "collapse-sidebar-btn",
+        "role": "button",
+        "ariaLabel": "Collapse navigation sidebar menu",
+        "name": "collapseMenu",
+        "text": "Collapse"
+      },
+      {
+        "id": "home-nav-link",
+        "role": "link",
+        "ariaLabel": "Home navigation",
+        "name": "home",
+        "text": "Home"
+      }
+    ]
+  }
+]

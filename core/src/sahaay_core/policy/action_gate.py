@@ -34,6 +34,15 @@ PERMITTED_ACTIONS = {
     ActionTypeEnum.SCROLL_BROWSER_TAB,
     ActionTypeEnum.FILL_FORM_FIELDS,
     ActionTypeEnum.GET_FIELD_VALUES,
+    ActionTypeEnum.LAUNCH_APPLICATION,
+    ActionTypeEnum.SET_SYSTEM_VOLUME,
+    ActionTypeEnum.GET_SYSTEM_VOLUME,
+    ActionTypeEnum.RESEARCH_WEB_SEARCH,
+    ActionTypeEnum.RESEARCH_FETCH_PAGE,
+    ActionTypeEnum.DOCUMENT_INGEST_CHUNK,
+    ActionTypeEnum.DETERMINISTIC_RETRIEVAL,
+    ActionTypeEnum.VERIFY_READBACK,
+    ActionTypeEnum.USER_AUTHORIZATION,
 }
 
 # Operations that are strictly read-only and require lower scope threshold
@@ -47,6 +56,29 @@ READ_ONLY_ACTIONS = {
     ActionTypeEnum.SCROLL_BROWSER_TAB,
     ActionTypeEnum.GET_CONTROL_TEXT,
     ActionTypeEnum.GET_FIELD_VALUES,
+    ActionTypeEnum.GET_SYSTEM_VOLUME,
+    ActionTypeEnum.RESEARCH_WEB_SEARCH,
+    ActionTypeEnum.RESEARCH_FETCH_PAGE,
+    ActionTypeEnum.DOCUMENT_INGEST_CHUNK,
+    ActionTypeEnum.DETERMINISTIC_RETRIEVAL,
+    ActionTypeEnum.VERIFY_READBACK,
+    ActionTypeEnum.USER_AUTHORIZATION,
+}
+
+
+# Operations permitted during retrieval_only mode (no computer manipulation or scrolling)
+RETRIEVAL_ONLY_PERMITTED_ACTIONS = {
+    ActionTypeEnum.READ_FILE,
+    ActionTypeEnum.SEARCH_FILES,
+    ActionTypeEnum.GET_ACTIVE_TAB_INFO,
+    ActionTypeEnum.GET_TAB_CONTENT,
+    ActionTypeEnum.GET_ACTIVE_WINDOW,
+    ActionTypeEnum.LIST_OPEN_WINDOWS,
+    ActionTypeEnum.RESEARCH_WEB_SEARCH,
+    ActionTypeEnum.RESEARCH_FETCH_PAGE,
+    ActionTypeEnum.DOCUMENT_INGEST_CHUNK,
+    ActionTypeEnum.DETERMINISTIC_RETRIEVAL,
+    ActionTypeEnum.VERIFY_READBACK,
 }
 
 
@@ -71,14 +103,7 @@ class ActionGate:
             )
 
         # 1b. If task is declared retrieval_only, deny physical computer and browser actions
-        if task_type == "retrieval_only" and action.actionType not in (
-            ActionTypeEnum.READ_FILE,
-            ActionTypeEnum.SEARCH_FILES,
-            ActionTypeEnum.GET_ACTIVE_TAB_INFO,
-            ActionTypeEnum.GET_TAB_CONTENT,
-            ActionTypeEnum.GET_ACTIVE_WINDOW,
-            ActionTypeEnum.LIST_OPEN_WINDOWS,
-        ):
+        if task_type == "retrieval_only" and action.actionType not in RETRIEVAL_ONLY_PERMITTED_ACTIONS:
             return PolicyDecision(
                 decisionId=uuid4(),
                 actionId=action.actionId,

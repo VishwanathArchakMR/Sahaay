@@ -1403,7 +1403,7 @@ export function App(): React.JSX.Element {
                 </div>
                 <div className="flex justify-between items-center text-slate-400">
                   <span>SAM 3.1:</span>
-                  <span className="font-mono text-[11px] text-slate-200">sam-3-1</span>
+                  <span className="font-mono text-[11px] text-slate-200">sam-3.1</span>
                 </div>
 
                 <button

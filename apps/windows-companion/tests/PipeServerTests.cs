@@ -70,5 +70,49 @@ public class PipeServerTests
         Assert.False(res.Success);
         Assert.Contains("Missing required parameter 'hwnd'", res.Error);
     }
+
+    [Fact]
+    public void HandleRequest_LaunchApplication_RejectsUnauthorizedApps()
+    {
+        var parameters = new System.Collections.Generic.Dictionary<string, object>
+        {
+            { "application", "malicious_script.bat" }
+        };
+        var req = new IpcMessageRequest("req-7", "launch_application", "sess-1", null, null, parameters);
+        string json = JsonSerializer.Serialize(req);
+
+        var res = PipeServer.HandleRequest(json);
+
+        Assert.False(res.Success);
+        Assert.Contains("not in the authorized launch allowlist", res.Error);
+    }
+
+    [Fact]
+    public void HandleRequest_SetAndGetSystemVolume_ReturnsValidVolumeState()
+    {
+        var setParams = new System.Collections.Generic.Dictionary<string, object>
+        {
+            { "volume", 60 }
+        };
+        var setReq = new IpcMessageRequest("req-8", "set_system_volume", "sess-1", null, null, setParams);
+        var setRes = PipeServer.HandleRequest(JsonSerializer.Serialize(setReq));
+
+        Assert.True(setRes.Success);
+
+        var getReq = new IpcMessageRequest("req-9", "get_system_volume", "sess-1", null, null, null);
+        var getRes = PipeServer.HandleRequest(JsonSerializer.Serialize(getReq));
+
+        Assert.True(getRes.Success);
+    }
+
+    [Fact]
+    public void HandleRequest_ClickControl_FailsGracefully_WhenHwndMissing()
+    {
+        var req = new IpcMessageRequest("req-10", "click_control", "sess-1", null, null, null);
+        var res = PipeServer.HandleRequest(JsonSerializer.Serialize(req));
+
+        Assert.False(res.Success);
+        Assert.Contains("Missing required parameter 'hwnd'", res.Error);
+    }
 }
 

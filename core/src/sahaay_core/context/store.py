@@ -71,3 +71,15 @@ class ContextStore:
         for parent_id in fact.derivationIds:
             chain.extend(self.get_derivation_chain(parent_id))
         return chain
+
+    def search_facts(self, query: str) -> List[ContextFact]:
+        """Search structured facts by keyword matching content and metadata."""
+        query_lower = query.strip().lower()
+        if not query_lower:
+            return list(self._facts.values())
+
+        matching: List[ContextFact] = []
+        for fact in self._facts.values():
+            if query_lower in fact.content.lower():
+                matching.append(fact)
+        return matching

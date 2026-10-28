@@ -82,6 +82,15 @@ class ActionTypeEnum(str, Enum):
     SCROLL_BROWSER_TAB = "scroll_browser_tab"
     FILL_FORM_FIELDS = "fill_form_fields"
     GET_FIELD_VALUES = "get_field_values"
+    LAUNCH_APPLICATION = "launch_application"
+    SET_SYSTEM_VOLUME = "set_system_volume"
+    GET_SYSTEM_VOLUME = "get_system_volume"
+    RESEARCH_WEB_SEARCH = "research_web_search"
+    RESEARCH_FETCH_PAGE = "research_fetch_page"
+    DOCUMENT_INGEST_CHUNK = "document_ingest_chunk"
+    DETERMINISTIC_RETRIEVAL = "deterministic_retrieval"
+    VERIFY_READBACK = "verify_readback"
+    USER_AUTHORIZATION = "user_authorization"
 
 
 class Session(BaseModel):
@@ -211,6 +220,21 @@ class TaskStep(BaseModel):
     action: Optional[ActionContract] = None
     policyDecision: Optional[PolicyDecisionEnum] = None
     verificationStatus: Optional[VerificationStatusEnum] = None
+    capabilityId: Optional[str] = None
+    intendedOutcome: Optional[str] = None
+    dependencies: List[UUID] = Field(default_factory=list)
+    inputFacts: Dict[str, Any] = Field(default_factory=dict)
+    requiredPermissionScopes: List[str] = Field(default_factory=list)
+    riskCategory: str = "LOW"
+    requiresHumanConfirmation: bool = False
+    timeoutSeconds: float = 10.0
+    isIdempotent: bool = False
+    maxRetries: int = 0
+    retryCount: int = 0
+    evidenceRequired: Optional[str] = None
+    failureHandoff: bool = False
+    outputData: Optional[Dict[str, Any]] = None
+    errorMessage: Optional[str] = None
 
 
 class TaskContract(BaseModel):

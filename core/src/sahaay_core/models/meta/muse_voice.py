@@ -5,9 +5,11 @@ Supports streaming or batch audio processing, Kannada and Hindi language context
 editable transcript confirmation, and fail-closed privacy evaluation.
 """
 
+import json
 import logging
 from typing import List, Optional
 
+import httpx
 from pydantic import BaseModel
 
 from sahaay_core.config.settings import settings
@@ -71,22 +73,44 @@ class MuseVoiceClient:
 
         # Hosted call via multipart audio endpoint
         try:
-            # We would post to /audio/transcriptions
-            logger.debug(
-                "Posting audio transcription request for %d bytes with hints %s",
-                len(audio_bytes),
-                language_hints,
-            )
-            # Simulated safe call wrapper
-            return VoiceTranscriptionResult(
-                transcript="Check electricity bill and copy amount to Notepad",
-                confidence=0.96,
-                language_detected="en",
-                is_final=True,
-                duration_seconds=round(len(audio_bytes) / 32000.0, 2),
-                is_live_call=True,
-                editable=True,
-            )
+            req_data = {
+                "model": self.model_id,
+                "audioEncoding": "WAV",
+            }
+            if language_hints and len(language_hints) > 0:
+                req_data["language"] = language_hints[0]
+
+            files = {
+                "request": (None, json.dumps(req_data), "application/json"),
+                "audio": ("audio.wav", audio_bytes, content_type or "audio/wav"),
+            }
+            headers = {
+                "Authorization": f"Bearer {self.client.api_key}",
+            }
+            async with httpx.AsyncClient(timeout=25.0) as http_client:
+                res = await http_client.post(
+                    f"{self.client.base_url}/asr/transcribe",
+                    headers=headers,
+                    files=files,
+                )
+                if res.status_code == 200:
+                    data = res.json()
+                    transcript = data.get("transcript", "")
+                    duration_sec = float(data.get("audioDurationMs", 0)) / 1000.0
+                    return VoiceTranscriptionResult(
+                        transcript=transcript,
+                        confidence=0.95 if transcript else 0.0,
+                        language_detected=language_hints[0] if language_hints else "en",
+                        is_final=True,
+                        duration_seconds=duration_sec or round(len(audio_bytes) / 32000.0, 2),
+                        is_live_call=True,
+                        editable=True,
+                    )
+                else:
+                    logger.warning(
+                        "Muse Voice API returned HTTP %s: %s", res.status_code, res.text[:200]
+                    )
+                    return self._build_deterministic_transcript(audio_bytes, language_hints)
         except Exception as ex:
             logger.warning("Online audio transcription failed: %s; falling back.", ex)
             return self._build_deterministic_transcript(audio_bytes, language_hints)

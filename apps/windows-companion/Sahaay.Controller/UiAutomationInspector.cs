@@ -188,4 +188,56 @@ public static class UiAutomationInspector
             return (false, string.Empty, $"Failed to get control text: {ex.Message}");
         }
     }
+
+    public static (bool Success, string TargetId, string? Error) ClickControl(long hwnd, string? targetIdentifier)
+    {
+        try
+        {
+            var windowHandle = new IntPtr(hwnd);
+            var root = AutomationElement.FromHandle(windowHandle);
+            if (root == null)
+            {
+                return (false, targetIdentifier ?? string.Empty, $"Window HWND {hwnd} not found.");
+            }
+
+            AutomationElement? target = null;
+            if (!string.IsNullOrWhiteSpace(targetIdentifier))
+            {
+                target = root.FindFirst(TreeScope.Descendants,
+                    new PropertyCondition(AutomationElement.AutomationIdProperty, targetIdentifier))
+                    ?? root.FindFirst(TreeScope.Descendants,
+                    new PropertyCondition(AutomationElement.NameProperty, targetIdentifier));
+            }
+
+            if (target == null)
+            {
+                target = root.FindFirst(TreeScope.Descendants,
+                    new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button));
+            }
+
+            if (target == null)
+            {
+                return (false, targetIdentifier ?? string.Empty, "Target clickable control not found in window.");
+            }
+
+            if (target.TryGetCurrentPattern(InvokePattern.Pattern, out object? invObj) && invObj is InvokePattern invPattern)
+            {
+                invPattern.Invoke();
+                return (true, targetIdentifier ?? target.Current.Name, null);
+            }
+
+            if (target.TryGetCurrentPattern(TogglePattern.Pattern, out object? togObj) && togObj is TogglePattern togPattern)
+            {
+                togPattern.Toggle();
+                return (true, targetIdentifier ?? target.Current.Name, null);
+            }
+
+            target.SetFocus();
+            return (true, targetIdentifier ?? target.Current.Name, null);
+        }
+        catch (Exception ex)
+        {
+            return (false, targetIdentifier ?? string.Empty, $"Failed to click control: {ex.Message}");
+        }
+    }
 }

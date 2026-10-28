@@ -19,18 +19,46 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       const sanitizedExcerpt = rawText.replace(/\s+/g, " ").trim().substring(0, 15000);
 
       // 2. Discover accessible interactive controls (buttons, links, inputs, headings)
-      const accessibleElements: Array<{ tag: string; type?: string; text: string; id?: string }> = [];
-      const interactiveNodes = document.querySelectorAll("button, a[href], input, select, textarea, h1, h2, h3");
+      const accessibleElements: Array<{
+        tag: string;
+        type?: string;
+        text: string;
+        id?: string;
+        name?: string;
+        role?: string;
+        ariaLabel?: string;
+        placeholder?: string;
+        dataTestId?: string;
+      }> = [];
+      const interactiveNodes = document.querySelectorAll(
+        "button, a[href], input, select, textarea, [role='button'], [role='link'], [role='checkbox'], h1, h2, h3"
+      );
       interactiveNodes.forEach((node, idx) => {
-        if (idx >= 40) return; // Cap at 40 elements
+        if (idx >= 60) return; // Cap at 60 elements
         const htmlNode = node as HTMLElement;
-        const text = (htmlNode.innerText || (node as HTMLInputElement).value || (node as HTMLInputElement).placeholder || "").trim();
-        if (text || htmlNode.id) {
+        const text = (
+          htmlNode.innerText ||
+          (node as HTMLInputElement).value ||
+          (node as HTMLInputElement).placeholder ||
+          ""
+        ).trim();
+        const role = htmlNode.getAttribute("role") || undefined;
+        const ariaLabel = htmlNode.getAttribute("aria-label") || undefined;
+        const placeholder = (node as HTMLInputElement).placeholder || undefined;
+        const name = (node as HTMLInputElement).name || undefined;
+        const dataTestId = htmlNode.getAttribute("data-testid") || undefined;
+
+        if (text || htmlNode.id || name || ariaLabel || role) {
           accessibleElements.push({
             tag: htmlNode.tagName.toLowerCase(),
             type: (node as HTMLInputElement).type || undefined,
             text: text.substring(0, 80),
             id: htmlNode.id || undefined,
+            name: name || undefined,
+            role: role || undefined,
+            ariaLabel: ariaLabel || undefined,
+            placeholder: placeholder || undefined,
+            dataTestId: dataTestId || undefined,
           });
         }
       });
@@ -149,6 +177,44 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       });
     } catch (ex: any) {
       sendResponse({ success: false, error: ex.message || "Failed to get field values." });
+    }
+    return true;
+  }
+
+  if (request.command === "click_element") {
+    try {
+      const target =
+        request.targetId ||
+        request.payload?.targetId ||
+        request.selector ||
+        request.payload?.selector ||
+        request.target;
+      let el: HTMLElement | null = null;
+      if (target) {
+        el =
+          document.getElementById(target) ||
+          document.querySelector(target) ||
+          document.querySelector(`[name="${CSS.escape(target)}"]`) ||
+          document.querySelector(`[aria-label="${CSS.escape(target)}"]`) ||
+          document.querySelector(`[data-testid="${CSS.escape(target)}"]`);
+      }
+      if (!el) {
+        sendResponse({ success: false, error: `Element '${target}' not found on active page.` });
+        return true;
+      }
+      el.focus();
+      el.click();
+      sendResponse({
+        success: true,
+        data: {
+          clicked: true,
+          tag: el.tagName.toLowerCase(),
+          id: el.id,
+          text: (el.innerText || "").substring(0, 50),
+        },
+      });
+    } catch (ex: any) {
+      sendResponse({ success: false, error: ex.message || "Failed to click element." });
     }
     return true;
   }

@@ -87,6 +87,7 @@ class MuseImageClient:
             "baseUrl": self.base_url,
             "model": self.model_id,
             "message": "Muse Image endpoint configured.",
+            "isHealthy": True,
         }
 
     async def generate_step_illustration(

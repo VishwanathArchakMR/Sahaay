@@ -73,10 +73,22 @@ class Settings(BaseSettings):
         default="https://api.meta.ai/v1",
         validation_alias=AliasChoices("SAHAAY_META_API_BASE_URL", "META_API_BASE_URL"),
     )
-    muse_spark_model_id: str = "muse-spark-1.3"
-    muse_wonder_model_id: str = "muse-wonder-1.0"
-    muse_voice_model_id: str = "muse-voice-transcribe-1.0"
-    sam_model_id: str = "sam-3-1"
+    muse_spark_model_id: str = Field(
+        default="muse-spark-1.3",
+        validation_alias=AliasChoices("SAHAAY_MUSE_SPARK_MODEL_ID", "MUSE_SPARK_MODEL_ID"),
+    )
+    muse_wonder_model_id: str = Field(
+        default="muse-wonder-1.0",
+        validation_alias=AliasChoices("SAHAAY_MUSE_WONDER_MODEL_ID", "MUSE_WONDER_MODEL_ID"),
+    )
+    muse_voice_model_id: str = Field(
+        default="muse-voice-transcribe-1.0",
+        validation_alias=AliasChoices("SAHAAY_MUSE_VOICE_MODEL_ID", "MUSE_VOICE_MODEL_ID"),
+    )
+    sam_model_id: str = Field(
+        default="sam-3.1",
+        validation_alias=AliasChoices("SAHAAY_SAM_MODEL_ID", "SAM_MODEL_ID"),
+    )
 
     # Meta Muse Image Generation Settings
     meta_image_base_url: str = Field(

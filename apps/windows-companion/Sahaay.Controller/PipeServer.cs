@@ -141,6 +141,16 @@ public class PipeServer
 
                 "get_control_text" => HandleGetControlText(request),
 
+                "launch_application" => HandleLaunchApplication(request),
+
+                "click_control" => HandleClickControl(request),
+
+                "focus_window" => HandleFocusWindow(request),
+
+                "set_system_volume" => HandleSetSystemVolume(request),
+
+                "get_system_volume" => HandleGetSystemVolume(request),
+
                 _ => new IpcMessageResponse(
                     Id: request.Id,
                     Command: request.Command,
@@ -300,6 +310,208 @@ public class PipeServer
             Command: request.Command,
             Success: result.Success,
             Data: new { verified = result.Success, value = result.Text, targetId },
+            Error: result.Error
+        );
+    }
+
+    private static readonly Dictionary<string, string> AllowedApplicationMap = new(StringComparer.OrdinalIgnoreCase)
+    {
+        { "calc", "calc.exe" },
+        { "calc.exe", "calc.exe" },
+        { "calculator", "calc.exe" },
+        { "notepad", "notepad.exe" },
+        { "notepad.exe", "notepad.exe" },
+        { "explorer", "explorer.exe" },
+        { "explorer.exe", "explorer.exe" }
+    };
+
+    private static IpcMessageResponse HandleLaunchApplication(IpcMessageRequest request)
+    {
+        string? appName = null;
+        if (request.Parameters != null && request.Parameters.TryGetValue("application", out var appObj) && appObj != null)
+        {
+            appName = appObj.ToString();
+        }
+        else if (request.Parameters != null && request.Parameters.TryGetValue("appName", out var appNameObj) && appNameObj != null)
+        {
+            appName = appNameObj.ToString();
+        }
+
+        if (string.IsNullOrWhiteSpace(appName))
+        {
+            return new IpcMessageResponse(request.Id, request.Command, false, null, "Missing required parameter 'application'.");
+        }
+
+        if (!AllowedApplicationMap.TryGetValue(appName.Trim(), out string? exeName))
+        {
+            return new IpcMessageResponse(
+                request.Id,
+                request.Command,
+                false,
+                null,
+                $"Application '{appName}' is not in the authorized launch allowlist. Shell execution of arbitrary programs is prohibited."
+            );
+        }
+
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = exeName,
+                UseShellExecute = true
+            };
+            using var proc = Process.Start(startInfo);
+            int procId = proc?.Id ?? 0;
+
+            // Give process a moment to initialize its top-level window
+            Thread.Sleep(300);
+
+            long detectedHwnd = 0;
+            string detectedTitle = string.Empty;
+            string searchProcess = Path.GetFileNameWithoutExtension(exeName);
+
+            var openWindows = WindowDiscovery.GetOpenWindows();
+            foreach (var win in openWindows)
+            {
+                if (win.ProcessName.Equals(searchProcess, StringComparison.OrdinalIgnoreCase))
+                {
+                    detectedHwnd = win.Hwnd;
+                    detectedTitle = win.Title;
+                    break;
+                }
+            }
+
+            return new IpcMessageResponse(
+                Id: request.Id,
+                Command: request.Command,
+                Success: true,
+                Data: new
+                {
+                    isLaunched = true,
+                    processName = exeName,
+                    processId = procId,
+                    hwnd = detectedHwnd,
+                    windowTitle = detectedTitle
+                },
+                Error: null
+            );
+        }
+        catch (Exception ex)
+        {
+            return new IpcMessageResponse(request.Id, request.Command, false, null, $"Failed to launch '{appName}': {ex.Message}");
+        }
+    }
+
+    private static IpcMessageResponse HandleClickControl(IpcMessageRequest request)
+    {
+        if (request.Parameters == null || !request.Parameters.TryGetValue("hwnd", out var hwndObj))
+        {
+            return new IpcMessageResponse(request.Id, request.Command, false, null, "Missing required parameter 'hwnd'.");
+        }
+
+        long hwnd = 0;
+        if (hwndObj is JsonElement jsonElem && jsonElem.TryGetInt64(out long parsedHwnd))
+        {
+            hwnd = parsedHwnd;
+        }
+        else if (long.TryParse(hwndObj.ToString(), out long parsedStrHwnd))
+        {
+            hwnd = parsedStrHwnd;
+        }
+
+        string? targetId = null;
+        if (request.Parameters.TryGetValue("targetId", out var targetIdObj) && targetIdObj != null)
+        {
+            targetId = targetIdObj.ToString();
+        }
+        else if (request.Parameters.TryGetValue("automationId", out var autoIdObj) && autoIdObj != null)
+        {
+            targetId = autoIdObj.ToString();
+        }
+
+        var result = UiAutomationInspector.ClickControl(hwnd, targetId);
+        return new IpcMessageResponse(
+            Id: request.Id,
+            Command: request.Command,
+            Success: result.Success,
+            Data: new { verified = result.Success, targetId = result.TargetId },
+            Error: result.Error
+        );
+    }
+
+    private static IpcMessageResponse HandleFocusWindow(IpcMessageRequest request)
+    {
+        if (request.Parameters == null || !request.Parameters.TryGetValue("hwnd", out var hwndObj))
+        {
+            return new IpcMessageResponse(request.Id, request.Command, false, null, "Missing required parameter 'hwnd'.");
+        }
+
+        long hwnd = 0;
+        if (hwndObj is JsonElement jsonElem && jsonElem.TryGetInt64(out long parsedHwnd))
+        {
+            hwnd = parsedHwnd;
+        }
+        else if (long.TryParse(hwndObj.ToString(), out long parsedStrHwnd))
+        {
+            hwnd = parsedStrHwnd;
+        }
+
+        bool success = WindowDiscovery.FocusWindow(hwnd);
+        return new IpcMessageResponse(
+            Id: request.Id,
+            Command: request.Command,
+            Success: success,
+            Data: new { verified = success, hwnd },
+            Error: success ? null : $"Could not focus window with HWND {hwnd}."
+        );
+    }
+
+    private static IpcMessageResponse HandleSetSystemVolume(IpcMessageRequest request)
+    {
+        if (request.Parameters == null || (!request.Parameters.TryGetValue("volume", out var volObj) && !request.Parameters.TryGetValue("volumePercent", out volObj)))
+        {
+            return new IpcMessageResponse(request.Id, request.Command, false, null, "Missing required parameter 'volume' or 'volumePercent'.");
+        }
+
+        int targetVolume = 50;
+        if (volObj is JsonElement jsonElem && jsonElem.TryGetInt32(out int parsedVol))
+        {
+            targetVolume = parsedVol;
+        }
+        else if (int.TryParse(volObj.ToString(), out int parsedStrVol))
+        {
+            targetVolume = parsedStrVol;
+        }
+
+        var result = SystemAudioService.SetVolume(targetVolume);
+        return new IpcMessageResponse(
+            Id: request.Id,
+            Command: request.Command,
+            Success: result.Success,
+            Data: new
+            {
+                verified = result.Success,
+                volumePercent = result.VolumePercent,
+                previousVolumePercent = result.PreviousVolumePercent,
+                isMuted = result.IsMuted
+            },
+            Error: result.Error
+        );
+    }
+
+    private static IpcMessageResponse HandleGetSystemVolume(IpcMessageRequest request)
+    {
+        var result = SystemAudioService.GetVolume();
+        return new IpcMessageResponse(
+            Id: request.Id,
+            Command: request.Command,
+            Success: result.Success,
+            Data: new
+            {
+                verified = result.Success,
+                volumePercent = result.VolumePercent,
+                isMuted = result.IsMuted
+            },
             Error: result.Error
         );
     }

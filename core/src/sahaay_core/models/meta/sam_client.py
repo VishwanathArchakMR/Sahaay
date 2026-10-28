@@ -8,6 +8,7 @@ authorizes actions independently.
 
 import base64
 import logging
+import re
 from typing import List, Optional
 from uuid import uuid4
 
@@ -19,6 +20,8 @@ from sahaay_core.models.meta.meta_client import MetaClient
 from sahaay_core.privacy.privacy_gateway import PrivacyGateway
 
 logger = logging.getLogger("sahaay.models.sam")
+
+BOX_REGEX = re.compile(r"<\|box;x1=(\d+);y1=(\d+);x2=(\d+);y2=(\d+)(?:;w=(\d+);h=(\d+))?\|>")
 
 
 class BoundingBox(BaseModel):
@@ -112,39 +115,71 @@ class Sam31Client:
         b64_image = base64.b64encode(screenshot_bytes).decode("utf-8")
         payload = {
             "model": self.model_id,
-            "image": b64_image,
-            "prompt": target_prompt,
-            "dimensions": {"width": viewport_width, "height": viewport_height},
+            "input": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": target_prompt},
+                        {
+                            "type": "input_image",
+                            "image_url": f"data:image/png;base64,{b64_image}",
+                        },
+                    ],
+                }
+            ],
         }
 
         try:
-            api_res = await self.client.post_endpoint("grounding/segment", payload)
-            box_data = api_res.data.get("bounding_box", {})
-            x1 = int(box_data.get("x1", 100))
-            y1 = int(box_data.get("y1", 100))
-            x2 = int(box_data.get("x2", 200))
-            y2 = int(box_data.get("y2", 150))
-            w = max(1, x2 - x1)
-            h = max(1, y2 - y1)
+            api_res = await self.client.post_endpoint("responses", payload)
+            output_list = api_res.data.get("output", [])
+            output_text = ""
+            if output_list:
+                content_items = output_list[0].get("content", [])
+                if content_items:
+                    output_text = content_items[0].get("text", "")
 
-            return VisualGroundingResult(
-                grounding_id=grounding_id,
-                target_prompt=target_prompt,
-                observation_version=observation_version,
-                bounding_box=BoundingBox(
-                    x1=x1,
-                    y1=y1,
-                    x2=x2,
-                    y2=y2,
-                    width=w,
-                    height=h,
-                    center_x=x1 + w // 2,
-                    center_y=y1 + h // 2,
-                ),
-                confidence_score=float(api_res.data.get("confidence", 0.94)),
-                has_segmentation_mask=bool(api_res.data.get("mask")),
-                is_live_call=True,
-            )
+            box_match = BOX_REGEX.search(output_text)
+            if box_match:
+                x1 = int(box_match.group(1))
+                y1 = int(box_match.group(2))
+                x2 = int(box_match.group(3))
+                y2 = int(box_match.group(4))
+                x1 = max(0, min(viewport_width, x1))
+                y1 = max(0, min(viewport_height, y1))
+                x2 = max(x1 + 1, min(viewport_width, x2))
+                y2 = max(y1 + 1, min(viewport_height, y2))
+                w = x2 - x1
+                h = y2 - y1
+
+                return VisualGroundingResult(
+                    grounding_id=grounding_id,
+                    target_prompt=target_prompt,
+                    observation_version=observation_version,
+                    bounding_box=BoundingBox(
+                        x1=x1,
+                        y1=y1,
+                        x2=x2,
+                        y2=y2,
+                        width=w,
+                        height=h,
+                        center_x=x1 + w // 2,
+                        center_y=y1 + h // 2,
+                    ),
+                    confidence_score=0.95,
+                    has_segmentation_mask=bool("<|mask;" in output_text),
+                    is_live_call=True,
+                )
+            else:
+                logger.warning(
+                    "No bounding box parsed from SAM 3.1 response: %s", output_text[:100]
+                )
+                return self._build_deterministic_grounding(
+                    grounding_id=grounding_id,
+                    target_prompt=target_prompt,
+                    viewport_width=viewport_width,
+                    viewport_height=viewport_height,
+                    observation_version=observation_version,
+                )
         except Exception as ex:
             logger.warning(
                 "Online SAM 3.1 call failed (%s); reverting to deterministic fallback.", ex

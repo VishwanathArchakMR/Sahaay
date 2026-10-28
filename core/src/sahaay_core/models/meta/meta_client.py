@@ -55,7 +55,11 @@ class MetaClient:
         timeout_seconds: float = 30.0,
         max_retries: int = 3,
     ) -> None:
-        self.api_key = api_key or settings.model_api_key or os.environ.get("MODEL_API_KEY", "")
+        self.api_key = (
+            api_key
+            if api_key is not None
+            else (settings.model_api_key or os.environ.get("MODEL_API_KEY", ""))
+        )
         self.base_url = (base_url or settings.meta_api_base_url).rstrip("/")
         self.timeout_seconds = timeout_seconds
         self.max_retries = max_retries
@@ -185,17 +189,19 @@ class MetaClient:
 
             if res.status_code == 200:
                 return {
-                    "status": "READY",
-                    "message": "Successfully connected to Meta Model API.",
+                    "status": "AUTHENTICATED",
+                    "message": "Successfully authenticated with Meta Model API.",
                     "isConfigured": True,
                     "isLive": True,
+                    "isHealthy": True,
                 }
-            elif res.status_code == 401:
+            elif res.status_code in (401, 403):
                 return {
-                    "status": "AUTHENTICATION_FAILED",
-                    "message": "Invalid or expired MODEL_API_KEY.",
+                    "status": "UNAUTHORIZED",
+                    "message": "Invalid, expired or unauthorized MODEL_API_KEY.",
                     "isConfigured": True,
                     "isLive": False,
+                    "isHealthy": False,
                 }
             else:
                 return {
@@ -203,11 +209,13 @@ class MetaClient:
                     "message": f"Meta Model API returned HTTP {res.status_code}.",
                     "isConfigured": True,
                     "isLive": False,
+                    "isHealthy": False,
                 }
         except Exception as ex:
             return {
-                "status": "CONNECTION_FAILED",
+                "status": "FAILED",
                 "message": f"Could not connect to {self.base_url}: {ex}",
                 "isConfigured": True,
                 "isLive": False,
+                "isHealthy": False,
             }

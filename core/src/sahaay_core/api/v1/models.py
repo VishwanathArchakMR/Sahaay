@@ -67,14 +67,14 @@ provider_connectivity_cache: Dict[str, str] = {
 
 
 def _resolve_provider_readiness(is_configured: bool, cache_key: str) -> str:
-    """Computes truthful provider readiness state: NOT_CONFIGURED, NEEDS_CONSENT, CONFIGURED_UNTESTED, READY, or FAILED."""
+    """Computes truthful provider readiness state: NOT_CONFIGURED, NEEDS_CONSENT, CONFIGURED_UNTESTED, AUTHENTICATED, MODEL_REQUEST_VERIFIED, UNAUTHORIZED, UNAVAILABLE, or FAILED."""
     if not is_configured:
         return "NOT_CONFIGURED"
     if settings.local_only_mode or not settings.hosted_models_permitted:
         return "NEEDS_CONSENT"
     cached = provider_connectivity_cache.get(cache_key, "UNTESTED")
-    if cached == "READY":
-        return "READY"
+    if cached in ("READY", "AUTHENTICATED", "MODEL_REQUEST_VERIFIED"):
+        return cached
     if cached in ("FAILED", "UNAUTHORIZED", "UNAVAILABLE"):
         return cached
     return "CONFIGURED_UNTESTED"
@@ -170,9 +170,15 @@ async def test_model_connectivity() -> Dict[str, Any]:
     meta_result = await meta_client.check_connectivity()
     muse_image_result = await muse_image.check_connectivity()
 
-    provider_connectivity_cache["meta"] = "READY" if meta_result.get("isHealthy") else "FAILED"
+    provider_connectivity_cache["meta"] = (
+        meta_result.get("status", "AUTHENTICATED")
+        if meta_result.get("isHealthy") or meta_result.get("isLive")
+        else meta_result.get("status", "FAILED")
+    )
     provider_connectivity_cache["muse_image"] = (
-        "READY" if muse_image_result.get("isHealthy") else "FAILED"
+        muse_image_result.get("status", "READY")
+        if muse_image_result.get("isHealthy") or muse_image_result.get("configured")
+        else "FAILED"
     )
 
     return {

@@ -14,7 +14,7 @@ GENERIC_READ = 0x80000000
 GENERIC_WRITE = 0x40000000
 OPEN_EXISTING = 3
 FILE_ATTRIBUTE_NORMAL = 0x00000080
-INVALID_HANDLE_VALUE = -1
+INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
 PIPE_READMODE_MESSAGE = 0x00000002
 
 kernel32 = ctypes.windll.kernel32
@@ -81,7 +81,7 @@ class NamedPipeClient:
             None,
         )
 
-        if handle == INVALID_HANDLE_VALUE:
+        if handle in (INVALID_HANDLE_VALUE, -1, None, 0):
             error_code = kernel32.GetLastError()
             raise ConnectionError(
                 f"Could not connect to Sahaay Controller Named Pipe '{self.pipe_path}' (Win32 Error: {error_code}). "

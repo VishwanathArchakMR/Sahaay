@@ -13,7 +13,7 @@ import time
 from typing import Any, Dict, List, Literal, Optional, Tuple
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from sahaay_core.capabilities import capability_registry
 from sahaay_core.config.settings import settings
@@ -62,18 +62,23 @@ HINDI_KEYWORDS = [
 class PlanStepProposal(BaseModel):
     """Structured proposal for an individual execution step."""
 
-    step_id: str
-    title: str
-    purpose: str
+    step_id: str = Field(default_factory=lambda: f"step-{uuid4().hex[:6]}")
+    title: str = "Execution Step"
+    purpose: str = "Perform workflow operation"
     capability: str
     action_type: str
-    target_surface: str
-    target_scope: str
+    target_surface: str = "desktop_window"
+    target_scope: str = "active_target"
     preconditions: List[str] = Field(default_factory=list)
     expected_postconditions: List[str] = Field(default_factory=list)
     requires_human_approval: bool = False
     recovery_option: str = "halt_and_ask_user"
     parameters: Dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("step_id", mode="before")
+    @classmethod
+    def coerce_step_id(cls, v: Any) -> str:
+        return str(v)
 
 
 class StructuredTaskPlan(BaseModel):
@@ -94,8 +99,18 @@ class StructuredTaskPlan(BaseModel):
 # Authoritative capabilities set backed by central CapabilityRegistry
 REGISTERED_CAPABILITIES = {cap.capability_id for cap in capability_registry.list_capabilities()}
 
-# Permitted action types mapped from ActionTypeEnum
-PERMITTED_ACTION_TYPES = {e.value for e in ActionTypeEnum} | {"user_authorization"}
+# Permitted action types mapped from ActionTypeEnum and capability registry
+PERMITTED_ACTION_TYPES = (
+    {e.value for e in ActionTypeEnum}
+    | {cap.capability_id for cap in capability_registry.list_capabilities()}
+    | {
+        "user_authorization",
+        "deterministic_retrieval",
+        "verify_readback",
+        "web_search",
+        "fetch_page",
+    }
+)
 
 
 class GroundedSourceFact(BaseModel):
@@ -192,9 +207,9 @@ class MuseSparkClient:
                 normalized["account_number"] = v
             elif "consumer" in k or "customer" in k or "name" in k:
                 normalized["consumer_name"] = v
-            elif "amount" in k or "due" in k:
+            elif "amount" in k or "total" in k or "bill" in k:
                 normalized["amount_due"] = v
-            elif "date" in k:
+            elif "date" in k or "due" in k or "deadline" in k:
                 normalized["due_date"] = v
             else:
                 normalized[k] = v
@@ -525,6 +540,30 @@ class MuseSparkClient:
             "Produce ONLY valid JSON conforming to the structured planning schema.\n"
             "Supported System Capabilities (Authoritative Registry):\n"
             f"{catalog}\n\n"
+            "Your output MUST be a JSON object with this exact structure:\n"
+            "{\n"
+            '  "plan_id": "plan-1234",\n'
+            f'  "task_goal": {json.dumps(user_goal)},\n'
+            f'  "workflow_mode": {json.dumps(task_contract.taskType)},\n'
+            '  "steps": [\n'
+            "    {\n"
+            '      "step_id": "step-1",\n'
+            '      "title": "Short descriptive step title",\n'
+            '      "purpose": "What this step accomplishes",\n'
+            '      "capability": "<exact capability_id from registry above>",\n'
+            '      "action_type": "<action_type from registry or ActionTypeEnum>",\n'
+            '      "target_surface": "browser_tab" | "desktop_window" | "local_store" | "internet",\n'
+            '      "target_scope": "active_tab" | "Notepad" | etc,\n'
+            '      "preconditions": ["precondition text"],\n'
+            '      "expected_postconditions": ["expected result"],\n'
+            '      "requires_human_approval": false,\n'
+            '      "recovery_option": "halt_and_ask_user",\n'
+            '      "parameters": {}\n'
+            "    }\n"
+            "  ],\n"
+            f'  "source_facts": {json.dumps(source_facts or {})},\n'
+            '  "stop_conditions": ["Goal achieved and verified"]\n'
+            "}\n\n"
             f"User Goal: {user_goal}\n"
             f"Task Mode: {task_contract.taskType}\n"
             f"Context: {context[:1000]}\n"
@@ -597,7 +636,7 @@ class MuseSparkClient:
         self,
         task: TaskContract,
         context: str,
-        source_facts: Dict[str, Any],
+        source_facts: Optional[Dict[str, Any]] = None,
         active_grants: Optional[List[ConsentGrant]] = None,
     ) -> StructuredTaskPlan:
         """Generates and strictly validates a structured plan via Meta Muse Spark 1.3.
@@ -605,6 +644,7 @@ class MuseSparkClient:
         Respects local-only mode and privacy gateway fail-closed defaults.
         """
         start_time = time.perf_counter()
+        source_facts = source_facts or {}
         active_grants = active_grants or []
 
         # 1. Privacy Gateway Check
@@ -788,6 +828,39 @@ class MuseSparkClient:
                     requires_human_approval=False,
                 ),
             ]
+        elif (
+            str(task.taskType) == "retrieval_only"
+            or "explain" in task.goal.lower()
+            or "find" in task.goal.lower()
+        ):
+            steps = [
+                PlanStepProposal(
+                    step_id="step-ret-1",
+                    title="Retrieve Relevant Knowledge & Documents",
+                    purpose="Search local document context and verified records",
+                    capability="deterministic_retrieval",
+                    action_type=ActionTypeEnum.DETERMINISTIC_RETRIEVAL.value,
+                    target_surface="local_store",
+                    target_scope="knowledge_store",
+                    parameters={"query": task.goal},
+                    preconditions=[],
+                    expected_postconditions=["Matching facts and citations retrieved"],
+                    requires_human_approval=False,
+                ),
+                PlanStepProposal(
+                    step_id="step-ret-2",
+                    title="Verify Source Provenance & Grounding",
+                    purpose="Validate that answer is grounded in retrieved facts",
+                    capability="verify_readback",
+                    action_type=ActionTypeEnum.VERIFY_READBACK.value,
+                    target_surface="local_store",
+                    target_scope="verified_facts",
+                    parameters={"target": "retrieved_facts"},
+                    preconditions=["Information retrieved"],
+                    expected_postconditions=["Evidence recorded without system mutation"],
+                    requires_human_approval=False,
+                ),
+            ]
         else:
             steps = [
                 PlanStepProposal(
@@ -807,7 +880,7 @@ class MuseSparkClient:
                     title="Independent Verification",
                     purpose="Verify observed state against criteria",
                     capability="verify_readback",
-                    action_type=ActionTypeEnum.GET_FIELD_VALUES.value,
+                    action_type=ActionTypeEnum.VERIFY_READBACK.value,
                     target_surface="browser_tab",
                     target_scope="active_context",
                     preconditions=["Observation available"],

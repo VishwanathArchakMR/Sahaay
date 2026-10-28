@@ -451,6 +451,207 @@ class CapabilityRegistry:
             )
         )
 
+        # 13. Windows Launch Application
+        self.register(
+            CapabilityDescriptor(
+                capability_id="windows_launch_app",
+                name="Launch Windows Application",
+                description="Launch an authorized native Windows desktop application from the strict allowlist (Notepad, Calculator, Explorer).",
+                example_requests=["Open Calculator", "Open Notepad to write notes"],
+                supported_surfaces=["desktop_window"],
+                adapter="windows_native_companion",
+                input_schema={
+                    "type": "object",
+                    "properties": {"application": {"type": "string"}},
+                    "required": ["application"],
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "isLaunched": {"type": "boolean"},
+                        "processName": {"type": "string"},
+                        "processId": {"type": "integer"},
+                        "hwnd": {"type": "integer"},
+                        "windowTitle": {"type": "string"},
+                    },
+                },
+                preconditions=["Companion service running", "Target app is in allowlist"],
+                required_permission_scopes=["write:desktop_window"],
+                risk_category=RiskCategory.MEDIUM,
+                requires_human_confirmation=False,
+                is_reversible=True,
+                timeout_seconds=5.0,
+                is_idempotent=True,
+                verification_method="Window discovery and process enumeration confirms application is running.",
+                required_postconditions=["Target application window discovered and active"],
+                readiness_state=CapabilityReadiness.READY,
+                known_limitations=[
+                    "Shell execution of arbitrary commands or scripts is strictly disabled"
+                ],
+            )
+        )
+
+        # 14. Windows Click Control
+        self.register(
+            CapabilityDescriptor(
+                capability_id="windows_click_control",
+                name="Click Windows Control",
+                description="Invoke or click an accessible control in an authorized desktop window via UI Automation.",
+                example_requests=["Click the Clear button in Calculator", "Click Save"],
+                supported_surfaces=["desktop_window"],
+                adapter="windows_native_companion",
+                input_schema={
+                    "type": "object",
+                    "properties": {"hwnd": {"type": "integer"}, "targetId": {"type": "string"}},
+                    "required": ["hwnd"],
+                },
+                output_schema={"type": "object", "properties": {"verified": {"type": "boolean"}}},
+                preconditions=["Target window handle exists and is accessible"],
+                required_permission_scopes=["write:desktop_window"],
+                risk_category=RiskCategory.MEDIUM,
+                requires_human_confirmation=False,
+                is_reversible=False,
+                timeout_seconds=5.0,
+                is_idempotent=False,
+                verification_method="UI Automation invoke pattern execution and post-click element state check.",
+                required_postconditions=["Control invoked without error"],
+                readiness_state=CapabilityReadiness.READY,
+            )
+        )
+
+        # 15. Windows Set System Volume
+        self.register(
+            CapabilityDescriptor(
+                capability_id="windows_set_volume",
+                name="Set Windows System Volume",
+                description="Adjust master system audio volume (0-100) using Windows Core Audio API, independently reading back actual level.",
+                example_requests=["Set system volume to 60%", "Mute system audio"],
+                supported_surfaces=["system_state"],
+                adapter="windows_native_companion",
+                input_schema={
+                    "type": "object",
+                    "properties": {"volume": {"type": "integer", "minimum": 0, "maximum": 100}},
+                    "required": ["volume"],
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "volumePercent": {"type": "integer"},
+                        "previousVolumePercent": {"type": "integer"},
+                        "isMuted": {"type": "boolean"},
+                    },
+                },
+                preconditions=["Windows Core Audio service active"],
+                required_permission_scopes=["write:system_settings"],
+                risk_category=RiskCategory.LOW,
+                requires_human_confirmation=False,
+                is_reversible=True,
+                timeout_seconds=3.0,
+                is_idempotent=True,
+                verification_method="Independent readback of master volume scalar via Core Audio endpoint.",
+                required_postconditions=["Verified system volume matches target percentage"],
+                readiness_state=CapabilityReadiness.READY,
+            )
+        )
+
+        # 16. Windows Get System Volume
+        self.register(
+            CapabilityDescriptor(
+                capability_id="windows_get_volume",
+                name="Get Windows System Volume",
+                description="Query current master system audio volume and mute status via Windows Core Audio API.",
+                example_requests=["What is my current system volume?"],
+                supported_surfaces=["system_state"],
+                adapter="windows_native_companion",
+                input_schema={"type": "object"},
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "volumePercent": {"type": "integer"},
+                        "isMuted": {"type": "boolean"},
+                    },
+                },
+                preconditions=["Windows Core Audio service active"],
+                required_permission_scopes=["read:system_settings"],
+                risk_category=RiskCategory.LOW,
+                requires_human_confirmation=False,
+                is_reversible=True,
+                timeout_seconds=2.0,
+                is_idempotent=True,
+                verification_method="Direct inspection of Core Audio endpoint volume scalar.",
+                required_postconditions=["System volume level returned"],
+                readiness_state=CapabilityReadiness.READY,
+            )
+        )
+
+        # 17. Browser Scroll Tab
+        self.register(
+            CapabilityDescriptor(
+                capability_id="browser_scroll_tab",
+                name="Scroll Browser Tab",
+                description="Scroll the active browser tab vertically by a specified delta in pixels.",
+                example_requests=["Scroll down 300px", "Scroll to next section"],
+                supported_surfaces=["browser_tab"],
+                adapter="browser_extension_bridge",
+                input_schema={
+                    "type": "object",
+                    "properties": {"deltaY": {"type": "integer"}},
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "preScrollY": {"type": "integer"},
+                        "postScrollY": {"type": "integer"},
+                        "actualDeltaY": {"type": "integer"},
+                    },
+                },
+                preconditions=["Active browser tab loaded"],
+                required_permission_scopes=["action:browser_tab"],
+                risk_category=RiskCategory.LOW,
+                requires_human_confirmation=False,
+                is_reversible=True,
+                timeout_seconds=3.0,
+                is_idempotent=False,
+                verification_method="Independent readback of scrollY before and after action.",
+                required_postconditions=["postScrollY - preScrollY equals requested delta"],
+                readiness_state=CapabilityReadiness.READY,
+            )
+        )
+
+        # 18. Browser Click Element
+        self.register(
+            CapabilityDescriptor(
+                capability_id="browser_click_element",
+                name="Click Browser Element",
+                description="Click an accessible interactive element on the active browser tab by target ID or selector.",
+                example_requests=["Click submit button", "Click search icon"],
+                supported_surfaces=["browser_tab"],
+                adapter="browser_extension_bridge",
+                input_schema={
+                    "type": "object",
+                    "properties": {"target": {"type": "string"}},
+                    "required": ["target"],
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "clicked": {"type": "boolean"},
+                        "target": {"type": "string"},
+                    },
+                },
+                preconditions=["Active browser tab loaded", "Target element is visible and interactive"],
+                required_permission_scopes=["action:browser_tab"],
+                risk_category=RiskCategory.MEDIUM,
+                requires_human_confirmation=False,
+                is_reversible=False,
+                timeout_seconds=4.0,
+                is_idempotent=False,
+                verification_method="Post-click element focus and DOM change observation.",
+                required_postconditions=["Element clicked confirmed by content script"],
+                readiness_state=CapabilityReadiness.READY,
+            )
+        )
+
 
 # Global singleton instance
 capability_registry = CapabilityRegistry()

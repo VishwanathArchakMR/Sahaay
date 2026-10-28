@@ -143,4 +143,20 @@ public static class WindowDiscovery
             IsMinimized: IsIconic(hWnd)
         );
     }
+
+    [DllImport("user32.dll")]
+    public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    public static bool FocusWindow(long hwnd)
+    {
+        try
+        {
+            var hWnd = new IntPtr(hwnd);
+            return SetForegroundWindow(hWnd);
+        }
+        catch
+        {
+            return false;
+        }
+    }
 }

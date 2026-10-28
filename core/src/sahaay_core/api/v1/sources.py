@@ -104,6 +104,7 @@ class IngestFileRequest(BaseModel):
     taskId: Optional[UUID] = None
 
 
+@router.post("/ingest", response_model=Dict[str, Any], status_code=status.HTTP_200_OK)
 @router.post("/ingest-file", response_model=Dict[str, Any], status_code=status.HTTP_201_CREATED)
 async def ingest_file(req: IngestFileRequest) -> Dict[str, Any]:
     """Ingest user-authorized local file (txt, md, json, csv, pdf) and record structured facts."""
@@ -180,6 +181,7 @@ async def search_sources(req: SearchSourcesRequest) -> Dict[str, Any]:
                     {
                         "factId": str(f.factId),
                         "factType": f.factType.value,
+                        "content": snippet,
                         "sourceKind": source_kind,
                         "sourceId": str(src.sourceId),
                         "sourceType": src.sourceType,

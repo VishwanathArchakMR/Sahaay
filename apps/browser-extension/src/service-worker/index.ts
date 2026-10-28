@@ -12,6 +12,74 @@ import {
 const NATIVE_HOST_NAME = "com.sahaay.nativehost";
 let nativePort: chrome.runtime.Port | null = null;
 
+function handleNativeMessage(msg: any) {
+  if (!msg || !msg.command) return;
+  const id = msg.id || "msg-" + Date.now();
+  const command = msg.command;
+  const payload = msg.parameters || msg.payload || {};
+
+  if (command === "ping") {
+    nativePort?.postMessage({
+      id,
+      success: true,
+      command: "ping",
+      data: { status: "pong", timestamp: new Date().toISOString() },
+    });
+    return;
+  }
+
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const activeTab = tabs[0];
+    if (!activeTab || !activeTab.id) {
+      nativePort?.postMessage({ id, success: false, command, error: "No active browser tab found." });
+      return;
+    }
+    if (
+      activeTab.url &&
+      (activeTab.url.startsWith("chrome:") ||
+        activeTab.url.startsWith("edge:") ||
+        activeTab.url.startsWith("about:"))
+    ) {
+      nativePort?.postMessage({
+        id,
+        success: false,
+        command,
+        error: "Cannot operate on protected internal browser pages.",
+      });
+      return;
+    }
+
+    chrome.tabs.sendMessage(activeTab.id, { command, payload, ...payload }, (contentRes) => {
+      if (chrome.runtime.lastError || !contentRes || !contentRes.success) {
+        nativePort?.postMessage({
+          id,
+          success: false,
+          command,
+          error:
+            chrome.runtime.lastError?.message ||
+            contentRes?.error ||
+            "Content script did not respond.",
+        });
+        return;
+      }
+      nativePort?.postMessage({
+        id,
+        success: true,
+        command,
+        data:
+          command === "get_tab_observation" || command === "get_sanitized_dom"
+            ? {
+                observationId: crypto.randomUUID(),
+                tabId: activeTab.id,
+                capturedAt: new Date().toISOString(),
+                ...contentRes.data,
+              }
+            : contentRes.data,
+      });
+    });
+  });
+}
+
 function ensureNativePort(): chrome.runtime.Port {
   if (!nativePort) {
     try {
@@ -20,6 +88,7 @@ function ensureNativePort(): chrome.runtime.Port {
         console.warn("[Sahaay ServiceWorker] Native port disconnected:", chrome.runtime.lastError?.message);
         nativePort = null;
       });
+      nativePort.onMessage.addListener(handleNativeMessage);
     } catch (err) {
       console.error("[Sahaay ServiceWorker] Failed to connect to native host:", err);
       throw err;
@@ -30,6 +99,15 @@ function ensureNativePort(): chrome.runtime.Port {
 
 chrome.runtime.onInstalled.addListener(() => {
   console.log("[Sahaay ServiceWorker] Installed and initialized.");
+  try {
+    ensureNativePort();
+  } catch (_) {}
+});
+
+chrome.runtime.onStartup?.addListener(() => {
+  try {
+    ensureNativePort();
+  } catch (_) {}
 });
 
 chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
