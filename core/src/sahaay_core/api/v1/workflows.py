@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from sahaay_core.api.v1.actions import evidence_ledger
 from sahaay_core.api.v1.sessions import active_grants, active_sessions
 from sahaay_core.api.v1.sources import context_store, source_manager
+from sahaay_core.api.v1.storytelling import register_or_update_passport
 from sahaay_core.api.v1.tasks import orchestrator
 from sahaay_core.contracts.models import (
     ActionContract,
@@ -30,11 +31,13 @@ from sahaay_core.contracts.models import (
     TaskStatusEnum,
     VerificationStatusEnum,
 )
+from sahaay_core.models.baseten.muse_spark_open import muse_spark_open
 from sahaay_core.models.meta.muse_spark import muse_spark
 from sahaay_core.policy.action_gate import ActionGate
 from sahaay_core.verification.verifier import IndependentVerifier
 
 router = APIRouter(prefix="/workflows", tags=["Workflows"])
+
 
 # Path to c:/Sahaay/data/fixtures
 FIXTURES_DIR = Path(__file__).resolve().parents[5] / "data" / "fixtures"
@@ -137,6 +140,14 @@ async def execute_browser_to_desktop(req: BrowserToDesktopRequest) -> Dict[str, 
 
     # 3. PROPOSE
     orchestrator.transition_state(task_id, TaskStatusEnum.PROPOSING)
+    grants = active_grants.get(req.sessionId, [])
+    structured_plan = await muse_spark_open.generate_plan(
+        task=task,
+        context=f"Browser tab bill content: {bill_text[:400]}",
+        source_facts=extracted,
+        active_grants=grants,
+    )
+
     summary_text = (
         f"BESCOM BILL SUMMARY\n"
         f"Customer: {extracted.get('consumer_name', 'Aarav Sharma')}\n"
@@ -257,6 +268,19 @@ async def execute_browser_to_desktop(req: BrowserToDesktopRequest) -> Dict[str, 
     )
     orchestrator.transition_state(task_id, TaskStatusEnum.COMPLETED)
 
+    # Construct Task Passport for visual storytelling
+    passport = register_or_update_passport(
+        task_id=str(task_id),
+        goal=req.instruction,
+        workflow_mode="combined_retrieval_and_action",
+        direction="Browser Tab → Windows Application",
+        extracted_fields=extracted,
+        verification_status=verification_status.value,
+        evidence_id=str(evidence.evidenceId),
+        target_app_or_url=f"hwnd:{req.targetHwnd or 0}:{req.targetControlId}",
+        source_ref=source_ref.uri,
+    )
+
     return {
         "workflow": "browser-to-desktop",
         "taskId": str(task_id),
@@ -278,6 +302,8 @@ async def execute_browser_to_desktop(req: BrowserToDesktopRequest) -> Dict[str, 
             },
         },
         "evidenceId": str(evidence.evidenceId),
+        "structuredPlan": structured_plan.model_dump(),
+        "passport": passport.model_dump(),
     }
 
 
@@ -337,6 +363,14 @@ async def execute_desktop_to_browser(req: DesktopToBrowserRequest) -> Dict[str, 
 
     # 3. PROPOSE
     orchestrator.transition_state(task_id, TaskStatusEnum.PROPOSING)
+    grants = active_grants.get(req.sessionId, [])
+    structured_plan = await muse_spark_open.generate_plan(
+        task=task,
+        context=f"Invoice document content: {json.dumps(extracted_fields)}",
+        source_facts=extracted_fields,
+        active_grants=grants,
+    )
+
     field_mapping = {
         "customerName": extracted_fields.get("customerName", "Aarav Sharma"),
         "accountNumber": extracted_fields.get("accountNumber", "BLR-UTIL-98421"),
@@ -426,6 +460,19 @@ async def execute_desktop_to_browser(req: DesktopToBrowserRequest) -> Dict[str, 
     )
     orchestrator.transition_state(task_id, TaskStatusEnum.COMPLETED)
 
+    # Construct Task Passport for visual storytelling
+    passport = register_or_update_passport(
+        task_id=str(task_id),
+        goal=req.instruction,
+        workflow_mode="combined_retrieval_and_action",
+        direction="Local Document → Browser Form",
+        extracted_fields=extracted_fields,
+        verification_status=verification_status.value,
+        evidence_id=str(evidence.evidenceId),
+        target_app_or_url=req.targetTabUrl or "bill_pay_form.html",
+        source_ref=str(doc_path),
+    )
+
     return {
         "workflow": "desktop-to-browser",
         "taskId": str(task_id),
@@ -443,4 +490,6 @@ async def execute_desktop_to_browser(req: DesktopToBrowserRequest) -> Dict[str, 
             "submissionBlockedBySafety": True,
         },
         "evidenceId": str(evidence.evidenceId),
+        "structuredPlan": structured_plan.model_dump(),
+        "passport": passport.model_dump(),
     }

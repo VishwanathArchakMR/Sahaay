@@ -19,6 +19,12 @@ import {
   Radio,
   Sliders,
   Volume2,
+  Compass,
+  Wand2,
+  Trash2,
+  ChevronDown,
+  ChevronRight,
+  Info,
 } from "lucide-react";
 
 const API_BASE = "http://127.0.0.1:8000/api/v1";
@@ -40,7 +46,55 @@ type TaskFlowState =
   | "FAILED"
   | "HANDOFF";
 
+interface MilestoneCardData {
+  stepId: string;
+  stepIndex: number;
+  title: string;
+  operation: string;
+  source?: string;
+  destination?: string;
+  direction?: string;
+  status: string;
+  description: string;
+  evidenceId?: string;
+  isVerified: boolean;
+  imageUrl?: string;
+  svgFallback?: string;
+  isIllustrationAiGenerated: boolean;
+  parameters?: Record<string, any>;
+}
+
+interface TaskPassportData {
+  taskId: string;
+  workflowMode: string;
+  direction?: string;
+  status: string;
+  sourceUrl?: string;
+  targetWindow?: string;
+  summary: string;
+  visualStorytellingEnabled: boolean;
+  milestones: MilestoneCardData[];
+  provenanceSha256?: string;
+  verifiedTimestamp?: string;
+}
+
 interface ModelsStatusReport {
+  baseten?: {
+    isConfigured: boolean;
+    baseUrl: string;
+    model: string;
+    status: string;
+  };
+  museImage?: {
+    isConfigured: boolean;
+    baseUrl: string;
+    model: string;
+    status: string;
+  };
+  storytelling?: {
+    enabled: boolean;
+    budget: number;
+  };
   metaHosted: {
     isConfigured: boolean;
     baseUrl: string;
@@ -66,6 +120,12 @@ interface ModelsStatusReport {
       gpuName?: string;
       vram?: string;
     };
+  };
+  systemIntegrations?: {
+    browserExtension: string;
+    nativeMessaging: string;
+    windowsCompanion: string;
+    sqliteLedger: string;
   };
   privacyMode: {
     localOnlyMode: boolean;
@@ -112,6 +172,12 @@ export function App(): React.JSX.Element {
   // Active execution results
   const [lastWorkflowResult, setLastWorkflowResult] = useState<any>(null);
 
+  // Task Passport & Visual Storytelling state
+  const [taskPassport, setTaskPassport] = useState<TaskPassportData | null>(null);
+  const [activeRightTab, setActiveRightTab] = useState<"passport" | "timeline">("passport");
+  const [expandedStepIds, setExpandedStepIds] = useState<Set<string>>(new Set());
+  const [illustratingStepId, setIllustratingStepId] = useState<string | null>(null);
+
   const recordingIntervalRef = useRef<any>(null);
 
   // 1. Initialize session and probe diagnostics
@@ -152,6 +218,60 @@ export function App(): React.JSX.Element {
       }
     } catch (err) {
       // offline probe
+    }
+  };
+
+  const fetchTaskPassport = async (taskId: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/tasks/${taskId}/passport`, { headers: API_HEADERS });
+      if (res.ok) {
+        const data = await res.json();
+        setTaskPassport(data);
+      }
+    } catch (err) {
+      console.warn("Could not fetch Task Passport:", err);
+    }
+  };
+
+  const toggleStepExpanded = (stepId: string) => {
+    setExpandedStepIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(stepId)) next.delete(stepId);
+      else next.add(stepId);
+      return next;
+    });
+  };
+
+  const handleIllustrateStep = async (stepId: string) => {
+    if (!activeTaskId) return;
+    setIllustratingStepId(stepId);
+    try {
+      const res = await fetch(`${API_BASE}/tasks/${activeTaskId}/steps/${stepId}/illustrate`, {
+        method: "POST",
+        headers: API_HEADERS,
+      });
+      if (res.ok) {
+        await fetchTaskPassport(activeTaskId);
+      }
+    } catch (err) {
+      console.error("Illustration generation failed:", err);
+    } finally {
+      setIllustratingStepId(null);
+    }
+  };
+
+  const handleClearArtifacts = async () => {
+    if (!activeTaskId) return;
+    try {
+      const res = await fetch(`${API_BASE}/tasks/${activeTaskId}/artifacts`, {
+        method: "DELETE",
+        headers: API_HEADERS,
+      });
+      if (res.ok) {
+        await fetchTaskPassport(activeTaskId);
+      }
+    } catch (err) {
+      console.error("Failed to delete artifacts:", err);
     }
   };
 
@@ -209,6 +329,7 @@ export function App(): React.JSX.Element {
               const data = await res.json();
               setLastWorkflowResult(data);
               setActiveTaskId(data.taskId);
+              fetchTaskPassport(data.taskId);
 
               setTaskState("VERIFY");
               setStatusNarrative("VERIFY: Independently reading back control text from Windows application to verify accuracy...");
@@ -223,6 +344,7 @@ export function App(): React.JSX.Element {
                     `Extracted: ${data.sourceProvenance?.extractedFields?.consumer_name} | Amount: ${data.sourceProvenance?.extractedFields?.amount_due}`,
                     data.sourceProvenance?.sha256
                   );
+                  fetchTaskPassport(data.taskId);
                 } else {
                   setTaskState("FAILED");
                   setStatusNarrative("FAILED: Independent verification detected mismatched postconditions.");
@@ -274,6 +396,7 @@ export function App(): React.JSX.Element {
               const data = await res.json();
               setLastWorkflowResult(data);
               setActiveTaskId(data.taskId);
+              fetchTaskPassport(data.taskId);
 
               setTaskState("VERIFY");
               setStatusNarrative("VERIFY: Reading back DOM field values from browser tab to confirm exact match...");
@@ -288,6 +411,7 @@ export function App(): React.JSX.Element {
                     `Customer: ${data.formMapping?.customerName} | Amount: ${data.formMapping?.amountDue} (Submission Blocked)`,
                     data.sourceProvenance?.sha256
                   );
+                  fetchTaskPassport(data.taskId);
                 } else {
                   setTaskState("FAILED");
                   setStatusNarrative("FAILED: DOM property verification failed.");
@@ -721,40 +845,264 @@ export function App(): React.JSX.Element {
           </section>
         </main>
 
-        {/* Right Column: Evidence Timeline & Provenance Ledger */}
-        <aside className="w-80 border-l border-white/[0.08] bg-[#0a0e17]/60 p-4 flex flex-col gap-3 backdrop-blur-xl">
+        {/* Right Column: Task Passport / Story & Evidence Timeline */}
+        <aside className="w-[440px] shrink-0 border-l border-white/[0.08] bg-[#0a0e17]/60 p-4 flex flex-col gap-3 backdrop-blur-xl">
+          {/* Dual-tab switch */}
           <div className="flex items-center justify-between pb-2 border-b border-white/[0.08]">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-400 font-heading flex items-center gap-1.5">
-              <Layers className="h-3.5 w-3.5 text-purple-400" /> Evidence Timeline
-            </span>
-            <span className="text-[10px] text-slate-500 font-mono">SQLite Ledger</span>
-          </div>
-
-          <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
-            {timeline.length === 0 ? (
-              <div className="p-4 text-center text-xs text-slate-500">
-                No active execution steps yet. Run a workflow to observe evidence recording.
-              </div>
-            ) : (
-              timeline.map((item) => (
-                <div
-                  key={item.id}
-                  className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 text-xs space-y-1 hover:border-white/15 transition-all"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-slate-200">{item.title}</span>
-                    <span className="text-[10px] font-mono text-slate-500">{item.timestamp}</span>
-                  </div>
-                  <p className="text-slate-400 leading-relaxed">{item.details}</p>
-                  {item.provenanceHash && (
-                    <div className="pt-1 text-[10px] font-mono text-sky-400/90 truncate">
-                      SHA: {item.provenanceHash}
-                    </div>
-                  )}
-                </div>
-              ))
+            <div className="flex items-center gap-1.5 p-0.5 rounded-lg bg-black/40 border border-white/5">
+              <button
+                onClick={() => setActiveRightTab("passport")}
+                className={`px-2.5 py-1 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                  activeRightTab === "passport"
+                    ? "bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-sm"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <Compass className="h-3.5 w-3.5 text-sky-400" /> Task Passport
+              </button>
+              <button
+                onClick={() => setActiveRightTab("timeline")}
+                className={`px-2.5 py-1 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                  activeRightTab === "timeline"
+                    ? "bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-sm"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <Layers className="h-3.5 w-3.5 text-purple-400" /> Evidence Ledger
+              </button>
+            </div>
+            {activeRightTab === "passport" && taskPassport && (
+              <button
+                onClick={handleClearArtifacts}
+                className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                title="Clear visual artwork (Privacy)"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
             )}
           </div>
+
+          {activeRightTab === "passport" ? (
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+              {!taskPassport ? (
+                <div className="p-6 text-center text-xs text-slate-500 flex flex-col items-center gap-2">
+                  <Compass className="h-8 w-8 text-slate-600 mb-1" />
+                  <p className="font-semibold text-slate-400">Task Passport Idle</p>
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    Execute a workflow to generate a visual Step Story and Task Passport. Milestones will be illustrated with Meta Muse Image or obsidian vector graphics, tied directly to independent SQLite evidence.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {/* Passport Overview Header */}
+                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-xs space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="badge badge-cyan flex items-center gap-1">
+                        {taskPassport.direction?.includes("desktop-to-browser") ? (
+                          <>
+                            <ArrowLeftRight className="h-3 w-3" /> Desktop &rarr; Browser
+                          </>
+                        ) : (
+                          <>
+                            <ArrowRight className="h-3 w-3" /> Browser &rarr; Desktop
+                          </>
+                        )}
+                      </span>
+                      <span
+                        className={`badge ${
+                          taskPassport.status === "VERIFIED"
+                            ? "badge-success"
+                            : taskPassport.status === "FAILED"
+                            ? "badge-danger"
+                            : "badge-warning"
+                        }`}
+                      >
+                        {taskPassport.status}
+                      </span>
+                    </div>
+                    <p className="text-slate-300 font-medium text-xs leading-relaxed">
+                      {taskPassport.summary}
+                    </p>
+                    {taskPassport.provenanceSha256 && (
+                      <div className="text-[10px] font-mono text-slate-400 truncate pt-1 border-t border-white/5">
+                        Provenance SHA: {taskPassport.provenanceSha256}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Milestones Sequence */}
+                  <div className="space-y-3">
+                    {taskPassport.milestones.map((m) => {
+                      const isExpanded = expandedStepIds.has(m.stepId);
+                      return (
+                        <div
+                          key={m.stepId}
+                          className="rounded-xl border border-white/10 bg-[#07090e]/80 p-3 text-xs space-y-2.5 transition-all hover:border-white/20"
+                        >
+                          {/* Milestone Title & Badges */}
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-sky-500/20 text-[10px] font-bold text-sky-300 border border-sky-500/30">
+                                {m.stepIndex}
+                              </span>
+                              <span className="font-semibold text-slate-100">{m.title}</span>
+                            </div>
+                            <span
+                              className={`badge text-[10px] ${
+                                m.status === "VERIFIED"
+                                  ? "badge-success"
+                                  : m.status === "FAILED"
+                                  ? "badge-danger"
+                                  : "badge-cyan"
+                              }`}
+                            >
+                              {m.status}
+                            </span>
+                          </div>
+
+                          {/* Source -> Destination Route Badge */}
+                          {(m.source || m.destination) && (
+                            <div className="text-[10px] text-slate-400 flex items-center gap-1 font-mono">
+                              <span className="text-slate-300">{m.source || "Source"}</span>
+                              <span>&rarr;</span>
+                              <span className="text-slate-300">{m.destination || "Target"}</span>
+                            </div>
+                          )}
+
+                          {/* Visual Illustration Canvas */}
+                          <div className="relative rounded-lg overflow-hidden border border-white/10 bg-[#05070b]">
+                            {m.imageUrl ? (
+                              <img
+                                src={`http://127.0.0.1:8000${m.imageUrl}`}
+                                alt={m.title}
+                                className="w-full h-36 object-cover"
+                              />
+                            ) : m.svgFallback ? (
+                              <div
+                                className="w-full h-36 flex items-center justify-center"
+                                dangerouslySetInnerHTML={{ __html: m.svgFallback }}
+                              />
+                            ) : (
+                              <div className="w-full h-36 flex items-center justify-center text-slate-600 text-[11px]">
+                                Illustration pending
+                              </div>
+                            )}
+
+                            {/* Overlay Badge */}
+                            <div className="absolute top-2 right-2">
+                              <span className="badge badge-neutral text-[9px] bg-black/70 backdrop-blur-md border-white/15">
+                                {m.isIllustrationAiGenerated
+                                  ? "AI-Generated Illustration (Muse Image)"
+                                  : "Vector Illustration"}
+                              </span>
+                            </div>
+
+                            {/* Explain this step / Regenerate Button */}
+                            <div className="absolute bottom-2 right-2">
+                              <button
+                                onClick={() => handleIllustrateStep(m.stepId)}
+                                disabled={illustratingStepId === m.stepId}
+                                className="btn btn-secondary text-[10px] py-1 px-2.5 bg-black/70 backdrop-blur-md border border-white/20 hover:border-sky-400"
+                                title="Generate or re-render visual explanation for this step"
+                              >
+                                {illustratingStepId === m.stepId ? (
+                                  <RefreshCw className="h-3 w-3 animate-spin text-sky-400" />
+                                ) : (
+                                  <Wand2 className="h-3 w-3 text-sky-400" />
+                                )}
+                                <span>Explain Step</span>
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* AI Disclaimer */}
+                          <div className="text-[9px] text-slate-500 italic flex items-center gap-1">
+                            <Info className="h-2.5 w-2.5 shrink-0" />
+                            <span>AI visual metaphor. Deterministic facts &amp; verification rendered below.</span>
+                          </div>
+
+                          {/* Step Description */}
+                          <p className="text-slate-300 text-xs leading-relaxed">
+                            {m.description}
+                          </p>
+
+                          {/* Technical Proof Accordion Toggle */}
+                          <div className="border-t border-white/5 pt-2">
+                            <button
+                              onClick={() => toggleStepExpanded(m.stepId)}
+                              className="w-full flex items-center justify-between text-[11px] text-slate-400 hover:text-slate-200 transition-colors"
+                            >
+                              <span className="font-mono">Technical Details &amp; Evidence</span>
+                              {isExpanded ? (
+                                <ChevronDown className="h-3.5 w-3.5" />
+                              ) : (
+                                <ChevronRight className="h-3.5 w-3.5" />
+                              )}
+                            </button>
+
+                            {isExpanded && (
+                              <div className="mt-2 rounded-lg bg-black/50 p-2.5 text-[10px] font-mono text-slate-300 space-y-1.5 border border-white/5">
+                                <div>
+                                  <span className="text-slate-500">Operation: </span>
+                                  <span className="text-sky-300">{m.operation}</span>
+                                </div>
+                                {m.evidenceId && (
+                                  <div>
+                                    <span className="text-slate-500">Evidence ID: </span>
+                                    <span className="text-purple-300">{m.evidenceId}</span>
+                                  </div>
+                                )}
+                                <div>
+                                  <span className="text-slate-500">Independent Verification: </span>
+                                  <span className={m.isVerified ? "text-emerald-400" : "text-amber-400"}>
+                                    {m.isVerified ? "PASSED (Deterministic Proof)" : "UNVERIFIED / PENDING"}
+                                  </span>
+                                </div>
+                                {m.parameters && Object.keys(m.parameters).length > 0 && (
+                                  <div className="pt-1">
+                                    <span className="text-slate-500">Parameters:</span>
+                                    <pre className="mt-1 text-[9px] text-slate-400 overflow-x-auto p-1.5 rounded bg-black/70">
+                                      {JSON.stringify(m.parameters, null, 2)}
+                                    </pre>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+          ) : (
+            <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
+              {timeline.length === 0 ? (
+                <div className="p-4 text-center text-xs text-slate-500">
+                  No active execution steps yet. Run a workflow to observe evidence recording.
+                </div>
+              ) : (
+                timeline.map((item) => (
+                  <div
+                    key={item.id}
+                    className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 text-xs space-y-1 hover:border-white/15 transition-all"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-slate-200">{item.title}</span>
+                      <span className="text-[10px] font-mono text-slate-500">{item.timestamp}</span>
+                    </div>
+                    <p className="text-slate-400 leading-relaxed">{item.details}</p>
+                    {item.provenanceHash && (
+                      <div className="pt-1 text-[10px] font-mono text-sky-400/90 truncate">
+                        SHA: {item.provenanceHash}
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </aside>
       </div>
 
@@ -796,7 +1144,7 @@ export function App(): React.JSX.Element {
       {/* 4. Model Diagnostics & Settings Drawer */}
       {isSettingsOpen && (
         <div className="fixed inset-0 z-40 flex justify-end bg-black/60 backdrop-blur-sm">
-          <div className="w-96 h-full bg-[#0c1220] border-l border-white/10 p-5 overflow-y-auto flex flex-col gap-4 shadow-2xl">
+          <div className="w-[420px] h-full bg-[#0c1220] border-l border-white/10 p-5 overflow-y-auto flex flex-col gap-4 shadow-2xl">
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
               <span className="font-heading font-bold text-sm text-white flex items-center gap-2">
                 <Settings className="h-4 w-4 text-sky-400" /> Models &amp; Diagnostics
@@ -809,10 +1157,78 @@ export function App(): React.JSX.Element {
               </button>
             </div>
 
-            {/* Meta Models Section */}
+            {/* Baseten Muse Spark Open Section */}
+            <div className="space-y-2">
+              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Sparkles className="h-3.5 w-3.5 text-sky-400" /> Baseten Muse Spark Open (Planner)
+              </h4>
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-xs space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-300">Model ID:</span>
+                  <span className="font-mono text-[11px] text-sky-300">
+                    {modelsStatus?.baseten?.model || "meta-models/muse-spark-open"}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-300">Endpoint:</span>
+                  <span className="font-mono text-[10px] text-slate-400">
+                    {modelsStatus?.baseten?.baseUrl || "https://inference.baseten.co/v1"}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-300">Readiness:</span>
+                  <span
+                    className={`badge ${
+                      modelsStatus?.baseten?.isConfigured ? "badge-success" : "badge-neutral"
+                    }`}
+                  >
+                    {modelsStatus?.baseten?.status || "NOT_CONFIGURED"}
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-400 pt-1 border-t border-white/5">
+                  Muse Spark Open generates structured execution plans with local Pydantic validation and 1-shot repair.
+                </p>
+              </div>
+            </div>
+
+            {/* Meta Muse Image Section */}
+            <div className="space-y-2">
+              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Compass className="h-3.5 w-3.5 text-purple-400" /> Meta Muse Image (Storytelling)
+              </h4>
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-xs space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-300">Model ID:</span>
+                  <span className="font-mono text-[11px] text-purple-300">
+                    {modelsStatus?.museImage?.model || "muse-image-1.0"}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-300">Readiness:</span>
+                  <span
+                    className={`badge ${
+                      modelsStatus?.museImage?.isConfigured ? "badge-success" : "badge-neutral"
+                    }`}
+                  >
+                    {modelsStatus?.museImage?.status || "OFFLINE_VECTOR_FALLBACK"}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-300">Generation Budget:</span>
+                  <span className="badge badge-purple">
+                    {modelsStatus?.storytelling?.budget ?? 10} IMAGES/TASK
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-400 pt-1 border-t border-white/5">
+                  Generates abstract visual metaphors for Task Passports. Falls back cleanly to vector SVG when offline.
+                </p>
+              </div>
+            </div>
+
+            {/* Meta Hosted Models Section */}
             <div className="space-y-2">
               <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Meta Hosted Models (api.meta.ai)
+                Meta Hosted Suite (api.meta.ai)
               </h4>
               <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-xs space-y-2">
                 <div className="flex justify-between items-center">
@@ -820,10 +1236,6 @@ export function App(): React.JSX.Element {
                   <span className={`badge ${modelsStatus?.metaHosted?.isConfigured ? "badge-success" : "badge-warning"}`}>
                     {modelsStatus?.metaHosted?.isConfigured ? "CONFIGURED" : "NOT SET (Offline Mocks)"}
                   </span>
-                </div>
-                <div className="flex justify-between items-center text-slate-400">
-                  <span>Muse Spark:</span>
-                  <span className="font-mono text-[11px] text-slate-200">muse-spark-1.3</span>
                 </div>
                 <div className="flex justify-between items-center text-slate-400">
                   <span>Muse Wonder (Computer-Use):</span>
@@ -848,8 +1260,10 @@ export function App(): React.JSX.Element {
                 </button>
 
                 {testConnResult && (
-                  <div className="p-2 rounded bg-black/40 text-[11px] font-mono text-slate-300 mt-2">
-                    Status: {testConnResult.metaApi?.status || "OK"}
+                  <div className="p-2 rounded bg-black/40 text-[11px] font-mono text-slate-300 mt-2 space-y-1">
+                    <div>Baseten: {testConnResult.baseten?.status || "NOT_CONFIGURED"}</div>
+                    <div>Muse Image: {testConnResult.museImage?.status || "NOT_CONFIGURED"}</div>
+                    <div>Meta API: {testConnResult.metaApi?.status || "NOT_CONFIGURED"}</div>
                   </div>
                 )}
               </div>
@@ -886,12 +1300,37 @@ export function App(): React.JSX.Element {
               </div>
             </div>
 
+            {/* System Integrations */}
+            <div className="space-y-2">
+              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                System Integrations
+              </h4>
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-xs space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-300">Browser Extension:</span>
+                  <span className="badge badge-success">READY</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-300">Native Messaging Host:</span>
+                  <span className="badge badge-success">READY</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-300">Windows Companion (UIA):</span>
+                  <span className="badge badge-success">READY</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-300">SQLite Evidence Ledger:</span>
+                  <span className="badge badge-success">READY</span>
+                </div>
+              </div>
+            </div>
+
             {/* Privacy Gateway Mode */}
             <div className="space-y-2 mt-auto">
               <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Privacy Gateway</h4>
               <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-xs space-y-2">
                 <p className="text-[11px] text-slate-400">
-                  Local-only mode blocks all outbound network transmissions to external model APIs fail-closed.
+                  Local-only mode blocks all outbound transmissions to external model APIs fail-closed.
                 </p>
                 <div className="flex items-center justify-between">
                   <span className="text-slate-300 font-medium">Local-Only Enforcement:</span>

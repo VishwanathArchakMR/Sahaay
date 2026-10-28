@@ -17,6 +17,7 @@ from sahaay_core.api.v1.health import router as health_router
 from sahaay_core.api.v1.models import router as models_router
 from sahaay_core.api.v1.sessions import router as sessions_router
 from sahaay_core.api.v1.sources import router as sources_router
+from sahaay_core.api.v1.storytelling import storytelling_router
 from sahaay_core.api.v1.tasks import router as tasks_router
 from sahaay_core.api.v1.windows import router as windows_router
 from sahaay_core.api.v1.workflows import router as workflows_router
@@ -67,7 +68,11 @@ async def security_token_middleware(request: Request, call_next):
     Health endpoint is public for startup probing; all others require valid X-Sahaay-Token.
     """
     path = request.url.path
-    if path in ("/api/v1/health", "/docs", "/openapi.json") or path.startswith("/fixtures"):
+    if (
+        path in ("/api/v1/health", "/docs", "/openapi.json")
+        or path.startswith("/fixtures")
+        or path.startswith("/artifacts")
+    ):
         return await call_next(request)
 
     token = request.headers.get("X-Sahaay-Token")
@@ -101,11 +106,15 @@ app.include_router(windows_router, prefix="/api/v1")
 app.include_router(browser_router, prefix="/api/v1")
 app.include_router(models_router, prefix="/api/v1")
 app.include_router(workflows_router, prefix="/api/v1")
+app.include_router(storytelling_router, prefix="/api/v1")
 
-# Mount synthetic demonstration fixtures
+# Mount synthetic demonstration fixtures & visual artifacts
 fixtures_path = Path(__file__).resolve().parent.parent.parent.parent / "data" / "fixtures"
 if fixtures_path.exists():
     app.mount("/fixtures", StaticFiles(directory=str(fixtures_path)), name="fixtures")
+
+if settings.artifacts_dir.exists():
+    app.mount("/artifacts", StaticFiles(directory=str(settings.artifacts_dir)), name="artifacts")
 
 
 @app.get("/")

@@ -1,28 +1,42 @@
-# Sahaay Model Inventory & Provider Plan
+# Sahaay Model Inventory & Provider Architecture (Milestone 05)
 
-## 1. Stage 01 Status: Planned / Deferred
-In accordance with Build 01 specifications, **no live model integrations are enabled, no external inference calls are permitted, no provider API keys are requested, and no large model weights are downloaded.**
-All model provider clients (`MetaClient`, `SparkOpenClient`, `LocalLlamaClient`) are implemented as clean, mock-free fail-closed interfaces raising `ModelProviderNotConfiguredError`.
+## 1. Active Model Roles & Providers
 
----
+In Milestone 05, Sahaay integrates **Baseten Muse Spark Open** as its actual structured planner, **Meta Muse Image** for visual storytelling and Task Passports, alongside the existing Meta Model suite and Local Llama 3.2 3B runtime.
 
-## 2. Planned Model Roles & Capabilities
-
-| Model Designation | Architecture / Basis | Planned Role in Sahaay | Status in Stage 01 |
+| Model Designation | Basis / Provider | Active Role in Sahaay | Operational Status |
 | :--- | :--- | :--- | :--- |
-| **Muse Voice Transcribe** | Voice Recognition & ASR | Streaming transcription of user voice commands in the desktop app | **PLANNED** (Interface defined; no live model) |
-| **Muse Spark** | Fast Reasoning & Planning | High-speed multi-step task planning, heuristic decomposition, and prompt formatting | **PLANNED** (Interface defined; no live model) |
-| **Muse Wonder** | Deep Multimodal Reasoning | Complex cross-document analysis, browser tab reasoning, and fact synthesis | **PLANNED** (Interface defined; no live model) |
-| **SAM 3.1 / Muse Image** | Multimodal Grounding & Vision | Visual segmentation and bounding-box coordinate prediction for desktop UI controls | **PLANNED** (Interface defined; no live model) |
-| **Muse Spark Open** | Open Weight Planning | Local fallback planning and offline task formulation | **PLANNED** (Interface defined; no live model) |
-| **Meta Llama (3.3 / 3.2)** | Multimodal Foundation | Core question answering and structured fact extraction through Privacy Gateway | **PLANNED** (Interface defined; no live model) |
-| **Local Llama (GGUF / ONNX)** | Local Quantized Inference | Fully offline inference when Local-Only Mode is enforced | **PLANNED** (Interface defined; no weights downloaded) |
+| **Muse Spark Open** | `meta-models/muse-spark-open` via **Baseten** (`https://inference.baseten.co/v1`) | Structured task planning, decomposed step dependencies, and Action Gate capability mapping | **INTEGRATED & TESTED** (Requires `BASETEN_API_KEY`; deterministic fallback when offline) |
+| **Muse Image** | `muse-image-1.0` via **Meta Model API** (`https://api.meta.ai/v1/images/generations`) | Visual storytelling for Task Passports, step illustrations, and visual workflow routes | **INTEGRATED & TESTED** (Requires `MODEL_API_KEY`; obsidian vector SVG fallback when offline) |
+| **Muse Spark** | `muse-spark-1.3` via Meta Model API | Indic semantic reasoning, multilingual intent decomposition (Kannada, Hindi, English) | **INTEGRATED & TESTED** (Mock/Live adaptive) |
+| **Muse Wonder** | `muse-wonder-1.0` via Meta Model API | Computer-use action proposal parsing with strict Action Gate boundary enforcement | **INTEGRATED & TESTED** (Mock/Live adaptive) |
+| **Muse Voice Transcribe** | `muse-voice-transcribe-1.0` via Meta Model API | Speech transcription with language biasing and mandatory editable confirmation dialog | **INTEGRATED & TESTED** (Mock/Live adaptive) |
+| **SAM 3.1** | `sam-3-1` via Meta Model API | Visual grounding of UI elements and bounding box translation | **INTEGRATED & TESTED** (Mock/Live adaptive) |
+| **Local Llama 3.2 3B** | Quantized GGUF via `llama-server.exe` loopback (`127.0.0.1:8080`) | Offline planning and fact extraction when Local-Only Mode is active | **INTEGRATED & TESTED** (Lifecycle manager probes weights & hardware) |
 
 ---
 
-## 3. Privacy Gateway Enforcement
-When models are connected in future stages:
+## 2. Independent Provider Credentials
+
+The providers are architecturally isolated with separate environment variables and consent policies:
+
+1. **Baseten Provider (`BASETEN_API_KEY`)**:
+   - Outbound endpoint: `https://inference.baseten.co/v1/chat/completions`
+   - Default model: `meta-models/muse-spark-open` (configurable via `BASETEN_MUSE_SPARK_MODEL`)
+   - Schema enforcement: Local Pydantic validation of `StructuredTaskPlan` with 1-shot repair.
+   - Fail-closed behavior: When unconfigured, truthfully reports `LOCAL_FALLBACK`.
+
+2. **Meta Model API (`MODEL_API_KEY` or `META_LLAMA_API_KEY`)**:
+   - Outbound endpoint: `https://api.meta.ai/v1/images/generations`
+   - Default model: `muse-image-1.0` (configurable via `MUSE_IMAGE_MODEL`)
+   - Prompt minimization: Abstract visual metaphors only; raw PII/credentials are scrubbed before transmission.
+   - Fail-closed behavior: When unconfigured, generates obsidian/liquid vector SVG fallback inline.
+
+---
+
+## 3. Privacy Gateway Invariants
 1. Every external request must pass through `PrivacyGateway.evaluate_outbound_request`.
-2. Outbound data must be classified. Payloads containing detected credentials fail closed.
-3. Consent grants must be checked for purpose and target domain.
-4. If `SAHAAY_PRIVACY_LOCAL_ONLY_MODE=true`, all external model calls fail closed immediately.
+2. Outbound data is classified; payloads containing detected credentials fail closed.
+3. If `SAHAAY_PRIVACY_LOCAL_ONLY_MODE=true`, all external calls fail closed unconditionally.
+4. Generated artwork does not change verification state: deterministic checks in SQLite evidence records remain authoritative.
+

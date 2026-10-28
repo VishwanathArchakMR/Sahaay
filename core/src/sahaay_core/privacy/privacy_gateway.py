@@ -27,6 +27,9 @@ ALLOWED_EXTERNAL_DESTINATIONS: List[str] = [
     "https://api.meta.ai/v1",
     "https://api.meta.ai",
     "meta_model_api",
+    "https://inference.baseten.co/v1",
+    "https://inference.baseten.co",
+    "baseten_api",
 ]
 
 

@@ -38,6 +38,20 @@ class Settings(BaseSettings):
     muse_voice_model_id: str = "muse-voice-transcribe-1.0"
     sam_model_id: str = "sam-3-1"
 
+    # Meta Muse Image Generation Settings
+    meta_image_base_url: str = "https://api.meta.ai/v1"
+    muse_image_model: str = "muse-image-1.0"
+
+    # Baseten Model API Settings (Muse Spark Open)
+    baseten_base_url: str = "https://inference.baseten.co/v1"
+    baseten_api_key: str = ""
+    baseten_muse_spark_model: str = "meta-models/muse-spark-open"
+
+    # Visual Storytelling & Task Passport Settings
+    enable_visual_storytelling: bool = True
+    visual_storytelling_budget: int = 10
+    artifacts_dir: Path = Path("./data/artifacts")
+
     # Local Llama Runtime Settings (Llama 3.2 3B Instruct Q4_K_M GGUF)
     local_llama_model_path: str = ""
     llama_server_path: str = ""
@@ -58,11 +72,15 @@ class Settings(BaseSettings):
 
         self.temp_media_dir.mkdir(parents=True, exist_ok=True)
         self.storage_dir.mkdir(parents=True, exist_ok=True)
+        self.artifacts_dir.mkdir(parents=True, exist_ok=True)
+        (self.artifacts_dir / "images").mkdir(parents=True, exist_ok=True)
         if not self.api_token:
             # Generate unguessable 32-byte hex token for this launch
             self.api_token = secrets.token_hex(32)
         if not self.model_api_key:
             self.model_api_key = os.environ.get("MODEL_API_KEY", "")
+        if not self.baseten_api_key:
+            self.baseten_api_key = os.environ.get("BASETEN_API_KEY", "")
 
 
 # Global settings singleton

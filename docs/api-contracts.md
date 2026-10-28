@@ -475,4 +475,100 @@ Executes end-to-end Desktop → Browser workflow: reads local synthetic invoice 
   }
   ```
 
+---
+
+## 13. Task Passport & Visual Storytelling (Milestone 05)
+
+### `GET /api/v1/tasks/{task_id}/passport`
+Retrieves the complete Task Passport and visual Step Story for a specified task, including ordinary language titles, route badges, illustration references, and independent verification proof.
+* **Response** (200 OK):
+  ```json
+  {
+    "taskId": "task-b2d-123",
+    "workflowMode": "browser-to-desktop",
+    "direction": "browser-to-desktop",
+    "status": "VERIFIED",
+    "sourceUrl": "http://127.0.0.1:8000/fixtures/utility_bill.html",
+    "targetWindow": "Notepad",
+    "summary": "Transfer BESCOM electricity bill into target Desktop application",
+    "visualStorytellingEnabled": true,
+    "milestones": [
+      {
+        "stepId": "step-1",
+        "stepIndex": 1,
+        "title": "Browser Observation",
+        "operation": "OBSERVE_BROWSER_TAB",
+        "source": "BESCOM Utility Portal (synthetic)",
+        "destination": "Sahaay Agent Context",
+        "direction": "browser-to-desktop",
+        "status": "COMPLETED",
+        "description": "Observed and ingested synthetic utility bill statement from authorized browser tab.",
+        "evidenceId": "ev-obs-001",
+        "isVerified": false,
+        "imageUrl": null,
+        "svgFallback": "<svg viewBox=\"0 0 400 240\" ...></svg>",
+        "isIllustrationAiGenerated": false,
+        "parameters": { "tabUrl": "http://127.0.0.1:8000/fixtures/utility_bill.html" }
+      }
+    ],
+    "provenanceSha256": "4a58b29d98a2872bc8819446d32fe5a6d59c6c4c51475c74eb7596ff506cf2c7",
+    "verifiedTimestamp": "2026-10-28T18:30:00Z"
+  }
+  ```
+
+### `POST /api/v1/tasks/{task_id}/steps/{step_id}/illustrate`
+User-controlled "Explain this step" action to generate or re-render an illustration for an individual milestone using Meta Muse Image (or obsidian vector graphics if offline).
+* **Response** (200 OK): Returns the updated `MilestoneCard` with newly generated or refreshed illustration metadata.
+
+### `DELETE /api/v1/tasks/{task_id}/artifacts`
+Privacy and retention endpoint allowing users to delete all visual artifacts generated for a given task.
+* **Response** (200 OK):
+  ```json
+  {
+    "taskId": "task-b2d-123",
+    "deletedCount": 2,
+    "message": "Deleted 2 visual artifacts for task task-b2d-123."
+  }
+  ```
+
+---
+
+## 14. Baseten Muse Spark Open Planning (Milestone 05)
+
+### `POST /api/v1/models/baseten/plan`
+Direct diagnostic endpoint for structured plan generation via Muse Spark Open hosted on Baseten (`https://inference.baseten.co/v1`). Employs local Pydantic validation, 1-shot repair, and strict capability checks.
+* **Request**:
+  ```json
+  {
+    "userGoal": "Read electricity bill from browser tab and paste to notepad",
+    "workflowMode": "browser-to-desktop",
+    "permittedCapabilities": ["GET_TAB_CONTENT", "SET_CONTROL_TEXT", "GET_CONTROL_TEXT"]
+  }
+  ```
+* **Response** (200 OK):
+  ```json
+  {
+    "planId": "plan-baseten-456",
+    "taskGoal": "Read electricity bill from browser tab and paste to notepad",
+    "provider": "baseten",
+    "modelId": "meta-models/muse-spark-open",
+    "steps": [
+      {
+        "stepId": "s1",
+        "order": 1,
+        "purpose": "Read authorized utility bill tab",
+        "actionType": "get_tab_content",
+        "targetScope": "http://127.0.0.1:8000/fixtures/utility_bill.html",
+        "requiresHumanApproval": false,
+        "verificationCriteria": "bill facts parsed with SHA-256 fingerprint"
+      }
+    ],
+    "safetyBoundaries": [
+      "No auto-submission of payments",
+      "Reject unauthorized shell executions"
+    ]
+  }
+  ```
+
+
 

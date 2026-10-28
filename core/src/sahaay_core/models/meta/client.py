@@ -8,6 +8,11 @@ from typing import Optional
 
 from sahaay_core.models.interfaces.base import BaseLanguageModel
 from sahaay_core.models.meta.meta_client import MetaApiResponse, MetaClient
+from sahaay_core.models.meta.muse_image import (
+    ImageGenerationResult,
+    MuseImageClient,
+    muse_image,
+)
 from sahaay_core.models.meta.muse_spark import (
     GroundedSourceFact,
     MuseSparkClient,
@@ -57,4 +62,7 @@ __all__ = [
     "Sam31Client",
     "VisualGroundingResult",
     "MetaApiResponse",
+    "MuseImageClient",
+    "ImageGenerationResult",
+    "muse_image",
 ]
