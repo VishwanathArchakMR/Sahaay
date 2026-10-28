@@ -11,13 +11,15 @@ from pydantic import BaseModel
 
 from sahaay_core.config.settings import settings
 from sahaay_core.contracts.models import TaskContract
-from sahaay_core.models.baseten.baseten_client import BasetenClient
-from sahaay_core.models.baseten.muse_spark_open import StructuredTaskPlan, muse_spark_open
 from sahaay_core.models.local.client import LocalLlamaClient
 from sahaay_core.models.local.llama_runtime import local_llama_manager
 from sahaay_core.models.meta.meta_client import MetaClient
 from sahaay_core.models.meta.muse_image import muse_image
-from sahaay_core.models.meta.muse_spark import MuseSparkClient, MuseSparkPlan
+from sahaay_core.models.meta.muse_spark import (
+    MuseSparkPlan,
+    StructuredTaskPlan,
+    muse_spark,
+)
 from sahaay_core.models.meta.muse_voice import MuseVoiceClient, VoiceTranscriptionResult
 from sahaay_core.models.meta.muse_wonder import MuseWonderClient
 from sahaay_core.models.meta.sam_client import Sam31Client
@@ -25,8 +27,6 @@ from sahaay_core.models.meta.sam_client import Sam31Client
 router = APIRouter(prefix="/models", tags=["Models"])
 
 meta_client = MetaClient()
-baseten_client = BasetenClient()
-muse_spark = MuseSparkClient(meta_client=meta_client)
 muse_wonder = MuseWonderClient(meta_client=meta_client)
 muse_voice = MuseVoiceClient(meta_client=meta_client)
 sam_client = Sam31Client(meta_client=meta_client)
@@ -41,8 +41,8 @@ class ModelPlanningRequest(BaseModel):
     languageHint: Optional[str] = None
 
 
-class BasetenPlanningRequest(BaseModel):
-    """Request payload for Baseten Muse Spark Open structured planning."""
+class StructuredPlanningRequest(BaseModel):
+    """Request payload for Meta Muse Spark structured planning."""
 
     goal: str
     workflowMode: str = "combined_retrieval_and_action"
@@ -59,46 +59,64 @@ class VisualGroundingRequest(BaseModel):
     observationVersion: int = 1
 
 
+# Runtime provider verification status cache
+provider_connectivity_cache: Dict[str, str] = {
+    "meta": "UNTESTED",
+    "muse_image": "UNTESTED",
+}
+
+
+def _resolve_provider_readiness(is_configured: bool, cache_key: str) -> str:
+    """Computes truthful provider readiness state: NOT_CONFIGURED, NEEDS_CONSENT, CONFIGURED_UNTESTED, READY, or FAILED."""
+    if not is_configured:
+        return "NOT_CONFIGURED"
+    if settings.local_only_mode or not settings.hosted_models_permitted:
+        return "NEEDS_CONSENT"
+    cached = provider_connectivity_cache.get(cache_key, "UNTESTED")
+    if cached == "READY":
+        return "READY"
+    if cached in ("FAILED", "UNAUTHORIZED", "UNAVAILABLE"):
+        return cached
+    return "CONFIGURED_UNTESTED"
+
+
 @router.get("/status")
 async def get_models_status() -> Dict[str, Any]:
-    """Retrieve verified readiness status across all supported Meta, Baseten, and Local models."""
+    """Retrieve verified readiness status across all supported Meta and Local models."""
     local_status = local_llama_client.get_status()
 
+    meta_status = _resolve_provider_readiness(meta_client.is_configured, "meta")
+    muse_image_status = _resolve_provider_readiness(muse_image.is_configured, "muse_image")
+
     return {
-        "baseten": {
-            "isConfigured": baseten_client.is_configured,
-            "baseUrl": baseten_client.base_url,
-            "model": settings.baseten_muse_spark_model,
-            "status": "READY" if baseten_client.is_configured else "NOT_CONFIGURED",
-            "role": "Baseten Muse Spark Open Structured Task Planner",
-        },
         "metaHosted": {
             "isConfigured": meta_client.is_configured,
             "baseUrl": meta_client.base_url,
+            "status": meta_status,
             "models": {
                 "museSpark": {
                     "id": settings.muse_spark_model_id,
-                    "status": "READY" if meta_client.is_configured else "NOT_CONFIGURED",
+                    "status": meta_status,
                     "role": "Semantic Reasoning & Structured Planning",
                 },
                 "museWonder": {
                     "id": settings.muse_wonder_model_id,
-                    "status": "READY" if meta_client.is_configured else "NOT_CONFIGURED",
+                    "status": meta_status,
                     "role": "Responses API Visual Computer-Use",
                 },
                 "museVoice": {
                     "id": settings.muse_voice_model_id,
-                    "status": "READY" if meta_client.is_configured else "NOT_CONFIGURED",
+                    "status": meta_status,
                     "role": "Multilingual Speech-to-Text Transcription",
                 },
                 "museImage": {
                     "id": settings.muse_image_model,
-                    "status": "READY" if muse_image.is_configured else "NOT_CONFIGURED",
+                    "status": muse_image_status,
                     "role": "Task Passport Visual Milestone Storytelling",
                 },
                 "sam": {
                     "id": settings.sam_model_id,
-                    "status": "READY" if meta_client.is_configured else "NOT_CONFIGURED",
+                    "status": meta_status,
                     "role": "Visual Grounding & Element Segmentation",
                 },
             },
@@ -125,15 +143,40 @@ async def get_models_status() -> Dict[str, Any]:
 
 @router.post("/test-connectivity")
 async def test_model_connectivity() -> Dict[str, Any]:
-    """Test live connectivity to Meta Model API, Baseten API, and check local runtime."""
-    meta_result = await meta_client.check_connectivity()
-    baseten_result = await baseten_client.check_connectivity()
-    muse_image_result = await muse_image.check_connectivity()
+    """Test live connectivity obeying Privacy Gateway. Outbound checks are blocked in localOnlyMode."""
+    # Check local Llama runtime first (always safe to probe on loopback)
     is_local_healthy = await local_llama_manager.check_health()
+
+    # Outbound checks must obey Privacy Gateway and local-only mode
+    if settings.local_only_mode:
+        return {
+            "metaApi": {
+                "status": "BLOCKED_BY_PRIVACY_GATEWAY",
+                "message": "Local-only mode is active. Outbound connectivity test blocked by Privacy Gateway.",
+                "isHealthy": False,
+            },
+            "museImageApi": {
+                "status": "BLOCKED_BY_PRIVACY_GATEWAY",
+                "message": "Local-only mode is active. Outbound connectivity test blocked by Privacy Gateway.",
+                "isHealthy": False,
+            },
+            "localLlama": {
+                "isHealthy": is_local_healthy,
+                "status": local_llama_manager.status.value,
+                "message": local_llama_manager.status_message,
+            },
+        }
+
+    meta_result = await meta_client.check_connectivity()
+    muse_image_result = await muse_image.check_connectivity()
+
+    provider_connectivity_cache["meta"] = "READY" if meta_result.get("isHealthy") else "FAILED"
+    provider_connectivity_cache["muse_image"] = (
+        "READY" if muse_image_result.get("isHealthy") else "FAILED"
+    )
 
     return {
         "metaApi": meta_result,
-        "basetenApi": baseten_result,
         "museImageApi": muse_image_result,
         "localLlama": {
             "isHealthy": is_local_healthy,
@@ -143,9 +186,9 @@ async def test_model_connectivity() -> Dict[str, Any]:
     }
 
 
-@router.post("/baseten/plan", response_model=StructuredTaskPlan)
-async def plan_with_baseten_muse_spark(req: BasetenPlanningRequest) -> StructuredTaskPlan:
-    """Invoke Muse Spark Open on Baseten for structured planning with local schema enforcement."""
+@router.post("/meta/muse-spark/plan", response_model=StructuredTaskPlan)
+async def plan_with_meta_muse_spark(req: StructuredPlanningRequest) -> StructuredTaskPlan:
+    """Invoke Meta Muse Spark 1.3 for structured planning with local schema enforcement and Capability Registry validation."""
     from uuid import uuid4
 
     task = TaskContract(
@@ -155,7 +198,7 @@ async def plan_with_baseten_muse_spark(req: BasetenPlanningRequest) -> Structure
         taskType=req.workflowMode or "combined_retrieval_and_action",
     )
 
-    return await muse_spark_open.generate_plan(
+    return await muse_spark.generate_plan(
         task=task,
         context=req.context,
         source_facts=req.sourceFacts,

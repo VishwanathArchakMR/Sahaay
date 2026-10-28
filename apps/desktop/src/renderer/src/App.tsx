@@ -28,10 +28,27 @@ import {
 } from "lucide-react";
 
 const API_BASE = "http://127.0.0.1:8000/api/v1";
-const API_HEADERS = {
-  "Content-Type": "application/json",
-  "X-Sahaay-Token": "dev-local-sahaay-token",
+
+let dynamicApiToken = "";
+if (typeof window !== "undefined" && (window as any).sahaay?.getApiToken) {
+  (window as any).sahaay.getApiToken().then((t: string) => {
+    if (t) dynamicApiToken = t;
+  });
+}
+
+const getApiHeaders = (): Record<string, string> => {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (dynamicApiToken) {
+    headers["X-Sahaay-Token"] = dynamicApiToken;
+  } else {
+    headers["X-Sahaay-Token"] = "dev-local-sahaay-token";
+  }
+  return headers;
 };
+
+const API_HEADERS = getApiHeaders();
 
 type TaskFlowState =
   | "IDLE"
@@ -79,7 +96,7 @@ interface TaskPassportData {
 }
 
 interface ModelsStatusReport {
-  baseten?: {
+  museSpark?: {
     isConfigured: boolean;
     baseUrl: string;
     model: string;
@@ -179,6 +196,9 @@ export function App(): React.JSX.Element {
   const [illustratingStepId, setIllustratingStepId] = useState<string | null>(null);
 
   const recordingIntervalRef = useRef<any>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const streamRef = useRef<MediaStream | null>(null);
 
   // 1. Initialize session and probe diagnostics
   useEffect(() => {
@@ -291,162 +311,228 @@ export function App(): React.JSX.Element {
   };
 
   // 2. Cross-Surface Workflow 1: Browser -> Desktop (BESCOM Bill to Notepad)
-  const triggerBrowserToDesktopWorkflow = async () => {
+  const triggerBrowserToDesktopWorkflow = async (isFixture: boolean = true) => {
     if (!sessionId) await initSession();
     setTaskState("OBSERVE");
-    setStatusNarrative("OBSERVE: Reading authorized browser tab containing BESCOM utility bill...");
-    addTimelineEntry("OBSERVE", "Browser Observation", "Reading synthetic utility bill from http://127.0.0.1:8000/fixtures/utility_bill.html");
+    setStatusNarrative(
+      isFixture
+        ? "FIXTURE RUN: Ingesting synthetic BESCOM electricity bill fixture..."
+        : "OBSERVE: Reading active authorized browser tab..."
+    );
+    addTimelineEntry(
+      "OBSERVE",
+      isFixture ? "Fixture Test Harness" : "Browser Observation",
+      isFixture ? "Reading synthetic utility bill fixture" : "Reading active browser tab"
+    );
 
-    setTimeout(async () => {
-      setTaskState("RETRIEVE");
-      setStatusNarrative("RETRIEVE: Grounding extracted bill facts in SQLite with cryptographic SHA-256 fingerprint...");
-      addTimelineEntry("RETRIEVE", "Grounded Fact Extraction", "Target fields: Consumer Name, Account Number, Amount Due, Due Date");
+    try {
+      setTaskState("AUTHORIZE");
+      setStatusNarrative("Action Gate evaluating execution policy and destination window boundary...");
 
-      setTimeout(async () => {
-        setTaskState("PROPOSE");
-        setStatusNarrative("PROPOSE: Muse Spark planning structured action proposal for target Desktop window...");
+      const res = await fetch(`${API_BASE}/workflows/browser-to-desktop`, {
+        method: "POST",
+        headers: getApiHeaders(),
+        body: JSON.stringify({
+          sessionId,
+          instruction: "Transfer BESCOM electricity bill into target Desktop application",
+          targetHwnd: isFixture ? 0 : 1,
+          targetControlId: "Edit",
+          isFixtureMode: isFixture,
+        }),
+      });
 
-        setTimeout(async () => {
-          setTaskState("AUTHORIZE");
-          setStatusNarrative("AUTHORIZE: Action Gate evaluating set_control_text operation under strict allowlist...");
+      const data = await res.json();
+      setLastWorkflowResult(data);
+      if (data.taskId) {
+        setActiveTaskId(data.taskId);
+        fetchTaskPassport(data.taskId);
+      }
 
-          setTimeout(async () => {
-            setTaskState("EXECUTE_B2D");
-            setStatusNarrative("EXECUTE [Browser → Desktop]: Populating Windows Desktop control via UI Automation...");
-
-            try {
-              const res = await fetch(`${API_BASE}/workflows/browser-to-desktop`, {
-                method: "POST",
-                headers: API_HEADERS,
-                body: JSON.stringify({
-                  sessionId,
-                  instruction: "Transfer BESCOM electricity bill into target Desktop application",
-                  targetHwnd: 0,
-                  targetControlId: "Edit",
-                }),
-              });
-
-              const data = await res.json();
-              setLastWorkflowResult(data);
-              setActiveTaskId(data.taskId);
-              fetchTaskPassport(data.taskId);
-
-              setTaskState("VERIFY");
-              setStatusNarrative("VERIFY: Independently reading back control text from Windows application to verify accuracy...");
-
-              setTimeout(() => {
-                if (data.isVerified && data.status === "VERIFIED") {
-                  setTaskState("VERIFIED");
-                  setStatusNarrative("VERIFIED: Independent verifier confirmed all fields match source bill! Evidence recorded in SQLite ledger.");
-                  addTimelineEntry(
-                    "VERIFIED",
-                    "Browser → Desktop Verified",
-                    `Extracted: ${data.sourceProvenance?.extractedFields?.consumer_name} | Amount: ${data.sourceProvenance?.extractedFields?.amount_due}`,
-                    data.sourceProvenance?.sha256
-                  );
-                  fetchTaskPassport(data.taskId);
-                } else {
-                  setTaskState("FAILED");
-                  setStatusNarrative("FAILED: Independent verification detected mismatched postconditions.");
-                }
-              }, 700);
-            } catch (err: any) {
-              setTaskState("FAILED");
-              setStatusNarrative(`Execution error: ${err.message}`);
-            }
-          }, 600);
-        }, 500);
-      }, 500);
-    }, 500);
+      if (data.status === "VERIFIED" && data.isVerified) {
+        setTaskState("VERIFIED");
+        setStatusNarrative(
+          isFixture
+            ? "FIXTURE VERIFIED: Controlled test harness confirmed expected postconditions."
+            : "VERIFIED: Independent verifier read back live state from Windows target and confirmed exact match."
+        );
+        addTimelineEntry(
+          "VERIFIED",
+          isFixture ? "Fixture Transfer Verified" : "Live Windows Execution Verified",
+          `Customer: ${data.sourceProvenance?.extractedFields?.consumer_name} | Amount: ${data.sourceProvenance?.extractedFields?.amount_due}`,
+          data.sourceProvenance?.sha256
+        );
+      } else if (data.status === "HANDOFF") {
+        setTaskState("HANDOFF");
+        setStatusNarrative("AUTHORIZATION NEEDED: Action Gate denied execution because explicit user consent is required.");
+        addTimelineEntry("HANDOFF", "Consent Required", data.detail || "Action Gate requires user authorization");
+      } else {
+        setTaskState("FAILED");
+        setStatusNarrative(`EXECUTION FAILED: ${data.error || data.detail || "Verification failed."}`);
+        addTimelineEntry("FAILED", "Task Failed", data.error || data.detail || "Failed verification");
+      }
+    } catch (err: any) {
+      setTaskState("FAILED");
+      setStatusNarrative(`Execution error: ${err.message}`);
+      addTimelineEntry("FAILED", "Error", err.message);
+    }
   };
 
   // 3. Cross-Surface Workflow 2: Desktop -> Browser (Local Invoice to Web Form)
-  const triggerDesktopToBrowserWorkflow = async () => {
+  const triggerDesktopToBrowserWorkflow = async (isFixture: boolean = true) => {
     if (!sessionId) await initSession();
     setTaskState("OBSERVE");
-    setStatusNarrative("OBSERVE: Reading authorized local synthetic invoice statement (invoice_data.json)...");
-    addTimelineEntry("OBSERVE", "Document Ingestion", "Reading data/fixtures/invoice_data.json");
+    setStatusNarrative(
+      isFixture
+        ? "FIXTURE RUN: Reading authorized invoice statement fixture..."
+        : "OBSERVE: Reading authorized local invoice document..."
+    );
+    addTimelineEntry(
+      "OBSERVE",
+      isFixture ? "Fixture Document" : "Local Document Ingestion",
+      "Reading invoice data"
+    );
 
-    setTimeout(async () => {
-      setTaskState("RETRIEVE");
-      setStatusNarrative("RETRIEVE: Extracting customer & payment fields, computing source integrity checksum...");
+    try {
+      setTaskState("AUTHORIZE");
+      setStatusNarrative("Action Gate evaluating form population action. Auto-submit blocked.");
 
-      setTimeout(async () => {
-        setTaskState("PROPOSE");
-        setStatusNarrative("PROPOSE: Building field-to-field mapping to web form inputs (auto-submission blocked)...");
+      const res = await fetch(`${API_BASE}/workflows/desktop-to-browser`, {
+        method: "POST",
+        headers: getApiHeaders(),
+        body: JSON.stringify({
+          sessionId,
+          instruction: "Populate utility pay web form from local invoice document",
+          isFixtureMode: isFixture,
+        }),
+      });
 
-        setTimeout(async () => {
-          setTaskState("AUTHORIZE");
-          setStatusNarrative("AUTHORIZE: Action Gate authorizing fill_form_fields. Payment submission blocked by safety rule.");
+      const data = await res.json();
+      setLastWorkflowResult(data);
+      if (data.taskId) {
+        setActiveTaskId(data.taskId);
+        fetchTaskPassport(data.taskId);
+      }
 
-          setTimeout(async () => {
-            setTaskState("EXECUTE_D2B");
-            setStatusNarrative("EXECUTE [Desktop → Browser]: Dispatching field values to active browser tab via extension...");
-
-            try {
-              const res = await fetch(`${API_BASE}/workflows/desktop-to-browser`, {
-                method: "POST",
-                headers: API_HEADERS,
-                body: JSON.stringify({
-                  sessionId,
-                  instruction: "Populate utility pay web form from local invoice document",
-                }),
-              });
-
-              const data = await res.json();
-              setLastWorkflowResult(data);
-              setActiveTaskId(data.taskId);
-              fetchTaskPassport(data.taskId);
-
-              setTaskState("VERIFY");
-              setStatusNarrative("VERIFY: Reading back DOM field values from browser tab to confirm exact match...");
-
-              setTimeout(() => {
-                if (data.isVerified && data.status === "VERIFIED") {
-                  setTaskState("VERIFIED");
-                  setStatusNarrative("VERIFIED: Form populated and independently verified! Form submission intentionally blocked per safety rules.");
-                  addTimelineEntry(
-                    "VERIFIED",
-                    "Desktop → Browser Verified",
-                    `Customer: ${data.formMapping?.customerName} | Amount: ${data.formMapping?.amountDue} (Submission Blocked)`,
-                    data.sourceProvenance?.sha256
-                  );
-                  fetchTaskPassport(data.taskId);
-                } else {
-                  setTaskState("FAILED");
-                  setStatusNarrative("FAILED: DOM property verification failed.");
-                }
-              }, 700);
-            } catch (err: any) {
-              setTaskState("FAILED");
-              setStatusNarrative(`Execution error: ${err.message}`);
-            }
-          }, 600);
-        }, 500);
-      }, 500);
-    }, 500);
+      if (data.status === "VERIFIED" && data.isVerified) {
+        setTaskState("VERIFIED");
+        setStatusNarrative(
+          "VERIFIED: Web form populated and verified against source document! Auto-submission blocked per safety rules."
+        );
+        addTimelineEntry(
+          "VERIFIED",
+          isFixture ? "Fixture Form Population Verified" : "Live Browser Form Population Verified",
+          `Customer: ${data.formMapping?.customerName} | Amount: ${data.formMapping?.amountDue} (Auto-submission blocked)`,
+          data.sourceProvenance?.sha256
+        );
+      } else if (data.status === "HANDOFF") {
+        setTaskState("HANDOFF");
+        setStatusNarrative("AUTHORIZATION NEEDED: Action Gate denied form modification. User consent required.");
+        addTimelineEntry("HANDOFF", "Consent Required", data.detail || "User authorization required");
+      } else {
+        setTaskState("FAILED");
+        setStatusNarrative(`EXECUTION FAILED: ${data.error || data.detail || "Verification failed."}`);
+        addTimelineEntry("FAILED", "Task Failed", data.error || data.detail || "Failed verification");
+      }
+    } catch (err: any) {
+      setTaskState("FAILED");
+      setStatusNarrative(`Execution error: ${err.message}`);
+      addTimelineEntry("FAILED", "Error", err.message);
+    }
   };
 
-  // 4. Voice Input & Editable Confirmation Loop
-  const toggleRecording = () => {
+  // 4. Voice Input & Truthful Status Handling
+  const toggleRecording = async () => {
     if (isRecording) {
-      clearInterval(recordingIntervalRef.current);
+      if (recordingIntervalRef.current) {
+        clearInterval(recordingIntervalRef.current);
+        recordingIntervalRef.current = null;
+      }
       setIsRecording(false);
       setRecordingSeconds(0);
-      // Simulate real Muse Voice Transcribe result
-      const simulatedTranscript =
-        selectedLanguage.includes("kn")
-          ? "BESCOM bill check maadi amount Notepad ge copy maadi"
-          : selectedLanguage.includes("hi")
-          ? "Bijli ka bill check karo aur Notepad me likho"
-          : "Check electricity bill and copy amount to Notepad";
-      setTranscriptConfirmation(simulatedTranscript);
+
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stop();
+      }
     } else {
-      setIsRecording(true);
-      setRecordingSeconds(0);
-      recordingIntervalRef.current = setInterval(() => {
-        setRecordingSeconds((s) => s + 1);
-      }, 1000);
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          setStatusNarrative("Microphone access is not supported in this environment.");
+          return;
+        }
+
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        streamRef.current = stream;
+        audioChunksRef.current = [];
+
+        const recorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = recorder;
+
+        recorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) {
+            audioChunksRef.current.push(e.data);
+          }
+        };
+
+        recorder.onstop = async () => {
+          if (streamRef.current) {
+            streamRef.current.getTracks().forEach((track) => track.stop());
+            streamRef.current = null;
+          }
+
+          const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+          audioChunksRef.current = [];
+
+          const isVoiceReady = Boolean(modelsStatus?.metaHosted?.models?.museVoice?.ready);
+          const isConfigured = Boolean(modelsStatus?.metaHosted?.isConfigured);
+
+          if (!isConfigured || !isVoiceReady) {
+            setStatusNarrative(
+              `Recorded microphone audio (${(audioBlob.size / 1024).toFixed(1)} KB), but Meta Muse Voice Transcribe is not configured in backend. Type in composer or set MODEL_API_KEY.`
+            );
+            setTranscriptConfirmation(null);
+            return;
+          }
+
+          setStatusNarrative("Transcribing audio through Meta Muse Voice Transcribe...");
+          try {
+            const formData = new FormData();
+            formData.append("file", audioBlob, "audio.webm");
+            formData.append("languageHints", selectedLanguage || "kn,hi,en");
+
+            const res = await fetch(`${API_BASE}/models/transcribe`, {
+              method: "POST",
+              headers: API_HEADERS,
+              body: formData,
+            });
+
+            if (!res.ok) {
+              const err = await res.json().catch(() => ({}));
+              throw new Error(err.detail || `HTTP ${res.status}`);
+            }
+
+            const data = await res.json();
+            if (data.transcript && data.transcript.trim()) {
+              setTranscriptConfirmation(data.transcript.trim());
+              setStatusNarrative(`Transcript recognized: "${data.transcript.trim()}". Please confirm or edit.`);
+            } else {
+              setStatusNarrative("No clear speech detected in audio stream.");
+            }
+          } catch (err: any) {
+            setStatusNarrative(`Voice transcription error: ${err.message}`);
+          }
+        };
+
+        recorder.start(250);
+        setIsRecording(true);
+        setRecordingSeconds(0);
+        recordingIntervalRef.current = setInterval(() => {
+          setRecordingSeconds((s) => s + 1);
+        }, 1000);
+        setStatusNarrative("Microphone active. Recording speech... Click mic again to stop.");
+      } catch (err: any) {
+        setStatusNarrative(`Microphone access denied or unavailable: ${err.message}`);
+        setIsRecording(false);
+      }
     }
   };
 
@@ -459,18 +545,65 @@ export function App(): React.JSX.Element {
   const triggerPromptExecution = async (promptText: string) => {
     if (!promptText.trim()) return;
     const lower = promptText.toLowerCase();
-    if (lower.includes("bill") || lower.includes("current") || lower.includes("bescom")) {
-      await triggerBrowserToDesktopWorkflow();
+
+    if (
+      lower.includes("search") ||
+      lower.includes("find") ||
+      lower.includes("look up") ||
+      lower.includes("tariff") ||
+      lower.includes("rate")
+    ) {
+      // Internet research query
+      setTaskState("OBSERVE");
+      setStatusNarrative(`Public Internet Research: Querying keyless search for "${promptText}"...`);
+      addTimelineEntry("OBSERVE", "Internet Research", `Query: "${promptText}"`);
+      try {
+        const res = await fetch(`${API_BASE}/research/search`, {
+          method: "POST",
+          headers: getApiHeaders(),
+          body: JSON.stringify({ query: promptText, sessionId }),
+        });
+        const data = await res.json();
+        if (data.status === "COMPLETED" && data.resultsCount > 0) {
+          setTaskState("VERIFIED");
+          const firstResult = data.results[0];
+          setStatusNarrative(`Research Completed: Found ${data.resultsCount} sources. Top: "${firstResult.title}"`);
+          addTimelineEntry("VERIFIED", `Research: ${data.resultsCount} Sources`, firstResult.snippet, firstResult.sha256);
+        } else if (data.status === "LOCAL_ONLY_BLOCKED") {
+          setTaskState("HANDOFF");
+          setStatusNarrative("Internet research blocked by local-only mode. Provide consent to allow outbound search.");
+          addTimelineEntry("HANDOFF", "Local-Only Mode", "Public search blocked by Privacy Gateway");
+        } else {
+          setTaskState("FAILED");
+          setStatusNarrative(data.notice || "No search results found.");
+          addTimelineEntry("FAILED", "Search Unavailable", data.notice || "Unavailable");
+        }
+      } catch (err: any) {
+        setTaskState("FAILED");
+        setStatusNarrative(`Search error: ${err.message}`);
+      }
+    } else if (lower.includes("bill") || lower.includes("current") || lower.includes("bescom")) {
+      await triggerBrowserToDesktopWorkflow(true);
     } else if (lower.includes("form") || lower.includes("invoice") || lower.includes("pay")) {
-      await triggerDesktopToBrowserWorkflow();
+      await triggerDesktopToBrowserWorkflow(true);
     } else {
       setTaskState("PROPOSE");
-      setStatusNarrative(`Analyzing semantic prompt with Muse Spark: "${promptText}"`);
-      setTimeout(() => {
+      setStatusNarrative(`Analyzing goal with planner: "${promptText}"`);
+      try {
+        const res = await fetch(`${API_BASE}/models/meta/muse-spark/plan`, {
+          method: "POST",
+          headers: getApiHeaders(),
+          body: JSON.stringify({ goal: promptText }),
+        });
+        const planData = await res.json();
         setTaskState("VERIFIED");
-        setStatusNarrative(`Muse Spark answered: Grounded semantic response generated.`);
-        addTimelineEntry("VERIFIED", "Semantic Query", promptText);
-      }, 1200);
+        setStatusNarrative(`Plan formulated (${planData.validation_status || "LOCAL_FALLBACK"}): ${planData.steps?.length || 0} steps prepared.`);
+        addTimelineEntry("VERIFIED", "Plan Generated", `Validation: ${planData.validation_status || "LOCAL_FALLBACK"}`);
+      } catch (err: any) {
+        setTaskState("FAILED");
+        setStatusNarrative(`Planner unavailable: ${err.message}`);
+        addTimelineEntry("FAILED", "Planning Failed", err.message);
+      }
     }
     setUserPrompt("");
   };
@@ -595,22 +728,37 @@ export function App(): React.JSX.Element {
 
         {/* Global Status Pills */}
         <div className="flex items-center gap-3">
-          <span className="badge badge-cyan flex items-center gap-1.5">
-            <Radio className="h-3 w-3 text-sky-400 animate-pulse" />
-            Meta Models Ready
-          </span>
+          {(() => {
+            const isMetaConfigured = Boolean(modelsStatus?.metaHosted?.isConfigured);
+            const isLlamaReady = Boolean(modelsStatus?.localLlama?.isReady);
 
-          <span className="badge badge-purple flex items-center gap-1.5">
-            <Cpu className="h-3 w-3 text-purple-400" />
-            Llama 3.2 3B GGUF
-          </span>
+            return (
+              <>
+                <span
+                  className={`badge ${isMetaConfigured ? "badge-cyan" : "badge-neutral"} flex items-center gap-1.5`}
+                  title={isMetaConfigured ? "Meta Muse Spark 1.3 configured" : "No Meta API key configured (Local fallback active)"}
+                >
+                  <Radio className={`h-3 w-3 ${isMetaConfigured ? "text-sky-400 animate-pulse" : "text-slate-500"}`} />
+                  {isMetaConfigured ? "Meta Muse Spark Ready" : "Planner: Local Fallback"}
+                </span>
 
-          <span
-            className={`badge ${localOnlyMode ? "badge-neutral" : "badge-success"} flex items-center gap-1.5`}
-          >
-            <Shield className="h-3 w-3" />
-            {localOnlyMode ? "Local-Only Mode" : "Hosted Consent Granted"}
-          </span>
+                <span
+                  className={`badge ${isLlamaReady ? "badge-purple" : "badge-neutral"} flex items-center gap-1.5`}
+                  title={isLlamaReady ? "Local Llama 3.2 3B active" : "Local Llama 3.2 3B weights not detected"}
+                >
+                  <Cpu className={`h-3 w-3 ${isLlamaReady ? "text-purple-400" : "text-slate-500"}`} />
+                  {isLlamaReady ? "Llama 3.2 3B Ready" : "Llama Offline"}
+                </span>
+
+                <span
+                  className={`badge ${localOnlyMode ? "badge-neutral" : "badge-success"} flex items-center gap-1.5`}
+                >
+                  <Shield className="h-3 w-3" />
+                  {localOnlyMode ? "Local-Only Mode" : "Hosted Consent Granted"}
+                </span>
+              </>
+            );
+          })()}
 
           <button
             onClick={() => setIsSettingsOpen(!isSettingsOpen)}
@@ -749,7 +897,7 @@ export function App(): React.JSX.Element {
                 </p>
               </div>
               <button
-                onClick={triggerBrowserToDesktopWorkflow}
+                onClick={() => triggerBrowserToDesktopWorkflow(true)}
                 disabled={taskState !== "IDLE" && taskState !== "VERIFIED" && taskState !== "FAILED"}
                 className="btn btn-primary mt-4 w-full text-xs py-2"
               >
@@ -772,7 +920,7 @@ export function App(): React.JSX.Element {
                 </p>
               </div>
               <button
-                onClick={triggerDesktopToBrowserWorkflow}
+                onClick={() => triggerDesktopToBrowserWorkflow(true)}
                 disabled={taskState !== "IDLE" && taskState !== "VERIFIED" && taskState !== "FAILED"}
                 className="btn btn-primary mt-4 w-full text-xs py-2"
               >
@@ -1157,36 +1305,44 @@ export function App(): React.JSX.Element {
               </button>
             </div>
 
-            {/* Baseten Muse Spark Open Section */}
+            {/* Meta Muse Spark 1.3 Section */}
             <div className="space-y-2">
               <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                <Sparkles className="h-3.5 w-3.5 text-sky-400" /> Baseten Muse Spark Open (Planner)
+                <Sparkles className="h-3.5 w-3.5 text-sky-400" /> Meta Muse Spark 1.3 (Primary Planner)
               </h4>
               <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-xs space-y-2">
                 <div className="flex justify-between items-center">
                   <span className="text-slate-300">Model ID:</span>
                   <span className="font-mono text-[11px] text-sky-300">
-                    {modelsStatus?.baseten?.model || "meta-models/muse-spark-open"}
+                    {modelsStatus?.metaHosted?.models?.museSpark?.id || "muse-spark-1.3"}
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-slate-300">Endpoint:</span>
                   <span className="font-mono text-[10px] text-slate-400">
-                    {modelsStatus?.baseten?.baseUrl || "https://inference.baseten.co/v1"}
+                    {modelsStatus?.metaHosted?.baseUrl || "https://api.meta.ai/v1"}
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-slate-300">Readiness:</span>
                   <span
                     className={`badge ${
-                      modelsStatus?.baseten?.isConfigured ? "badge-success" : "badge-neutral"
+                      modelsStatus?.metaHosted?.models?.museSpark?.ready
+                        ? "badge-success"
+                        : modelsStatus?.metaHosted?.isConfigured
+                        ? "badge-cyan"
+                        : "badge-neutral"
                     }`}
                   >
-                    {modelsStatus?.baseten?.status || "NOT_CONFIGURED"}
+                    {modelsStatus?.metaHosted?.models?.museSpark?.ready
+                      ? "READY"
+                      : modelsStatus?.metaHosted?.isConfigured
+                      ? "CONFIGURED"
+                      : "NOT_CONFIGURED"}
                   </span>
                 </div>
                 <p className="text-[10px] text-slate-400 pt-1 border-t border-white/5">
-                  Muse Spark Open generates structured execution plans with local Pydantic validation and 1-shot repair.
+                  Meta Muse Spark 1.3 is the primary hosted reasoning and planning engine for Sahaay, generating validated plans.
                 </p>
               </div>
             </div>
@@ -1261,9 +1417,9 @@ export function App(): React.JSX.Element {
 
                 {testConnResult && (
                   <div className="p-2 rounded bg-black/40 text-[11px] font-mono text-slate-300 mt-2 space-y-1">
-                    <div>Baseten: {testConnResult.baseten?.status || "NOT_CONFIGURED"}</div>
-                    <div>Muse Image: {testConnResult.museImage?.status || "NOT_CONFIGURED"}</div>
                     <div>Meta API: {testConnResult.metaApi?.status || "NOT_CONFIGURED"}</div>
+                    <div>Muse Image: {testConnResult.museImage?.status || "NOT_CONFIGURED"}</div>
+                    <div>Local Llama: {modelsStatus?.localLlama?.status || "NOT_CONFIGURED"}</div>
                   </div>
                 )}
               </div>

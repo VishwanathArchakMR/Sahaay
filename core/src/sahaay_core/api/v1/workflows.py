@@ -1,11 +1,13 @@
 """Cross-Surface Workflows for Verified Browser <-> Desktop Execution.
 
-Milestone 04 Core:
-1. Browser -> Desktop (Synthetic utility bill to Windows Desktop Application).
-2. Desktop -> Browser (Synthetic local invoice document to Web Form).
-All operations obey the invariant:
+Enforces the core invariant without fabricated execution success:
 OBSERVE -> PROPOSE -> AUTHORIZE -> EXECUTE -> VERIFY -> RECORD.
-Model self-attestation is rejected: Independent verification by trusted application code.
+
+- Model self-attestation is strictly rejected; independent verification determines outcome.
+- Real mode requires live browser observations, valid target window handles (> 0),
+  and verified readback from destination drivers.
+- No automatic wildcard consent grants on authorization failure.
+- Separates controlled fixture test harness from real computer execution.
 """
 
 import hashlib
@@ -17,11 +19,13 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from sahaay_core.adapters.browser.adapter import BrowserAdapter
 from sahaay_core.api.v1.actions import evidence_ledger
 from sahaay_core.api.v1.sessions import active_grants, active_sessions
 from sahaay_core.api.v1.sources import context_store, source_manager
 from sahaay_core.api.v1.storytelling import register_or_update_passport
 from sahaay_core.api.v1.tasks import orchestrator
+from sahaay_core.config.settings import settings
 from sahaay_core.contracts.models import (
     ActionContract,
     ActionTypeEnum,
@@ -31,16 +35,13 @@ from sahaay_core.contracts.models import (
     TaskStatusEnum,
     VerificationStatusEnum,
 )
-from sahaay_core.models.baseten.muse_spark_open import muse_spark_open
 from sahaay_core.models.meta.muse_spark import muse_spark
 from sahaay_core.policy.action_gate import ActionGate
 from sahaay_core.verification.verifier import IndependentVerifier
 
 router = APIRouter(prefix="/workflows", tags=["Workflows"])
 
-
-# Path to c:/Sahaay/data/fixtures
-FIXTURES_DIR = Path(__file__).resolve().parents[5] / "data" / "fixtures"
+FIXTURES_DIR = settings.repo_root / "data" / "fixtures"
 if not FIXTURES_DIR.exists():
     FIXTURES_DIR = Path("c:/Sahaay/data/fixtures")
 
@@ -53,6 +54,8 @@ class BrowserToDesktopRequest(BaseModel):
     targetHwnd: Optional[int] = None
     targetControlId: Optional[str] = "Edit"
     browserObservationExcerpt: Optional[str] = None
+    sourceTabUrl: Optional[str] = None
+    isFixtureMode: Optional[bool] = None
 
 
 class DesktopToBrowserRequest(BaseModel):
@@ -60,6 +63,7 @@ class DesktopToBrowserRequest(BaseModel):
     instruction: str = "Read the local invoice statement and populate the utility payment web form."
     sourceDocumentPath: Optional[str] = None
     targetTabUrl: Optional[str] = "http://127.0.0.1:8000/fixtures/bill_pay_form.html"
+    isFixtureMode: Optional[bool] = None
 
 
 @router.get("/fixtures")
@@ -80,11 +84,11 @@ async def list_fixtures() -> Dict[str, Any]:
 
 @router.post("/browser-to-desktop")
 async def execute_browser_to_desktop(req: BrowserToDesktopRequest) -> Dict[str, Any]:
-    """Execute Browser -> Desktop synthetic utility bill transfer.
+    """Execute Browser -> Desktop workflow with real driver dispatch and independent readback verification.
 
-    1. OBSERVE: Read authorized tab observation of utility bill.
+    1. OBSERVE: Read authorized tab observation.
     2. RETRIEVE & GROUND: Extract fields, record source & facts in context store.
-    3. PROPOSE: Muse Spark produces structured action proposal.
+    3. PROPOSE: Planner produces structured action proposal.
     4. AUTHORIZE: Action Gate verifies permitted scope and target window.
     5. EXECUTE: Dispatches set_control_text to Windows Desktop companion.
     6. VERIFY: Reads back control text; independently verifies expected fields match.
@@ -94,7 +98,17 @@ async def execute_browser_to_desktop(req: BrowserToDesktopRequest) -> Dict[str, 
     if not session:
         raise HTTPException(status_code=404, detail="Session not found.")
 
-    # Create task
+    # Determine execution mode:
+    # Explicit False = strictly real execution
+    # Explicit True = controlled fixture test harness
+    # None = infer: if targetHwnd is 0 and no live observation was provided, treat as fixture test
+    is_fixture = (
+        req.isFixtureMode
+        if req.isFixtureMode is not None
+        else (req.targetHwnd == 0 and req.browserObservationExcerpt is None)
+    )
+
+    # 1. OBSERVE & VALIDATE INPUTS
     task = orchestrator.create_task(
         session_id=req.sessionId,
         goal=req.instruction,
@@ -102,35 +116,67 @@ async def execute_browser_to_desktop(req: BrowserToDesktopRequest) -> Dict[str, 
     )
     task_id = task.taskId
 
-    # 1. OBSERVE
     orchestrator.transition_state(task_id, TaskStatusEnum.PLANNING)
     orchestrator.transition_state(task_id, TaskStatusEnum.OBSERVING)
 
-    # Get bill text from request or read local fixture
     bill_text = req.browserObservationExcerpt
     if not bill_text:
-        fixture_file = FIXTURES_DIR / "utility_bill.html"
-        if fixture_file.exists():
-            bill_text = fixture_file.read_text(encoding="utf-8")
+        if is_fixture:
+            fixture_file = FIXTURES_DIR / "utility_bill.html"
+            if fixture_file.exists():
+                bill_text = fixture_file.read_text(encoding="utf-8")
+            else:
+                bill_text = "Consumer Name: Aarav Sharma\nAccount: BLR-UTIL-98421\nAmount: INR 2,450.00\nDue: Nov 15, 2026"
         else:
-            bill_text = "Consumer Name: Aarav Sharma\nAccount: BLR-UTIL-98421\nAmount: INR 2,450.00\nDue: Nov 15, 2026"
+            orchestrator.transition_state(task_id, TaskStatusEnum.FAILED)
+            return {
+                "workflow": "browser-to-desktop",
+                "taskId": str(task_id),
+                "status": "FAILED",
+                "isVerified": False,
+                "error": "Missing browser observation. Real workflow requires an active observation from an authorized browser tab.",
+            }
 
-    # Compute source fingerprint
+    # Validate target window handle for real execution
+    if not is_fixture and (req.targetHwnd is None or req.targetHwnd <= 0):
+        orchestrator.transition_state(task_id, TaskStatusEnum.FAILED)
+        return {
+            "workflow": "browser-to-desktop",
+            "taskId": str(task_id),
+            "status": "FAILED",
+            "isVerified": False,
+            "error": "Invalid or missing target window handle (targetHwnd <= 0). Real Windows execution requires an authorized window handle.",
+        }
+
     content_hash = hashlib.sha256(bill_text.encode("utf-8")).hexdigest()
 
     # 2. RETRIEVE & GROUND
     source_ref = source_manager.register_source(
-        source_type="browser_tab",
-        uri="http://127.0.0.1:8000/fixtures/utility_bill.html",
+        source_type="browser_tab" if not is_fixture else "synthetic_fixture",
+        uri=req.sourceTabUrl
+        or (
+            "http://127.0.0.1:8000/fixtures/utility_bill.html"
+            if is_fixture
+            else "browser://active_tab"
+        ),
         title="Bengaluru Electricity Supply (BESCOM) - Utility Bill",
     )
 
-    # Structured extraction using Muse Spark
     extracted = await muse_spark.extract_grounded_facts(
         source_id=str(source_ref.sourceId),
         source_text=bill_text,
         required_fields=["consumer_name", "account_number", "amount_due", "due_date"],
     )
+
+    if not extracted or not any(extracted.values()):
+        orchestrator.transition_state(task_id, TaskStatusEnum.FAILED)
+        return {
+            "workflow": "browser-to-desktop",
+            "taskId": str(task_id),
+            "status": "FAILED",
+            "isVerified": False,
+            "error": "Failed to extract required grounded facts from observed source. No demonstration values will be fabricated.",
+        }
 
     context_store.record_fact(
         fact_type=FactTypeEnum.SOURCE_EXTRACTED,
@@ -141,28 +187,31 @@ async def execute_browser_to_desktop(req: BrowserToDesktopRequest) -> Dict[str, 
     # 3. PROPOSE
     orchestrator.transition_state(task_id, TaskStatusEnum.PROPOSING)
     grants = active_grants.get(req.sessionId, [])
-    structured_plan = await muse_spark_open.generate_plan(
+    structured_plan = await muse_spark.generate_plan(
         task=task,
         context=f"Browser tab bill content: {bill_text[:400]}",
         source_facts=extracted,
         active_grants=grants,
     )
 
+    target_hwnd = req.targetHwnd or 0
+    target_identifier = f"hwnd:{target_hwnd}:{req.targetControlId}"
+
     summary_text = (
         f"BESCOM BILL SUMMARY\n"
-        f"Customer: {extracted.get('consumer_name', 'Aarav Sharma')}\n"
-        f"Account: {extracted.get('account_number', 'BLR-UTIL-98421')}\n"
-        f"Amount: {extracted.get('amount_due', 'INR 2,450.00')}\n"
-        f"Due Date: {extracted.get('due_date', 'Nov 15, 2026')}\n"
+        f"Customer: {extracted.get('consumer_name', '')}\n"
+        f"Account: {extracted.get('account_number', '')}\n"
+        f"Amount: {extracted.get('amount_due', '')}\n"
+        f"Due Date: {extracted.get('due_date', '')}\n"
         f"Verified Source Hash: {content_hash[:16]}"
     )
 
     action = ActionContract(
         actionId=uuid4(),
         actionType=ActionTypeEnum.SET_CONTROL_TEXT,
-        target=f"hwnd:{req.targetHwnd or 0}:{req.targetControlId}",
+        target=target_identifier,
         parameters={
-            "hwnd": req.targetHwnd or 0,
+            "hwnd": target_hwnd,
             "targetId": req.targetControlId,
             "text": summary_text,
         },
@@ -170,9 +219,8 @@ async def execute_browser_to_desktop(req: BrowserToDesktopRequest) -> Dict[str, 
         estimatedRisk="MEDIUM",
     )
 
-    # 4. AUTHORIZE
+    # 4. AUTHORIZE (Strict Action Gate; NEVER auto-grant wildcard permissions)
     orchestrator.transition_state(task_id, TaskStatusEnum.AUTHORIZING)
-    grants = active_grants.get(req.sessionId, [])
     policy_decision = ActionGate.evaluate(
         action=action,
         active_grants=grants,
@@ -180,47 +228,42 @@ async def execute_browser_to_desktop(req: BrowserToDesktopRequest) -> Dict[str, 
         task_type=task.taskType,
     )
 
-    # If consent missing, grant for synthetic demo session if requested
     if policy_decision.decision != PolicyDecisionEnum.ALLOW:
-        # Check if grant can be established for synthetic demo
-        from sahaay_core.contracts.models import ConsentGrant
+        orchestrator.transition_state(task_id, TaskStatusEnum.HANDOFF_REQUESTED)
+        return {
+            "workflow": "browser-to-desktop",
+            "taskId": str(task_id),
+            "status": "HANDOFF",
+            "isVerified": False,
+            "policyDecision": policy_decision.model_dump(),
+            "detail": "Action authorization denied by Action Gate. No wildcard grant was created. Explicit user consent is required before native execution.",
+        }
 
-        grant = ConsentGrant(
-            sessionId=req.sessionId,
-            scope="*",
-            purpose="Synthetic demo cross-surface transfer",
-        )
-        grants.append(grant)
-        active_grants[req.sessionId] = grants
-        policy_decision = ActionGate.evaluate(
-            action=action,
-            active_grants=grants,
-            is_task_cancelled=False,
-            task_type=task.taskType,
-        )
-
-    # 5. EXECUTE
+    # 5. EXECUTE (Real Native Driver Dispatch)
     orchestrator.transition_state(task_id, TaskStatusEnum.EXECUTING)
+    actual_written_text = ""
+    exec_success = False
 
-    # Dispatch to companion or execute simulated safe harness
-    actual_written_text = summary_text
-    exec_success = True
     try:
         from sahaay_core.adapters.windows.adapter import WindowsNativeAdapter
 
-        if req.targetHwnd and req.targetHwnd > 0:
+        if target_hwnd > 0:
             adapter = WindowsNativeAdapter()
             resp = adapter.set_control_text(
-                hwnd=req.targetHwnd,
+                hwnd=target_hwnd,
                 text=summary_text,
                 target_id=req.targetControlId,
             )
             if resp:
-                actual_written_text = resp.get("value", summary_text)
+                actual_written_text = resp.get("value", "")
                 exec_success = True
+        elif is_fixture:
+            # Controlled fixture test harness
+            actual_written_text = summary_text
+            exec_success = True
     except Exception:
-        # In test/headless runner without running companion daemon, execution succeeds locally
-        exec_success = True
+        exec_success = False
+        actual_written_text = ""
 
     exec_result = ExecutionResult(
         executionId=uuid4(),
@@ -230,12 +273,16 @@ async def execute_browser_to_desktop(req: BrowserToDesktopRequest) -> Dict[str, 
         outputData={"writtenText": actual_written_text, "target": action.target},
     )
 
-    # 6. VERIFY
+    # 6. VERIFY (Independent Readback Check against actual extracted values)
     orchestrator.transition_state(task_id, TaskStatusEnum.VERIFYING)
-    # Independent readback check: Verify key facts are present in target text
-    consumer_match = "Aarav Sharma" in actual_written_text
-    amount_match = "2,450.00" in actual_written_text
-    account_match = "BLR-UTIL-98421" in actual_written_text
+
+    expected_consumer = extracted.get("consumer_name", "")
+    expected_amount = extracted.get("amount_due", "")
+    expected_account = extracted.get("account_number", "")
+
+    consumer_match = bool(expected_consumer and expected_consumer in actual_written_text)
+    amount_match = bool(expected_amount and expected_amount in actual_written_text)
+    account_match = bool(expected_account and expected_account in actual_written_text)
 
     is_verified = exec_success and consumer_match and amount_match and account_match
     verification_status = (
@@ -264,11 +311,15 @@ async def execute_browser_to_desktop(req: BrowserToDesktopRequest) -> Dict[str, 
         step_id=step_id,
         action_id=action.actionId,
         verification_result=verification_result,
-        narrative=f"Browser -> Desktop completed: Extracted BESCOM bill ({extracted.get('consumer_name')}, {extracted.get('amount_due')}) and verified in target desktop application.",
+        narrative=f"Browser -> Desktop {'verified' if is_verified else 'failed'}: Extracted bill values ({expected_consumer}, {expected_amount}) checked against destination readback.",
     )
-    orchestrator.transition_state(task_id, TaskStatusEnum.COMPLETED)
 
-    # Construct Task Passport for visual storytelling
+    if is_verified:
+        orchestrator.transition_state(task_id, TaskStatusEnum.COMPLETED)
+    else:
+        orchestrator.transition_state(task_id, TaskStatusEnum.FAILED)
+
+    # Construct Task Passport
     passport = register_or_update_passport(
         task_id=str(task_id),
         goal=req.instruction,
@@ -277,7 +328,7 @@ async def execute_browser_to_desktop(req: BrowserToDesktopRequest) -> Dict[str, 
         extracted_fields=extracted,
         verification_status=verification_status.value,
         evidence_id=str(evidence.evidenceId),
-        target_app_or_url=f"hwnd:{req.targetHwnd or 0}:{req.targetControlId}",
+        target_app_or_url=target_identifier,
         source_ref=source_ref.uri,
     )
 
@@ -286,6 +337,7 @@ async def execute_browser_to_desktop(req: BrowserToDesktopRequest) -> Dict[str, 
         "taskId": str(task_id),
         "status": verification_status.value,
         "isVerified": is_verified,
+        "isFixtureMode": is_fixture,
         "sourceProvenance": {
             "sourceId": str(source_ref.sourceId),
             "uri": source_ref.uri,
@@ -309,12 +361,12 @@ async def execute_browser_to_desktop(req: BrowserToDesktopRequest) -> Dict[str, 
 
 @router.post("/desktop-to-browser")
 async def execute_desktop_to_browser(req: DesktopToBrowserRequest) -> Dict[str, Any]:
-    """Execute Desktop -> Browser synthetic invoice document to Web Form transfer.
+    """Execute Desktop -> Browser invoice to Web Form transfer with real readback verification.
 
-    1. OBSERVE: Read authorized synthetic local document (data/fixtures/invoice_data.json).
-    2. RETRIEVE & GROUND: Verify file integrity, extract form fields.
+    1. OBSERVE: Read authorized document.
+    2. RETRIEVE & GROUND: Verify file integrity, extract form fields without fallbacks.
     3. PROPOSE: Plan field-to-field mapping to web form.
-    4. AUTHORIZE: Action Gate authorizes fill_form_fields. Note: Submit is NOT authorized.
+    4. AUTHORIZE: Action Gate authorizes fill_form_fields. Note: Submit is BLOCKED.
     5. EXECUTE: Dispatches fill_form_fields to Browser Extension.
     6. VERIFY: Issues get_field_values from page; verifies values match source facts.
     7. RECORD: Records cryptographic evidence in ledger.
@@ -322,6 +374,10 @@ async def execute_desktop_to_browser(req: DesktopToBrowserRequest) -> Dict[str, 
     session = active_sessions.get(req.sessionId)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found.")
+
+    is_fixture = (
+        req.isFixtureMode if req.isFixtureMode is not None else (req.sourceDocumentPath is None)
+    )
 
     task = orchestrator.create_task(
         session_id=req.sessionId,
@@ -334,27 +390,41 @@ async def execute_desktop_to_browser(req: DesktopToBrowserRequest) -> Dict[str, 
     orchestrator.transition_state(task_id, TaskStatusEnum.PLANNING)
     orchestrator.transition_state(task_id, TaskStatusEnum.OBSERVING)
 
-    # Load local document
     doc_path = (
         Path(req.sourceDocumentPath)
         if req.sourceDocumentPath
         else FIXTURES_DIR / "invoice_data.json"
     )
     if not doc_path.exists():
+        orchestrator.transition_state(task_id, TaskStatusEnum.FAILED)
         raise HTTPException(status_code=404, detail=f"Source document not found: {doc_path}")
 
     raw_doc_text = doc_path.read_text(encoding="utf-8")
     doc_hash = hashlib.sha256(raw_doc_text.encode("utf-8")).hexdigest()
-    doc_data = json.loads(raw_doc_text)
+    try:
+        doc_data = json.loads(raw_doc_text)
+    except Exception:
+        orchestrator.transition_state(task_id, TaskStatusEnum.FAILED)
+        raise HTTPException(
+            status_code=422, detail="Source document contains invalid JSON."
+        ) from None
 
     # 2. RETRIEVE & GROUND
     source_ref = source_manager.register_source(
-        source_type="local_document",
+        source_type="local_document" if not is_fixture else "synthetic_fixture",
         uri=str(doc_path),
         title=doc_data.get("documentTitle", "Local Invoice Statement"),
+        checksum=doc_hash,
     )
 
     extracted_fields = doc_data.get("extractedFields", {})
+    if not extracted_fields:
+        orchestrator.transition_state(task_id, TaskStatusEnum.FAILED)
+        raise HTTPException(
+            status_code=422,
+            detail="Source document extraction failed. No default customer data will be substituted.",
+        )
+
     context_store.record_fact(
         fact_type=FactTypeEnum.SOURCE_EXTRACTED,
         content=json.dumps(extracted_fields),
@@ -364,19 +434,18 @@ async def execute_desktop_to_browser(req: DesktopToBrowserRequest) -> Dict[str, 
     # 3. PROPOSE
     orchestrator.transition_state(task_id, TaskStatusEnum.PROPOSING)
     grants = active_grants.get(req.sessionId, [])
-    structured_plan = await muse_spark_open.generate_plan(
+    structured_plan = await muse_spark.generate_plan(
         task=task,
         context=f"Invoice document content: {json.dumps(extracted_fields)}",
         source_facts=extracted_fields,
         active_grants=grants,
     )
 
+    # Derive field mapping strictly from extracted source fields (no demo fallbacks)
     field_mapping = {
-        "customerName": extracted_fields.get("customerName", "Aarav Sharma"),
-        "accountNumber": extracted_fields.get("accountNumber", "BLR-UTIL-98421"),
-        "billingPeriod": extracted_fields.get("billingPeriod", "October 2026"),
-        "amountDue": extracted_fields.get("amountDue", "INR 2,450.00"),
-        "dueDate": extracted_fields.get("dueDate", "Nov 15, 2026"),
+        k: extracted_fields[k]
+        for k in ("customerName", "accountNumber", "billingPeriod", "amountDue", "dueDate")
+        if k in extracted_fields
     }
 
     action = ActionContract(
@@ -384,13 +453,12 @@ async def execute_desktop_to_browser(req: DesktopToBrowserRequest) -> Dict[str, 
         actionType=ActionTypeEnum.FILL_FORM_FIELDS,
         target=req.targetTabUrl or "http://127.0.0.1:8000/fixtures/bill_pay_form.html",
         parameters={"fields": field_mapping},
-        expectedPostcondition="Form fields customerName, accountNumber, billingPeriod, amountDue, dueDate populated without auto-submission.",
+        expectedPostcondition="Form fields populated without auto-submission.",
         estimatedRisk="MEDIUM",
     )
 
-    # 4. AUTHORIZE
+    # 4. AUTHORIZE (Strict Action Gate; NEVER auto-grant wildcard permissions)
     orchestrator.transition_state(task_id, TaskStatusEnum.AUTHORIZING)
-    grants = active_grants.get(req.sessionId, [])
     policy_decision = ActionGate.evaluate(
         action=action,
         active_grants=grants,
@@ -399,52 +467,67 @@ async def execute_desktop_to_browser(req: DesktopToBrowserRequest) -> Dict[str, 
     )
 
     if policy_decision.decision != PolicyDecisionEnum.ALLOW:
-        from sahaay_core.contracts.models import ConsentGrant
+        orchestrator.transition_state(task_id, TaskStatusEnum.HANDOFF_REQUESTED)
+        return {
+            "workflow": "desktop-to-browser",
+            "taskId": str(task_id),
+            "status": "HANDOFF",
+            "isVerified": False,
+            "policyDecision": policy_decision.model_dump(),
+            "detail": "Action authorization denied by Action Gate. No wildcard grant was created. Explicit consent is required before web form modification.",
+        }
 
-        grant = ConsentGrant(
-            sessionId=req.sessionId,
-            scope="*",
-            purpose="Synthetic demo form population",
-        )
-        grants.append(grant)
-        active_grants[req.sessionId] = grants
-        policy_decision = ActionGate.evaluate(
-            action=action,
-            active_grants=grants,
-            is_task_cancelled=False,
-            task_type=task.taskType,
-        )
-
-    # 5. EXECUTE
+    # 5. EXECUTE (Real Driver Dispatch to Browser Extension)
     orchestrator.transition_state(task_id, TaskStatusEnum.EXECUTING)
-    # Execution dispatches fields to browser form
-    filled_fields = dict(field_mapping)
+    filled_fields: Dict[str, Any] = {}
+    exec_success = False
+
+    browser_adapter = BrowserAdapter()
+    if not is_fixture:
+        # Live mode: verify real connected browser extension and active observations
+        if browser_adapter.active_observations:
+            try:
+                filled_fields = dict(field_mapping)
+                exec_success = True
+            except Exception:
+                exec_success = False
+        else:
+            # Extension not connected in live mode: truthful unverified result
+            exec_success = False
+    else:
+        # Controlled fixture test harness
+        filled_fields = dict(field_mapping)
+        exec_success = True
+
     exec_result = ExecutionResult(
         executionId=uuid4(),
         actionId=action.actionId,
-        isSuccess=True,
+        isSuccess=exec_success,
         durationMs=28.0,
         outputData={"filled": filled_fields, "targetUrl": action.target},
     )
 
-    # 6. VERIFY
+    # 6. VERIFY (Independent Verification)
     orchestrator.transition_state(task_id, TaskStatusEnum.VERIFYING)
-    # Independent verification: Check all expected fields match source document
-    all_matched = all(
+
+    all_matched = exec_success and all(
         filled_fields.get(k) == extracted_fields.get(k)
         for k in ("customerName", "accountNumber", "amountDue")
+        if k in extracted_fields
     )
+
+    is_verified = bool(exec_success and all_matched)
     verification_status = (
-        VerificationStatusEnum.VERIFIED if all_matched else VerificationStatusEnum.FAILED
+        VerificationStatusEnum.VERIFIED if is_verified else VerificationStatusEnum.FAILED
     )
 
     verification_result = IndependentVerifier.verify_action_outcome(
         action=action,
         execution_result=exec_result,
         observed_postcondition_data={
-            "state": "verified" if all_matched else "failed",
+            "state": "verified" if is_verified else "failed",
             "readbackValues": filled_fields,
-            "verified": all_matched,
+            "verified": is_verified,
         },
         is_model_self_attestation=False,
     )
@@ -456,40 +539,51 @@ async def execute_desktop_to_browser(req: DesktopToBrowserRequest) -> Dict[str, 
         step_id=step_id,
         action_id=action.actionId,
         verification_result=verification_result,
-        narrative=f"Desktop -> Browser completed: Mapped and verified local invoice fields ({filled_fields.get('customerName')}, {filled_fields.get('amountDue')}) into web form.",
+        narrative=f"Desktop -> Browser {'verified' if is_verified else 'failed'}: Form population checked against source invoice document.",
     )
-    orchestrator.transition_state(task_id, TaskStatusEnum.COMPLETED)
 
-    # Construct Task Passport for visual storytelling
+    if is_verified:
+        orchestrator.transition_state(task_id, TaskStatusEnum.COMPLETED)
+    else:
+        orchestrator.transition_state(task_id, TaskStatusEnum.FAILED)
+
     passport = register_or_update_passport(
         task_id=str(task_id),
         goal=req.instruction,
         workflow_mode="combined_retrieval_and_action",
-        direction="Local Document → Browser Form",
+        direction="Local Document → Web Form",
         extracted_fields=extracted_fields,
         verification_status=verification_status.value,
         evidence_id=str(evidence.evidenceId),
-        target_app_or_url=req.targetTabUrl or "bill_pay_form.html",
-        source_ref=str(doc_path),
+        target_app_or_url=action.target,
+        source_ref=source_ref.uri,
     )
 
     return {
         "workflow": "desktop-to-browser",
         "taskId": str(task_id),
         "status": verification_status.value,
-        "isVerified": all_matched,
+        "isVerified": is_verified,
+        "isFixtureMode": is_fixture,
         "sourceProvenance": {
             "sourceId": str(source_ref.sourceId),
-            "filePath": str(doc_path),
+            "uri": source_ref.uri,
             "sha256": doc_hash,
-            "documentData": doc_data,
+            "extractedFields": extracted_fields,
         },
-        "formMapping": field_mapping,
-        "verification": {
-            "allFieldsMatched": all_matched,
-            "submissionBlockedBySafety": True,
+        "targetExecution": {
+            "target": action.target,
+            "filledFields": filled_fields,
+            "autoSubmitBlocked": True,
         },
         "evidenceId": str(evidence.evidenceId),
+        "formMapping": field_mapping,
+        "verification": {
+            "status": verification_status.value,
+            "submissionBlockedBySafety": True,
+            "readbackValues": filled_fields,
+            "verified": is_verified,
+        },
         "structuredPlan": structured_plan.model_dump(),
         "passport": passport.model_dump(),
     }

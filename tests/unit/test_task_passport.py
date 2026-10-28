@@ -37,9 +37,7 @@ async def test_task_passport_registration_and_retrieval(auth_headers):
         assert len(passport.milestones) == 5
 
         # 2. Retrieve passport via API
-        resp = await client.get(
-            f"/api/v1/tasks/{task_id}/passport", headers=auth_headers
-        )
+        resp = await client.get(f"/api/v1/tasks/{task_id}/passport", headers=auth_headers)
         assert resp.status_code == 200
         data = resp.json()
 
@@ -52,10 +50,7 @@ async def test_task_passport_registration_and_retrieval(auth_headers):
         assert milestones[0]["title"] == "Source Context Ingested"
         assert "<svg" in milestones[0]["svgFallback"]
         assert milestones[2]["title"] == "Action Gate Authorized"
-        assert (
-            milestones[3]["title"]
-            == "Cross-Surface Transfer: Browser Tab → Windows Application"
-        )
+        assert milestones[3]["title"] == "Cross-Surface Transfer: Browser Tab → Windows Application"
         assert milestones[4]["status"] == "VERIFIED"
 
 
@@ -115,9 +110,7 @@ async def test_delete_task_visual_artifacts_endpoint(auth_headers):
             source_ref="test",
         )
 
-        del_res = await client.delete(
-            f"/api/v1/tasks/{task_id}/artifacts", headers=auth_headers
-        )
+        del_res = await client.delete(f"/api/v1/tasks/{task_id}/artifacts", headers=auth_headers)
         assert del_res.status_code == 200
         data = del_res.json()
         assert data["success"] is True
@@ -125,15 +118,15 @@ async def test_delete_task_visual_artifacts_endpoint(auth_headers):
 
 
 @pytest.mark.asyncio
-async def test_models_status_reports_baseten_and_muse_image(auth_headers):
+async def test_models_status_reports_meta_models_and_muse_image(auth_headers):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         res = await client.get("/api/v1/models/status", headers=auth_headers)
         assert res.status_code == 200
         data = res.json()
 
-        assert "baseten" in data
-        assert data["baseten"]["model"] == "meta-models/muse-spark-open"
+        assert "metaHosted" in data
+        assert data["metaHosted"]["models"]["museSpark"]["id"] == "muse-spark-1.3"
         assert "museImage" in data["metaHosted"]["models"]
         assert data["metaHosted"]["models"]["museImage"]["id"] == "muse-image-1.0"
         assert "visualStorytelling" in data

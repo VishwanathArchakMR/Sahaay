@@ -38,38 +38,22 @@ def test_muse_spark_indic_language_detection():
     spark = MuseSparkClient()
 
     # Kannada code-switched
-    assert (
-        spark.detect_indic_language("Nanna current bill check maadi")
-        == "kn_code_switched"
-    )
-    assert (
-        spark.detect_indic_language("Electricity bill eshtu aagide?")
-        == "kn_code_switched"
-    )
+    assert spark.detect_indic_language("Nanna current bill check maadi") == "kn_code_switched"
+    assert spark.detect_indic_language("Electricity bill eshtu aagide?") == "kn_code_switched"
 
     # Hindi code-switched
-    assert (
-        spark.detect_indic_language("Bijli ka bill kitna aaya hai?")
-        == "hi_code_switched"
-    )
-    assert (
-        spark.detect_indic_language("Mera utility invoice dikhao please")
-        == "hi_code_switched"
-    )
+    assert spark.detect_indic_language("Bijli ka bill kitna aaya hai?") == "hi_code_switched"
+    assert spark.detect_indic_language("Mera utility invoice dikhao please") == "hi_code_switched"
 
     # Code-switched Indic mix
     assert (
-        spark.detect_indic_language(
-            "Bill check maadi aur kitna payment bacha hai batao"
-        )
+        spark.detect_indic_language("Bill check maadi aur kitna payment bacha hai batao")
         == "code_switched_indic"
     )
 
     # Standard English
     assert (
-        spark.detect_indic_language(
-            "Extract the consumer name and amount due from the active tab"
-        )
+        spark.detect_indic_language("Extract the consumer name and amount due from the active tab")
         == "en"
     )
 

@@ -15,9 +15,7 @@ async def test_list_open_windows_offline():
         "sahaay_core.api.v1.windows.adapter.list_open_windows",
         side_effect=ConnectionError("Pipe not found"),
     ):
-        async with AsyncClient(
-            transport=transport, base_url="http://testclient"
-        ) as client:
+        async with AsyncClient(transport=transport, base_url="http://testclient") as client:
             res = await client.get("/api/v1/windows")
             assert res.status_code == 200
             data = res.json()
@@ -48,9 +46,7 @@ async def test_list_open_windows_online():
         "sahaay_core.api.v1.windows.adapter.list_open_windows",
         return_value=mock_windows,
     ):
-        async with AsyncClient(
-            transport=transport, base_url="http://testclient"
-        ) as client:
+        async with AsyncClient(transport=transport, base_url="http://testclient") as client:
             res = await client.get("/api/v1/windows")
             assert res.status_code == 200
             data = res.json()
@@ -72,9 +68,7 @@ async def test_get_active_window():
         "sahaay_core.api.v1.windows.adapter.get_active_window",
         return_value=mock_active,
     ):
-        async with AsyncClient(
-            transport=transport, base_url="http://testclient"
-        ) as client:
+        async with AsyncClient(transport=transport, base_url="http://testclient") as client:
             res = await client.get("/api/v1/windows/active")
             assert res.status_code == 200
             data = res.json()
@@ -102,9 +96,7 @@ async def test_inspect_window_elements():
         "sahaay_core.api.v1.windows.adapter.inspect_window_elements",
         return_value=mock_elements,
     ):
-        async with AsyncClient(
-            transport=transport, base_url="http://testclient"
-        ) as client:
+        async with AsyncClient(transport=transport, base_url="http://testclient") as client:
             res = await client.post("/api/v1/windows/inspect", json={"hwnd": 12345})
             assert res.status_code == 200
             data = res.json()

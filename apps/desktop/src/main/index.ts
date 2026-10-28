@@ -78,6 +78,10 @@ ipcMain.handle("sahaay:get-system-status", async (event) => {
   };
 });
 
+ipcMain.handle("sahaay:get-api-token", () => {
+  return process.env.SAHAAY_API_TOKEN || process.env.VITE_SAHAAY_TOKEN || "";
+});
+
 app.whenReady().then(() => {
   createWindow();
 

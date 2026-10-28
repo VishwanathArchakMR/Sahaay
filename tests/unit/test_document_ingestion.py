@@ -77,9 +77,7 @@ async def test_ingest_rejects_unsupported_extension(tmp_path: Path):
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://testclient") as client:
-        res = await client.post(
-            "/api/v1/sources/ingest-file", json={"filePath": str(bin_file)}
-        )
+        res = await client.post("/api/v1/sources/ingest-file", json={"filePath": str(bin_file)})
         assert res.status_code == 400
         assert "unsupported" in res.json()["detail"].lower()
 

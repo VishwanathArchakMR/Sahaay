@@ -15,6 +15,7 @@ from sahaay_core.api.v1.browser import router as browser_router
 from sahaay_core.api.v1.capabilities import router as capabilities_router
 from sahaay_core.api.v1.health import router as health_router
 from sahaay_core.api.v1.models import router as models_router
+from sahaay_core.api.v1.research import router as research_router
 from sahaay_core.api.v1.sessions import router as sessions_router
 from sahaay_core.api.v1.sources import router as sources_router
 from sahaay_core.api.v1.storytelling import storytelling_router
@@ -107,6 +108,7 @@ app.include_router(browser_router, prefix="/api/v1")
 app.include_router(models_router, prefix="/api/v1")
 app.include_router(workflows_router, prefix="/api/v1")
 app.include_router(storytelling_router, prefix="/api/v1")
+app.include_router(research_router, prefix="/api/v1")
 
 # Mount synthetic demonstration fixtures & visual artifacts
 fixtures_path = Path(__file__).resolve().parent.parent.parent.parent / "data" / "fixtures"

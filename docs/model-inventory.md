@@ -1,14 +1,13 @@
-# Sahaay Model Inventory & Provider Architecture (Milestone 05)
+# Sahaay Model Inventory & Provider Architecture (Milestone 06)
 
 ## 1. Active Model Roles & Providers
 
-In Milestone 05, Sahaay integrates **Baseten Muse Spark Open** as its actual structured planner, **Meta Muse Image** for visual storytelling and Task Passports, alongside the existing Meta Model suite and Local Llama 3.2 3B runtime.
+In Milestone 06, Sahaay uses the **Meta Model API** (`https://api.meta.ai/v1`) as its primary hosted AI provider. Baseten has been completely removed. Meta Muse Spark 1.3 is the primary hosted task planner, Meta Muse Image powers Task Passport illustrations, Meta Muse Voice Transcribe provides speech-to-text, and Meta Muse Wonder provides screenshot-based computer-use proposals, complemented by optional Local Llama 3.2 3B.
 
 | Model Designation | Basis / Provider | Active Role in Sahaay | Operational Status |
 | :--- | :--- | :--- | :--- |
-| **Muse Spark Open** | `meta-models/muse-spark-open` via **Baseten** (`https://inference.baseten.co/v1`) | Structured task planning, decomposed step dependencies, and Action Gate capability mapping | **INTEGRATED & TESTED** (Requires `BASETEN_API_KEY`; deterministic fallback when offline) |
+| **Muse Spark 1.3** | `muse-spark-1.3` via **Meta Model API** (`https://api.meta.ai/v1`) | Primary hosted task reasoning and structured planning, validated against central Capability Registry | **INTEGRATED & TESTED** (Requires `MODEL_API_KEY`; deterministic local fallback when offline) |
 | **Muse Image** | `muse-image-1.0` via **Meta Model API** (`https://api.meta.ai/v1/images/generations`) | Visual storytelling for Task Passports, step illustrations, and visual workflow routes | **INTEGRATED & TESTED** (Requires `MODEL_API_KEY`; obsidian vector SVG fallback when offline) |
-| **Muse Spark** | `muse-spark-1.3` via Meta Model API | Indic semantic reasoning, multilingual intent decomposition (Kannada, Hindi, English) | **INTEGRATED & TESTED** (Mock/Live adaptive) |
 | **Muse Wonder** | `muse-wonder-1.0` via Meta Model API | Computer-use action proposal parsing with strict Action Gate boundary enforcement | **INTEGRATED & TESTED** (Mock/Live adaptive) |
 | **Muse Voice Transcribe** | `muse-voice-transcribe-1.0` via Meta Model API | Speech transcription with language biasing and mandatory editable confirmation dialog | **INTEGRATED & TESTED** (Mock/Live adaptive) |
 | **SAM 3.1** | `sam-3-1` via Meta Model API | Visual grounding of UI elements and bounding box translation | **INTEGRATED & TESTED** (Mock/Live adaptive) |
@@ -16,21 +15,21 @@ In Milestone 05, Sahaay integrates **Baseten Muse Spark Open** as its actual str
 
 ---
 
-## 2. Independent Provider Credentials
+## 2. Central Meta Model API Provider Configuration
 
-The providers are architecturally isolated with separate environment variables and consent policies:
+A single authoritative credential configuration is used across the Meta hosted model suite:
 
-1. **Baseten Provider (`BASETEN_API_KEY`)**:
-   - Outbound endpoint: `https://inference.baseten.co/v1/chat/completions`
-   - Default model: `meta-models/muse-spark-open` (configurable via `BASETEN_MUSE_SPARK_MODEL`)
-   - Schema enforcement: Local Pydantic validation of `StructuredTaskPlan` with 1-shot repair.
-   - Fail-closed behavior: When unconfigured, truthfully reports `LOCAL_FALLBACK`.
-
-2. **Meta Model API (`MODEL_API_KEY` or `META_LLAMA_API_KEY`)**:
-   - Outbound endpoint: `https://api.meta.ai/v1/images/generations`
-   - Default model: `muse-image-1.0` (configurable via `MUSE_IMAGE_MODEL`)
-   - Prompt minimization: Abstract visual metaphors only; raw PII/credentials are scrubbed before transmission.
-   - Fail-closed behavior: When unconfigured, generates obsidian/liquid vector SVG fallback inline.
+1. **Meta Model API (`MODEL_API_KEY`)**:
+   - Base URL: `https://api.meta.ai/v1` (configurable via `META_API_BASE_URL`)
+   - Header: `Authorization: Bearer $MODEL_API_KEY`
+   - Primary Models:
+     - `muse-spark-1.3` (Task reasoning & planning)
+     - `muse-image-1.0` (Milestone storytelling & Task Passport)
+     - `muse-voice-transcribe-1.0` (Speech-to-text with Kannada/Hindi/English biasing)
+     - `muse-wonder-1.0` (Computer-use visual action proposal)
+     - `sam-3-1` (Element visual segmentation)
+   - Schema enforcement: Local Pydantic validation of `StructuredTaskPlan` against the central Capability Registry.
+   - Security & Fail-closed: Never hardcodes credentials. When unconfigured or offline, truthfully reports `NOT_CONFIGURED` or `LOCAL_FALLBACK`. Abstract prompts scrub PII/credentials before transmission.
 
 ---
 

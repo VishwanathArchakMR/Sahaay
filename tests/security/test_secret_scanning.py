@@ -61,6 +61,4 @@ def test_no_secrets_in_repository():
             except (OSError, UnicodeDecodeError):
                 pass
 
-    assert not violations, "Secret scanner discovered potential secrets:\n" + "\n".join(
-        violations
-    )
+    assert not violations, "Secret scanner discovered potential secrets:\n" + "\n".join(violations)

@@ -6,18 +6,20 @@ artifact lifecycle management powered by Muse Image with trustworthy SVG fallbac
 
 import logging
 from typing import Any, Dict, List, Optional
+from uuid import UUID
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
-from sahaay_core.api.v1.sessions import active_sessions
 from sahaay_core.config.settings import settings
 from sahaay_core.models.meta.muse_image import muse_image
+from sahaay_core.storage.persistence import durable_storage
 
 logger = logging.getLogger(__name__)
 
 storytelling_router = APIRouter(prefix="/tasks", tags=["Task Storytelling & Passport"])
+router = storytelling_router
 
 
 class MilestoneCard(BaseModel):
@@ -55,7 +57,6 @@ class TaskPassportResponse(BaseModel):
     milestones: List[MilestoneCard]
     summary_notice: str
     visual_storytelling_enabled: bool = True
-
 
 
 class StepIllustrateRequest(BaseModel):
@@ -185,33 +186,37 @@ def register_or_update_passport(
     )
 
     task_passports[task_id] = passport
+    try:
+        durable_storage.save_task_passport(passport.model_dump(by_alias=True))
+    except Exception as exc:
+        logger.warning("Could not persist task passport for %s to SQLite: %s", task_id, exc)
+
     return passport
 
 
 @storytelling_router.get("/{task_id}/passport", response_model=TaskPassportResponse)
 async def get_task_passport(task_id: str) -> TaskPassportResponse:
-    """Retrieves the Task Passport for a completed or active workflow."""
+    """Retrieves the Task Passport for a completed or active workflow.
 
+    Returns 404 if the task or its passport does not exist.
+    """
     if task_id in task_passports:
         return task_passports[task_id]
 
-    # Return default synthetic passport if task not found in memory
-    default_passport = register_or_update_passport(
-        task_id=task_id,
-        goal="Extract utility bill amount and populate desktop accounting target",
-        workflow_mode="combined_retrieval_and_action",
-        direction="Browser Tab → Windows Application",
-        extracted_fields={
-            "consumer_name": "Aarav Sharma",
-            "account": "BLR-UTIL-98421",
-            "amount": "INR 2,450.00",
-        },
-        verification_status="VERIFIED",
-        evidence_id=f"ev-{task_id}",
-        target_app_or_url="Notepad",
-        source_ref="http://127.0.0.1:8000/fixtures/utility_bill.html",
+    stored = durable_storage.get_task_passport(task_id)
+    if stored:
+        try:
+            passport = TaskPassportResponse.model_validate(stored)
+            task_passports[task_id] = passport
+            return passport
+        except Exception as exc:
+            logger.error("Failed to parse stored passport for %s: %s", task_id, exc)
+
+    # Nonexistent task passport must return 404
+    raise HTTPException(
+        status_code=404,
+        detail=f"Task Passport for task '{task_id}' not found. No fabricated record returned.",
     )
-    return default_passport
 
 
 @storytelling_router.post("/{task_id}/steps/{step_id}/illustrate")
@@ -224,8 +229,13 @@ async def explain_this_step(
 
     Enforces Privacy Gateway checks and prompt minimization.
     """
-    session = active_sessions.get(req.session_id)
-    grants = session.consentGrants if session else []
+    grants = []
+    if req.session_id and req.session_id != "default":
+        try:
+            s_uuid = UUID(req.session_id)
+            grants = durable_storage.get_consent_grants_for_session(s_uuid)
+        except Exception:
+            pass
 
     result = await muse_image.generate_step_illustration(
         task_id=task_id,
@@ -249,6 +259,10 @@ async def explain_this_step(
                     if result.is_ai_generated
                     else "Vector Illustration"
                 )
+        try:
+            durable_storage.save_task_passport(passport.model_dump(by_alias=True))
+        except Exception:
+            pass
 
     return {
         "success": True,
@@ -271,6 +285,7 @@ async def explain_this_step(
 async def delete_task_visual_artifacts(task_id: str) -> Dict[str, Any]:
     """Deletes all generated visual artwork for a task to honor user data revocation."""
     deleted_count = muse_image.delete_task_artifacts(task_id)
+    durable_storage.deactivate_task_artifacts(task_id)
 
     # Revert passport images to local vector fallback
     if task_id in task_passports:
@@ -278,6 +293,10 @@ async def delete_task_visual_artifacts(task_id: str) -> Dict[str, Any]:
             m.illustration_url = None
             m.is_ai_generated = False
             m.ai_label = "Vector Illustration"
+        try:
+            durable_storage.save_task_passport(task_passports[task_id].model_dump(by_alias=True))
+        except Exception:
+            pass
 
     return {
         "success": True,

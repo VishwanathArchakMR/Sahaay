@@ -18,9 +18,7 @@ from sahaay_core.orchestration.orchestrator import (
 def test_valid_task_state_transitions():
     orchestrator = TaskOrchestrator()
     session_id = uuid4()
-    task = orchestrator.create_task(
-        session_id=session_id, goal="Extract report summary"
-    )
+    task = orchestrator.create_task(session_id=session_id, goal="Extract report summary")
     assert task.status == TaskStatusEnum.CREATED
 
     # Transitions follow: CREATED -> PLANNING -> OBSERVING -> PROPOSING -> AUTHORIZING -> EXECUTING -> VERIFYING -> COMPLETED

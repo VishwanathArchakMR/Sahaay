@@ -9,7 +9,7 @@ from sahaay_core.config.settings import settings
 from sahaay_core.storage.models import Base
 
 engine = create_async_engine(
-    settings.database_url,
+    settings.async_database_url,
     echo=settings.debug,
     future=True,
 )

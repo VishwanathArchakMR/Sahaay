@@ -1,8 +1,12 @@
 """Capabilities Endpoint for Sahaay Core Backend."""
 
+from typing import List
+
 from fastapi import APIRouter
 
 from sahaay_core.adapters.windows.adapter import WindowsNativeAdapter
+from sahaay_core.capabilities.models import CapabilityDescriptor as RegistryCapabilityDescriptor
+from sahaay_core.capabilities.registry import capability_registry
 from sahaay_core.contracts.models import CapabilityDescriptor
 
 router = APIRouter(tags=["Capabilities"])
@@ -15,10 +19,11 @@ async def get_capabilities() -> CapabilityDescriptor:
 
     Desktop Automation is True if Sahaay.Controller named pipe responds.
     Browser Automation is True (Manifest V3 bridge available).
-    External Models remain empty/disabled in this stage.
+    External Models remain empty/disabled in this stage unless authorized.
     """
     is_companion_live = windows_adapter.ping()
 
+    # Base mechanism capabilities required by Stage 02 contract
     active_caps = [
         "session_management",
         "consent_grant_lifecycle",
@@ -36,6 +41,11 @@ async def get_capabilities() -> CapabilityDescriptor:
         "combined_retrieval_and_action",
     ]
 
+    # Incorporate registered capabilities from authoritative registry
+    for cap in capability_registry.list_capabilities():
+        if cap.capability_id not in active_caps:
+            active_caps.append(cap.capability_id)
+
     if is_companion_live:
         active_caps.extend(
             [
@@ -46,9 +56,15 @@ async def get_capabilities() -> CapabilityDescriptor:
         )
 
     return CapabilityDescriptor(
-        systemVersion="0.2.0-vertical-slice",
+        systemVersion="0.6.0-runtime-integrity",
         desktopAutomationAvailable=is_companion_live,
         browserAutomationAvailable=True,
-        modelsAvailable=[],  # No live models connected in Stage 02
+        modelsAvailable=[],
         activeCapabilities=active_caps,
     )
+
+
+@router.get("/capabilities/registry", response_model=List[RegistryCapabilityDescriptor])
+async def list_registry_capabilities() -> List[RegistryCapabilityDescriptor]:
+    """List detailed capability descriptors from the authoritative registry."""
+    return capability_registry.list_capabilities()

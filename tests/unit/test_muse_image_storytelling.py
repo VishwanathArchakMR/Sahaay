@@ -45,9 +45,7 @@ async def test_muse_image_local_vector_svg_fallback(temp_artifacts_dir):
 @pytest.mark.asyncio
 async def test_muse_image_prompt_minimization():
     client = MuseImageClient(api_key="meta-test-key")
-    sensitive_context = (
-        "User account Aarav Sharma password123 secret PIN 9988 balance 50,000"
-    )
+    sensitive_context = "User account Aarav Sharma password123 secret PIN 9988 balance 50,000"
 
     prompt = client._build_minimized_prompt(
         milestone_type="transfer",

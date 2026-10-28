@@ -9,15 +9,18 @@ and produces structured typed action proposals for the orchestrator.
 import json
 import logging
 import re
-from typing import Any, Dict, List, Literal, Optional
+import time
+from typing import Any, Dict, List, Literal, Optional, Tuple
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from sahaay_core.capabilities import capability_registry
 from sahaay_core.config.settings import settings
 from sahaay_core.contracts.models import (
     ActionTypeEnum,
     ConsentGrant,
+    TaskContract,
 )
 from sahaay_core.models.meta.meta_client import MetaClient
 from sahaay_core.privacy.privacy_gateway import PrivacyGateway
@@ -54,6 +57,45 @@ HINDI_KEYWORDS = [
     "bijli",
     "mera",
 ]
+
+
+class PlanStepProposal(BaseModel):
+    """Structured proposal for an individual execution step."""
+
+    step_id: str
+    title: str
+    purpose: str
+    capability: str
+    action_type: str
+    target_surface: str
+    target_scope: str
+    preconditions: List[str] = Field(default_factory=list)
+    expected_postconditions: List[str] = Field(default_factory=list)
+    requires_human_approval: bool = False
+    recovery_option: str = "halt_and_ask_user"
+    parameters: Dict[str, Any] = Field(default_factory=dict)
+
+
+class StructuredTaskPlan(BaseModel):
+    """Complete structured plan proposed by Meta Muse Spark 1.3."""
+
+    plan_id: str = Field(default_factory=lambda: f"plan-{uuid4().hex[:8]}")
+    task_goal: str
+    workflow_mode: str
+    steps: List[PlanStepProposal]
+    source_facts: Dict[str, Any] = Field(default_factory=dict)
+    stop_conditions: List[str] = Field(default_factory=list)
+    model_provider: str = "meta_model_api_muse_spark"
+    model_id: str = "muse-spark-1.3"
+    validation_status: str = "VALIDATED"  # VALIDATED | REPAIRED | REJECTED | LOCAL_FALLBACK
+    latency_ms: float = 0.0
+
+
+# Authoritative capabilities set backed by central CapabilityRegistry
+REGISTERED_CAPABILITIES = {cap.capability_id for cap in capability_registry.list_capabilities()}
+
+# Permitted action types mapped from ActionTypeEnum
+PERMITTED_ACTION_TYPES = {e.value for e in ActionTypeEnum} | {"user_authorization"}
 
 
 class GroundedSourceFact(BaseModel):
@@ -101,9 +143,10 @@ class MuseSparkClient:
     def __init__(
         self,
         meta_client: Optional[MetaClient] = None,
+        client: Optional[MetaClient] = None,
         model_id: Optional[str] = None,
     ) -> None:
-        self.client = meta_client or MetaClient()
+        self.client = meta_client or client or MetaClient()
         self.model_id = model_id or settings.muse_spark_model_id
         self.privacy_gateway = PrivacyGateway()
 
@@ -468,5 +511,323 @@ class MuseSparkClient:
             is_model_attestation_only=True,
         )
 
+    def build_planning_prompt(
+        self,
+        user_goal: str,
+        task_contract: TaskContract,
+        context: str = "",
+        source_facts: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Constructs an authoritative structured prompt using the central CapabilityRegistry."""
+        catalog = capability_registry.get_catalog_for_prompt()
+        return (
+            "You are Meta Muse Spark 1.3, the primary task reasoning and planning engine for Sahaay.\n"
+            "Produce ONLY valid JSON conforming to the structured planning schema.\n"
+            "Supported System Capabilities (Authoritative Registry):\n"
+            f"{catalog}\n\n"
+            f"User Goal: {user_goal}\n"
+            f"Task Mode: {task_contract.taskType}\n"
+            f"Context: {context[:1000]}\n"
+            f"Source Facts: {json.dumps(source_facts or {})}\n"
+        )
+
+    def validate_plan(
+        self,
+        plan: Dict[str, Any] | StructuredTaskPlan,
+        task_contract: TaskContract,
+    ) -> Tuple[bool, str]:
+        """Validate proposed plan against authoritative Capability Registry and security policies."""
+        if isinstance(plan, dict):
+            try:
+                plan_obj = StructuredTaskPlan.model_validate(plan)
+            except Exception as e:
+                return False, f"Plan schema validation failed: {e}"
+        else:
+            plan_obj = plan
+
+        if not plan_obj.steps:
+            return False, "Plan contains no execution steps."
+
+        for step in plan_obj.steps:
+            valid, err = capability_registry.validate_plan_step(step.capability, step.parameters)
+            if not valid:
+                return False, err or f"Capability '{step.capability}' is not permitted."
+
+            if step.action_type not in PERMITTED_ACTION_TYPES:
+                return False, f"Action type '{step.action_type}' is prohibited."
+
+            for val in step.parameters.values():
+                val_str = str(val).lower()
+                if any(
+                    x in val_str for x in ["powershell", "cmd.exe", "rmdir", "delete", "format"]
+                ):
+                    return (
+                        False,
+                        f"Potentially dangerous command detected in plan parameter: {val_str}",
+                    )
+
+        return True, "Plan validated successfully against Capability Registry."
+
+    def _validate_semantic_policy(self, plan: StructuredTaskPlan) -> bool:
+        """Validates that proposed operations are within registered capabilities and permitted actions."""
+        if not plan.steps:
+            return False
+
+        for step in plan.steps:
+            valid, err = capability_registry.validate_plan_step(step.capability, step.parameters)
+            if not valid:
+                logger.warning("Capability validation failed: %s", err)
+                return False
+
+            if step.action_type not in PERMITTED_ACTION_TYPES:
+                logger.warning("Prohibited action type requested: %s", step.action_type)
+                return False
+
+            for val in step.parameters.values():
+                val_str = str(val).lower()
+                if any(
+                    x in val_str for x in ["powershell", "cmd.exe", "rmdir", "delete", "format"]
+                ):
+                    logger.warning("Dangerous parameter detected: %s", val_str)
+                    return False
+
+        return True
+
+    async def generate_plan(
+        self,
+        task: TaskContract,
+        context: str,
+        source_facts: Dict[str, Any],
+        active_grants: Optional[List[ConsentGrant]] = None,
+    ) -> StructuredTaskPlan:
+        """Generates and strictly validates a structured plan via Meta Muse Spark 1.3.
+
+        Respects local-only mode and privacy gateway fail-closed defaults.
+        """
+        start_time = time.perf_counter()
+        active_grants = active_grants or []
+
+        # 1. Privacy Gateway Check
+        privacy_eval = self.privacy_gateway.evaluate_outbound_request(
+            destination="https://api.meta.ai/v1",
+            purpose="task_planning",
+            content=f"{task.goal}\n{context}",
+            active_grants=active_grants,
+        )
+
+        if not privacy_eval.allowTransmission or not self.client.is_configured:
+            logger.info(
+                "Outbound plan transmission not authorized or client unconfigured; using deterministic local plan generator: %s",
+                privacy_eval.reason,
+            )
+            plan = self._generate_deterministic_local_plan(task, source_facts)
+            plan.latency_ms = (time.perf_counter() - start_time) * 1000
+            return plan
+
+        # 2. Build Structured Planning Prompt
+        prompt = self.build_planning_prompt(
+            user_goal=task.goal,
+            task_contract=task,
+            context=context,
+            source_facts=source_facts,
+        )
+
+        messages = [
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": f"Task: {task.goal}\nFacts: {json.dumps(source_facts)}"},
+        ]
+
+        # 3. Call Meta Model API
+        try:
+            api_res = await self.client.post_endpoint(
+                "chat/completions",
+                {
+                    "model": self.model_id,
+                    "messages": messages,
+                    "response_format": {"type": "json_object"},
+                    "temperature": 0.1,
+                },
+            )
+            raw_content = api_res.data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            latency_ms = (time.perf_counter() - start_time) * 1000
+
+            # Parse JSON
+            parsed = json.loads(raw_content)
+            plan_obj = StructuredTaskPlan.model_validate(parsed)
+
+            # Semantic validation
+            if self._validate_semantic_policy(plan_obj):
+                plan_obj.latency_ms = latency_ms
+                plan_obj.validation_status = "VALIDATED"
+                plan_obj.model_id = self.model_id
+                plan_obj.model_provider = "meta_model_api_muse_spark"
+                return plan_obj
+            else:
+                logger.warning("Meta Muse Spark plan failed semantic policy checks; falling back.")
+        except Exception as ex:
+            logger.warning("Online Meta Muse Spark planning error (%s); falling back.", ex)
+
+        fallback_plan = self._generate_deterministic_local_plan(task, source_facts)
+        fallback_plan.latency_ms = (time.perf_counter() - start_time) * 1000
+        return fallback_plan
+
+    def _generate_deterministic_local_plan(
+        self,
+        task: TaskContract,
+        source_facts: Dict[str, Any],
+    ) -> StructuredTaskPlan:
+        """Generates a truthful, deterministic offline plan adhering to the execution lifecycle."""
+        goal_lower = task.goal.lower()
+
+        is_browser_to_desktop = "desktop" in goal_lower or "notepad" in goal_lower
+        is_desktop_to_browser = (
+            "form" in goal_lower or "browser" in goal_lower and not is_browser_to_desktop
+        )
+
+        if is_browser_to_desktop:
+            steps = [
+                PlanStepProposal(
+                    step_id="step-b2d-1",
+                    title="Observe Active Utility Bill Tab",
+                    purpose="Capture DOM elements and text from authorized browser tab",
+                    capability="browser_tab_observe",
+                    action_type=ActionTypeEnum.GET_TAB_CONTENT.value,
+                    target_surface="browser_tab",
+                    target_scope="active_tab",
+                    preconditions=["Browser tab loaded with utility bill"],
+                    expected_postconditions=["DOM elements and bill amounts extracted"],
+                    requires_human_approval=False,
+                ),
+                PlanStepProposal(
+                    step_id="step-b2d-2",
+                    title="User Authorization for Desktop Modification",
+                    purpose="Obtain explicit approval to populate Windows desktop target",
+                    capability="user_authorization",
+                    action_type="user_authorization",
+                    target_surface="desktop_window",
+                    target_scope="Notepad",
+                    preconditions=["Extracted facts validated against provenance"],
+                    expected_postconditions=["User grants consent for desktop entry"],
+                    requires_human_approval=True,
+                ),
+                PlanStepProposal(
+                    step_id="step-b2d-3",
+                    title="Populate Desktop Application Control",
+                    purpose="Set control text in target Windows application via UI Automation",
+                    capability="windows_set_control_text",
+                    action_type=ActionTypeEnum.SET_CONTROL_TEXT.value,
+                    target_surface="desktop_window",
+                    target_scope="Notepad",
+                    parameters={"control_name": "Editor", "field_name": "bill_summary"},
+                    preconditions=["Target window is in foreground", "Consent granted"],
+                    expected_postconditions=["Control text updated with verified values"],
+                    requires_human_approval=False,
+                ),
+                PlanStepProposal(
+                    step_id="step-b2d-4",
+                    title="Independent Readback Verification",
+                    purpose="Read back actual text from desktop control and verify exact match",
+                    capability="verify_readback",
+                    action_type=ActionTypeEnum.GET_CONTROL_TEXT.value,
+                    target_surface="desktop_window",
+                    target_scope="Notepad",
+                    preconditions=["Desktop write operation completed"],
+                    expected_postconditions=["Observed text equals expected bill summary"],
+                    requires_human_approval=False,
+                ),
+            ]
+        elif is_desktop_to_browser:
+            steps = [
+                PlanStepProposal(
+                    step_id="step-d2b-1",
+                    title="Ingest Local Invoice Source",
+                    purpose="Read structured facts from permitted local invoice file",
+                    capability="document_ingest_chunk",
+                    action_type=ActionTypeEnum.READ_FILE.value,
+                    target_surface="local_store",
+                    target_scope="invoice_data.json",
+                    preconditions=["File exists and user selected"],
+                    expected_postconditions=["Invoice fields loaded with SHA-256 checksum"],
+                    requires_human_approval=False,
+                ),
+                PlanStepProposal(
+                    step_id="step-d2b-2",
+                    title="User Authorization for Form Auto-Fill",
+                    purpose="Obtain explicit approval to fill target browser payment form",
+                    capability="user_authorization",
+                    action_type="user_authorization",
+                    target_surface="browser_tab",
+                    target_scope="bill_pay_form.html",
+                    preconditions=["Source facts mapped to form control IDs"],
+                    expected_postconditions=["User approves field population"],
+                    requires_human_approval=True,
+                ),
+                PlanStepProposal(
+                    step_id="step-d2b-3",
+                    title="Populate Browser Form Controls",
+                    purpose="Fill designated input controls via extension content script",
+                    capability="browser_fill_form",
+                    action_type=ActionTypeEnum.FILL_FORM_FIELDS.value,
+                    target_surface="browser_tab",
+                    target_scope="bill_pay_form.html",
+                    parameters={"auto_submit": False},
+                    preconditions=["Browser tab has matching input elements"],
+                    expected_postconditions=["Input elements populated with invoice values"],
+                    requires_human_approval=False,
+                ),
+                PlanStepProposal(
+                    step_id="step-d2b-4",
+                    title="Verify DOM Field Values",
+                    purpose="Read back actual input values from DOM to verify equality",
+                    capability="browser_get_values",
+                    action_type=ActionTypeEnum.GET_FIELD_VALUES.value,
+                    target_surface="browser_tab",
+                    target_scope="bill_pay_form.html",
+                    preconditions=["Form fill dispatch completed"],
+                    expected_postconditions=["DOM values match invoice source facts"],
+                    requires_human_approval=False,
+                ),
+            ]
+        else:
+            steps = [
+                PlanStepProposal(
+                    step_id="step-gen-1",
+                    title="Observe Requested Context",
+                    purpose="Read current surface state",
+                    capability="browser_tab_observe",
+                    action_type=ActionTypeEnum.GET_TAB_CONTENT.value,
+                    target_surface="browser_tab",
+                    target_scope="active_context",
+                    preconditions=[],
+                    expected_postconditions=["Observed context captured"],
+                    requires_human_approval=False,
+                ),
+                PlanStepProposal(
+                    step_id="step-gen-2",
+                    title="Independent Verification",
+                    purpose="Verify observed state against criteria",
+                    capability="verify_readback",
+                    action_type=ActionTypeEnum.GET_FIELD_VALUES.value,
+                    target_surface="browser_tab",
+                    target_scope="active_context",
+                    preconditions=["Observation available"],
+                    expected_postconditions=["Verification result recorded in Evidence Ledger"],
+                    requires_human_approval=False,
+                ),
+            ]
+
+        return StructuredTaskPlan(
+            plan_id=f"plan-local-{uuid4().hex[:8]}",
+            task_goal=task.goal,
+            workflow_mode=str(task.taskType),
+            steps=steps,
+            source_facts=source_facts,
+            stop_conditions=["Task completed", "User cancelled", "Precondition mismatch"],
+            model_provider="meta_model_api_muse_spark",
+            model_id="muse-spark-1.3",
+            validation_status="LOCAL_FALLBACK",
+        )
+
 
 muse_spark = MuseSparkClient()
+MuseSparkPlanner = MuseSparkClient

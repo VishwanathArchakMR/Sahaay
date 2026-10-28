@@ -35,9 +35,7 @@ async def test_page_prompt_injection_cannot_elevate_permissions():
 
     async with AsyncClient(transport=transport, base_url="http://testclient") as client:
         # Ingest malicious page
-        obs_res = await client.post(
-            "/api/v1/browser/observe", json=malicious_tab_content
-        )
+        obs_res = await client.post("/api/v1/browser/observe", json=malicious_tab_content)
         assert obs_res.status_code == 200
 
         # Attempt an unauthorized action to see if prompt injection granted permissions

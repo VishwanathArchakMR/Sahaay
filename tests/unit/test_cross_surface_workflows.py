@@ -74,16 +74,11 @@ async def test_browser_to_desktop_synthetic_transfer(test_session, auth_headers)
         assert data["status"] == "VERIFIED"
         assert data["isVerified"] is True
         assert "sourceProvenance" in data
-        assert (
-            "Aarav Sharma"
-            == data["sourceProvenance"]["extractedFields"]["consumer_name"]
-        )
+        assert "Aarav Sharma" == data["sourceProvenance"]["extractedFields"]["consumer_name"]
         assert "2,450.00" in data["sourceProvenance"]["extractedFields"]["amount_due"]
 
         # Verify evidence ledger has recorded the verified state
-        evidence_id = (
-            data["evidence_id"] if "evidence_id" in data else data["evidenceId"]
-        )
+        evidence_id = data["evidence_id"] if "evidence_id" in data else data["evidenceId"]
         assert evidence_id is not None
 
 
@@ -132,8 +127,6 @@ async def test_models_diagnostics_endpoints(test_session, auth_headers):
         assert "museSpark" in status_data["metaHosted"]["models"]
         assert "museWonder" in status_data["metaHosted"]["models"]
 
-        test_conn = await client.post(
-            "/api/v1/models/test-connectivity", headers=auth_headers
-        )
+        test_conn = await client.post("/api/v1/models/test-connectivity", headers=auth_headers)
         assert test_conn.status_code == 200
         assert "metaApi" in test_conn.json()

@@ -48,9 +48,11 @@ This document tracks the verified status of all architectural components across 
 | **Muse Wonder (Computer-Use Proposals)** | `TESTED` | `pytest tests/unit/test_meta_models.py` | Responses API `computer` tool protocol parser, coordinate validation within display boundaries, Action Gate mapping |
 | **Muse Voice Transcribe Pipeline** | `TESTED` | `pytest tests/unit/test_meta_models.py` | Speech-to-text pipeline with language context biasing and mandatory editable confirmation dialog |
 | **SAM 3.1 Visual Grounding Adapter** | `TESTED` | `pytest tests/unit/test_meta_models.py` | Visual element grounding mapping target prompts to bounding boxes, center coordinates, and observation versions |
-| **Baseten Provider Client (`BasetenClient`)** | `TESTED` | `pytest tests/unit/test_baseten_muse_spark_open.py` | OpenAI-compatible chat client for `https://inference.baseten.co/v1`, bearer token redaction, bounded backoff, 401/429 handling |
-| **Muse Spark Open Planner (`MuseSparkOpenPlanner`)** | `TESTED` | `pytest tests/unit/test_baseten_muse_spark_open.py` | Structured task planner targeting `meta-models/muse-spark-open`, wiring real planning path to orchestrator |
-| **Client-Side Schema Enforcement & 1-Shot Repair** | `TESTED` | `pytest tests/unit/test_baseten_muse_spark_open.py` | Local Pydantic validation of `StructuredTaskPlan`, single bounded JSON repair, and strict semantic capability checks |
+| **Meta Muse Spark 1.3 Planner (`MuseSparkClient`)** | `TESTED` | `pytest tests/unit/test_meta_muse_spark.py` | Primary hosted task reasoning and structured planning via `https://api.meta.ai/v1`, validated against Capability Registry |
+| **Central Capability Registry** | `TESTED` | `pytest tests/unit/test_capability_registry.py` | 12 registered capabilities with typed descriptors, risk classifications, readiness state, and plan step validator |
+| **Durable State Persistence Engine (`DurableStorage`)** | `TESTED` | `pytest tests/unit/test_persistence_durable.py` | SQLite WAL durable persistence across application restarts for sessions, tasks, sources, facts, evidence, and passports |
+| **Internet Research Subsystem** | `TESTED` | `pytest tests/unit/test_internet_research.py` | Safe SSRF-protected webpage fetcher, metasearch adapter, citation normalization, and conflict detection |
+| **No False-Success Invariant** | `TESTED` | `pytest tests/unit/test_no_false_success.py` | Enforces non-zero window handles, live browser observations, driver readbacks, 404 for unknown passports, no auto-wildcard grants |
 | **Meta Muse Image Adapter (`MuseImageClient`)** | `TESTED` | `pytest tests/unit/test_muse_image_storytelling.py` | Meta Model API client for `muse-image-1.0` on `https://api.meta.ai/v1/images/generations`, base64 PNG decoding/validation (<= 5MB) |
 | **Prompt Minimization & Privacy Protection** | `TESTED` | `pytest tests/unit/test_muse_image_storytelling.py` | Generates abstract visual metaphors only; scrubs raw PII, account numbers, and credentials from prompts |
 | **Obsidian/Liquid Vector SVG Fallback** | `TESTED` | `pytest tests/unit/test_muse_image_storytelling.py` | Generates bespoke inline SVG artwork when in local-only mode, unconfigured, or offline |
@@ -58,17 +60,17 @@ This document tracks the verified status of all architectural components across 
 | **Task Passport & Step Story System** | `TESTED` | `pytest tests/unit/test_task_passport.py` | Visual milestone tracking (Source, Plan, Authorize, Execute, Verify) with independent React labels and verification proof |
 | **Storytelling API Endpoints** | `TESTED` | `pytest tests/unit/test_task_passport.py` | `GET /tasks/{id}/passport`, `POST /tasks/{id}/steps/{id}/illustrate`, `DELETE /tasks/{id}/artifacts` |
 | **Local Llama 3.2 3B Runtime Lifecycle** | `TESTED` | `pytest tests/unit/test_local_llama.py` | `llama-server.exe` process management on `127.0.0.1:8080`, hardware profiling (CPU, RAM, RTX 3050 CUDA detection), truthful status |
-| **Browser → Desktop Workflow Execution** | `TESTED` | `pytest tests/unit/test_cross_surface_workflows.py` | Synthetic BESCOM bill ingested from browser tab, facts grounded in SHA-256 provenance, populated into desktop target, verified |
-| **Desktop → Browser Workflow Execution** | `TESTED` | `pytest tests/unit/test_cross_surface_workflows.py` | Synthetic invoice ingested from local JSON, fields mapped and populated into browser form, verified readback, auto-submit blocked |
-| **Liquid Glass Execution Surface & UI** | `TESTED` | `npm run build` in `apps/desktop` | Layered glassmorphism, animated living liquid-flow reacting to real backend events, accessibility reduced-motion, dual-tab Task Passport & Evidence Ledger, settings drawer with Baseten/Muse Image diagnostics |
+| **Browser → Desktop Workflow Execution** | `TESTED` | `pytest tests/unit/test_cross_surface_workflows.py` | BESCOM bill ingested from browser tab, facts grounded in SHA-256 provenance, populated into desktop target, verified |
+| **Desktop → Browser Workflow Execution** | `TESTED` | `pytest tests/unit/test_cross_surface_workflows.py` | Invoice ingested from local JSON, fields mapped and populated into browser form, verified readback, auto-submit blocked |
+| **Liquid Glass Execution Surface & UI** | `TESTED` | `npm run build` in `apps/desktop` | Layered glassmorphism, animated living liquid-flow reacting to real backend events, accessibility reduced-motion, Task Passport, real microphone recording |
 
 ---
 
 ## Operational Verification Summary
 
-- **Total Python Automated Tests**: 80 passed (100% passing across unit, security, privacy, models, workflows, and storytelling).
+- **Total Python Automated Tests**: 100 passed (100% passing across unit, security, privacy, models, workflows, persistence, and storytelling).
 - **Total .NET xUnit Tests**: 9 passed (100% passing in native companion solution).
 - **Browser Extension**: Compiles cleanly with TypeScript (`tsc --noEmit` and Vite build).
-- **Desktop Electron App**: Compiles cleanly with TypeScript (`tsc --noEmit` and Vite build, 190.7 kB production bundle).
-- **Truthful Status Invariant**: External Baseten, Meta API, and Local Llama weights are not faked. When `BASETEN_API_KEY` or `MODEL_API_KEY` is not configured, status truthfully reports `NOT_CONFIGURED` or `LOCAL_FALLBACK`. Deterministic vector SVG and local planning fallbacks execute and test verified.
+- **Desktop Electron App**: Compiles cleanly with TypeScript (`tsc --noEmit` and Vite build, production bundle).
+- **Truthful Status Invariant**: Meta Model API and Local Llama weights are not faked. When `MODEL_API_KEY` is not configured, status truthfully reports `NOT_CONFIGURED` or `LOCAL_FALLBACK`. Deterministic vector SVG and local planning fallbacks execute and test verified. Baseten has been completely removed.
 

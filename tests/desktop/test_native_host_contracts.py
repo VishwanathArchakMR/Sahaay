@@ -42,9 +42,7 @@ def simulate_process_native_request(request: dict) -> dict:
 
 
 def test_native_host_allowlist_enforcement():
-    ping_res = simulate_process_native_request(
-        {"command": "ping", "sessionId": "s-123"}
-    )
+    ping_res = simulate_process_native_request({"command": "ping", "sessionId": "s-123"})
     assert ping_res["success"] is True
 
     # Unknown or shell commands MUST be rejected

@@ -5,6 +5,7 @@ from typing import Dict, List, Optional
 from uuid import UUID, uuid4
 
 from sahaay_core.contracts.models import SourceReference
+from sahaay_core.storage.persistence import durable_storage
 
 
 class SourceManager:
@@ -21,39 +22,53 @@ class SourceManager:
         title: Optional[str] = None,
         checksum: Optional[str] = None,
         metadata: Optional[Dict] = None,
+        sha256: Optional[str] = None,
     ) -> SourceReference:
-        """Register a new source reference."""
+        """Register a new source reference and persist it durably."""
+        effective_checksum = checksum or sha256
         source = SourceReference(
             sourceId=uuid4(),
             sourceType=source_type,
             uri=uri,
             observedAt=datetime.now(timezone.utc),
             title=title,
-            checksum=checksum,
+            checksum=effective_checksum,
             metadata=metadata or {},
         )
+        durable_storage.save_source(source)
         self._sources[source.sourceId] = source
         return source
 
-    def get_source(self, source_id: UUID) -> Optional[SourceReference]:
-        """Retrieve source reference if not revoked."""
-        if source_id in self._revoked_source_ids:
+    def get_source(self, source_id: UUID | str) -> Optional[SourceReference]:
+        """Retrieve source reference if not revoked, checking durable storage if uncached."""
+        s_uuid = UUID(str(source_id))
+        if s_uuid in self._revoked_source_ids:
             return None
-        return self._sources.get(source_id)
+        source = self._sources.get(s_uuid)
+        if not source:
+            source = durable_storage.get_source(s_uuid)
+            if source:
+                self._sources[s_uuid] = source
+        return source
 
-    def is_source_permitted(self, source_id: UUID) -> bool:
+    def is_source_permitted(self, source_id: UUID | str) -> bool:
         """Verify that source exists and has not been revoked."""
-        if source_id in self._revoked_source_ids:
+        s_uuid = UUID(str(source_id))
+        if s_uuid in self._revoked_source_ids:
             return False
-        return source_id in self._sources
+        return self.get_source(s_uuid) is not None
 
-    def revoke_source(self, source_id: UUID) -> bool:
-        """Revoke authorization for a source; fails closed for future reads."""
-        if source_id in self._sources:
-            self._revoked_source_ids.add(source_id)
-            return True
-        return False
+    def revoke_source(self, source_id: UUID | str, reason: Optional[str] = None) -> bool:
+        """Revoke authorization for a source; fails closed in durable storage and memory."""
+        s_uuid = UUID(str(source_id))
+        self._revoked_source_ids.add(s_uuid)
+        if s_uuid in self._sources:
+            del self._sources[s_uuid]
+        return durable_storage.revoke_source(s_uuid)
 
     def list_active_sources(self) -> List[SourceReference]:
-        """List all non-revoked sources."""
+        """List all non-revoked sources, hydrating from durable persistence if cache empty."""
+        if not self._sources:
+            for s in durable_storage.list_active_sources():
+                self._sources[s.sourceId] = s
         return [s for s_id, s in self._sources.items() if s_id not in self._revoked_source_ids]
