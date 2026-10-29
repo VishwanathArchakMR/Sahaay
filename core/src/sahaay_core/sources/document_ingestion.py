@@ -31,7 +31,7 @@ FORBIDDEN_PATH_SUBSTRINGS = [
 ]
 
 # Supported file extensions
-SUPPORTED_EXTENSIONS = {".txt", ".md", ".markdown", ".json", ".csv", ".log", ".pdf"}
+SUPPORTED_EXTENSIONS = {".txt", ".md", ".markdown", ".json", ".csv", ".log", ".pdf", ".html", ".htm"}
 
 
 class DocumentIngestionError(Exception):

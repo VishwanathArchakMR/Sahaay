@@ -650,8 +650,12 @@ async def execute_goal(req: ExecuteGoalRequest) -> Dict[str, Any]:
     prev_step_ids: List[str] = []
 
     for idx, step_prop in enumerate(structured_plan.steps):
-        # Sequential dependency by default
-        deps = list(prev_step_ids) if prev_step_ids else []
+        # Use explicit plan proposal dependencies if specified, else depend on immediate predecessor
+        deps = (
+            list(step_prop.dependencies)
+            if step_prop.dependencies
+            else (list(prev_step_ids[-1:]) if prev_step_ids else [])
+        )
         node = TaskDAGNode(
             step_id=step_prop.step_id,
             sequence_number=idx + 1,
@@ -692,7 +696,7 @@ async def execute_goal(req: ExecuteGoalRequest) -> Dict[str, Any]:
         direction="Integrated Windows Agent Execution",
         extracted_fields=report.accumulated_facts,
         verification_status="VERIFIED" if report.is_success else "FAILED",
-        evidence_id=report.evidence_ids[0] if report.evidence_ids else None,
+        evidence_id=report.evidence_ids[-1] if report.evidence_ids else None,
         target_app_or_url="Windows Desktop & Browser",
         source_ref="Sahaay Native Shared Runtime",
     )

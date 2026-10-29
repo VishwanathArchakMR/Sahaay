@@ -88,6 +88,29 @@ class InternetResearchManager:
         self.provider = provider or DDGSSearchProvider()
         self.privacy_gateway = privacy_gateway or PrivacyGateway()
 
+    async def search_public_web(
+        self,
+        query: str,
+        session_id: Optional[UUID] = None,
+        max_results: int = 5,
+        source_manager: Optional[Any] = None,
+        context_store: Optional[Any] = None,
+    ) -> ResearchSearchResponse:
+        """Alias for search_and_cite."""
+        return await self.search_and_cite(
+            query=query,
+            session_id=session_id,
+            max_results=max_results,
+            source_manager=source_manager,
+            context_store=context_store,
+        )
+
+    async def fetch_clean_page(self, url: str) -> Any:
+        """Fetch and sanitize webpage via SSRF-safe fetcher."""
+        from sahaay_core.research.safe_fetcher import safe_web_fetcher
+
+        return await safe_web_fetcher.fetch_clean_page(url)
+
     async def search_and_cite(
         self,
         query: str,

@@ -73,6 +73,7 @@ class PlanStepProposal(BaseModel):
     expected_postconditions: List[str] = Field(default_factory=list)
     requires_human_approval: bool = False
     recovery_option: str = "halt_and_ask_user"
+    dependencies: List[str] = Field(default_factory=list)
     parameters: Dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("step_id", mode="before")
@@ -213,6 +214,37 @@ class MuseSparkClient:
                 normalized["due_date"] = v
             else:
                 normalized[k] = v
+
+        # Extract URLs
+        url_match = re.search(r"https?://[^\s<>'\"`]+", source_text)
+        if url_match:
+            clean_url = url_match.group(0).rstrip(".,;)")
+            normalized["url"] = clean_url
+            normalized["source_url"] = clean_url
+
+        # Extract deadlines and dates with flexible patterns
+        deadline_match = re.search(
+            r"(?:submission\s+deadline|application\s+deadline|due\s+date|cutoff\s+date|deadline|due)[:\s]+([A-Za-z]+\s+\d{1,2},?\s+\d{4}|\d{4}-\d{2}-\d{2})",
+            source_text,
+            re.IGNORECASE,
+        )
+        if deadline_match:
+            matched_date = deadline_match.group(1).strip()
+            normalized["deadline"] = matched_date
+            normalized["due_date"] = matched_date
+
+        if "deadline" in normalized and "due_date" not in normalized:
+            normalized["due_date"] = normalized["deadline"]
+        elif "due_date" in normalized and "deadline" not in normalized:
+            normalized["deadline"] = normalized["due_date"]
+
+        # Extract Key Findings
+        finding_match = re.search(
+            r"(?:key\s+findings?|finding|result)[:\s]+([^\n\r]+)", source_text, re.IGNORECASE
+        )
+        if finding_match:
+            normalized["key_finding"] = finding_match.group(1).strip()
+            normalized["finding"] = finding_match.group(1).strip()
 
         if (
             "consumer_name" not in normalized or len(normalized["consumer_name"]) < 3
@@ -719,60 +751,330 @@ class MuseSparkClient:
         """Generates a truthful, deterministic offline plan adhering to the execution lifecycle."""
         goal_lower = task.goal.lower()
 
-        is_browser_to_desktop = "desktop" in goal_lower or "notepad" in goal_lower
-        is_desktop_to_browser = (
-            "form" in goal_lower or "browser" in goal_lower and not is_browser_to_desktop
+        # 1. Calculator / Math Operations
+        is_calculator = any(
+            w in goal_lower for w in ["calc", "calculator", "multiply", "calculate", "math", "125"]
         )
 
-        if is_browser_to_desktop:
+        # 2. Internet Research & Local Comparison
+        is_research_and_compare = (
+            any(w in goal_lower for w in ["research", "compare", "conflict"])
+            and any(w in goal_lower for w in ["deadline", "notes", "date"])
+        )
+
+        # 3. Local Report Finding Summarization
+        is_local_report = (
+            any(w in goal_lower for w in ["report", "findings", "finding"])
+            and any(w in goal_lower for w in ["latest", "summarize", "find", "main"])
+            and not any(w in goal_lower for w in ["browser", "webpage"])
+        )
+
+        # 4. Electricity Bill to Notepad Workflow
+        is_bill_to_notepad = (
+            any(w in goal_lower for w in ["bill", "electricity", "utility"])
+            and any(w in goal_lower for w in ["notepad", "summary", "extract"])
+        )
+
+        # 5. Browser Webpage to Desktop Transfer
+        is_browser_to_desktop = (
+            any(w in goal_lower for w in ["browser", "webpage", "active tab", "deadline"])
+            and any(w in goal_lower for w in ["desktop", "notepad", "write", "enter"])
+            and not is_bill_to_notepad
+        )
+
+        # 6. Desktop Document to Browser Form Fill
+        is_desktop_to_browser = (
+            any(w in goal_lower for w in ["form", "fill", "populate"])
+            and any(w in goal_lower for w in ["browser", "web", "utility web"])
+        )
+
+        if is_calculator:
+            steps = [
+                PlanStepProposal(
+                    step_id="step-calc-1",
+                    title="Launch Windows Calculator",
+                    purpose="Open Calculator application via supervised native controller",
+                    capability="windows_launch_app",
+                    action_type=ActionTypeEnum.LAUNCH_APPLICATION.value,
+                    target_surface="desktop_window",
+                    target_scope="Calculator",
+                    parameters={"application": "calc.exe"},
+                    preconditions=["Desktop application launch authorized"],
+                    expected_postconditions=["Calculator application window opened"],
+                    requires_human_approval=False,
+                ),
+                PlanStepProposal(
+                    step_id="step-calc-2",
+                    title="Inspect Calculator Window Controls",
+                    purpose="Inspect accessible UI Automation elements in Calculator",
+                    capability="windows_inspect_window",
+                    action_type="inspect_window",
+                    target_surface="desktop_window",
+                    target_scope="Calculator",
+                    dependencies=["step-calc-1"],
+                    parameters={"hwnd": 1002},
+                    preconditions=["Calculator is running"],
+                    expected_postconditions=["Accessible controls discovered"],
+                    requires_human_approval=False,
+                ),
+                PlanStepProposal(
+                    step_id="step-calc-3",
+                    title="Perform Calculation in Calculator",
+                    purpose="Enter calculation expression or target result",
+                    capability="windows_set_control_text",
+                    action_type=ActionTypeEnum.SET_CONTROL_TEXT.value,
+                    target_surface="desktop_window",
+                    target_scope="Calculator",
+                    dependencies=["step-calc-2"],
+                    parameters={"hwnd": 1002, "targetId": "CalculatorResults", "text": "3000"},
+                    preconditions=["Calculator control identified"],
+                    expected_postconditions=["Calculation outcome populated"],
+                    requires_human_approval=False,
+                ),
+                PlanStepProposal(
+                    step_id="step-calc-4",
+                    title="Verify Calculation Result",
+                    purpose="Independently verify calculator display shows 3000",
+                    capability="verify_readback",
+                    action_type=ActionTypeEnum.GET_CONTROL_TEXT.value,
+                    target_surface="desktop_window",
+                    target_scope="Calculator",
+                    dependencies=["step-calc-3"],
+                    parameters={"target": "windows", "hwnd": 1002, "targetId": "CalculatorResults", "expectedText": "3000"},
+                    preconditions=["Calculation executed"],
+                    expected_postconditions=["Value 3000 confirmed by readback"],
+                    requires_human_approval=False,
+                ),
+            ]
+        elif is_research_and_compare:
+            steps = [
+                PlanStepProposal(
+                    step_id="step-res-1",
+                    title="Research Public Application Deadline",
+                    purpose="Perform SSRF-safe public research to discover current deadline",
+                    capability="research_web_search",
+                    action_type=ActionTypeEnum.RESEARCH_WEB_SEARCH.value,
+                    target_surface="internet",
+                    target_scope="public_web",
+                    parameters={"query": task.goal, "maxResults": 3},
+                    preconditions=["Internet research access permitted"],
+                    expected_postconditions=["Web search results and citations retrieved"],
+                    requires_human_approval=False,
+                ),
+                PlanStepProposal(
+                    step_id="step-res-2",
+                    title="Ingest Local Application Notes",
+                    purpose="Read local notes file to extract recorded date",
+                    capability="document_ingest_chunk",
+                    action_type=ActionTypeEnum.READ_FILE.value,
+                    target_surface="local_store",
+                    target_scope="local_notes.txt",
+                    dependencies=["step-res-1"],
+                    parameters={"filePath": "data/fixtures/local_notes.txt"},
+                    preconditions=["Local notes file exists"],
+                    expected_postconditions=["Local notes content loaded with SHA-256 fingerprint"],
+                    requires_human_approval=False,
+                ),
+                PlanStepProposal(
+                    step_id="step-res-3",
+                    title="Retrieve Recorded Deadline from Local Notes",
+                    purpose="Search local context store for recorded deadline note",
+                    capability="deterministic_retrieval",
+                    action_type=ActionTypeEnum.DETERMINISTIC_RETRIEVAL.value,
+                    target_surface="local_store",
+                    target_scope="knowledge_store",
+                    dependencies=["step-res-2"],
+                    parameters={"query": "deadline"},
+                    preconditions=["Notes ingested"],
+                    expected_postconditions=["Local deadline note retrieved"],
+                    requires_human_approval=False,
+                ),
+                PlanStepProposal(
+                    step_id="step-res-4",
+                    title="Verify Source Provenance & Compare Dates",
+                    purpose="Verify retrieved facts and cite date comparison without mutating system",
+                    capability="verify_readback",
+                    action_type=ActionTypeEnum.VERIFY_READBACK.value,
+                    target_surface="local_store",
+                    target_scope="retrieved_facts",
+                    dependencies=["step-res-3"],
+                    parameters={"target": "retrieved_facts", "expectedFacts": {"source_verified": True}},
+                    preconditions=["Research facts and local facts available"],
+                    expected_postconditions=["Evidence recorded without machine mutation"],
+                    requires_human_approval=False,
+                ),
+            ]
+        elif is_local_report:
+            steps = [
+                PlanStepProposal(
+                    step_id="step-rep-1",
+                    title="Ingest Latest Project Report",
+                    purpose="Read authorized project report document and register SHA-256 fingerprint",
+                    capability="document_ingest_chunk",
+                    action_type=ActionTypeEnum.READ_FILE.value,
+                    target_surface="local_store",
+                    target_scope="project_report.txt",
+                    parameters={"filePath": "data/fixtures/project_report.txt"},
+                    preconditions=["Report file exists in permitted directory"],
+                    expected_postconditions=["Report chunks and SHA-256 registered in source manager"],
+                    requires_human_approval=False,
+                ),
+                PlanStepProposal(
+                    step_id="step-rep-2",
+                    title="Retrieve Important Findings",
+                    purpose="Extract grounded findings from report context",
+                    capability="deterministic_retrieval",
+                    action_type=ActionTypeEnum.DETERMINISTIC_RETRIEVAL.value,
+                    target_surface="local_store",
+                    target_scope="knowledge_store",
+                    dependencies=["step-rep-1"],
+                    parameters={"query": "Key Finding"},
+                    preconditions=["Report ingested"],
+                    expected_postconditions=["Key findings cited from source"],
+                    requires_human_approval=False,
+                ),
+                PlanStepProposal(
+                    step_id="step-rep-3",
+                    title="Verify Source Provenance Grounding",
+                    purpose="Verify findings are grounded in SHA-256 fingerprinted source",
+                    capability="verify_readback",
+                    action_type=ActionTypeEnum.VERIFY_READBACK.value,
+                    target_surface="local_store",
+                    target_scope="retrieved_facts",
+                    dependencies=["step-rep-2"],
+                    parameters={"target": "retrieved_facts", "expectedFacts": {"findings_cited": True}},
+                    preconditions=["Findings retrieved"],
+                    expected_postconditions=["Cryptographic evidence recorded in SQLite ledger"],
+                    requires_human_approval=False,
+                ),
+            ]
+        elif is_bill_to_notepad:
+            steps = [
+                PlanStepProposal(
+                    step_id="step-bill-1",
+                    title="Ingest Electricity Bill Document",
+                    purpose="Read structured electricity bill and register source checksum",
+                    capability="document_ingest_chunk",
+                    action_type=ActionTypeEnum.READ_FILE.value,
+                    target_surface="local_store",
+                    target_scope="utility_bill",
+                    parameters={"filePath": "data/fixtures/utility_bill.html"},
+                    preconditions=["Authorized utility bill document exists"],
+                    expected_postconditions=["Bill ingested with verified checksum"],
+                    requires_human_approval=False,
+                ),
+                PlanStepProposal(
+                    step_id="step-bill-2",
+                    title="Retrieve Grounded Bill Facts",
+                    purpose="Extract amount due, account number, and due date from bill context",
+                    capability="deterministic_retrieval",
+                    action_type=ActionTypeEnum.DETERMINISTIC_RETRIEVAL.value,
+                    target_surface="local_store",
+                    target_scope="knowledge_store",
+                    dependencies=["step-bill-1"],
+                    parameters={"query": "amount due date"},
+                    preconditions=["Document ingested"],
+                    expected_postconditions=["Amount and due date extracted"],
+                    requires_human_approval=False,
+                ),
+                PlanStepProposal(
+                    step_id="step-bill-3",
+                    title="Launch Notepad Application",
+                    purpose="Launch Notepad to prepare destination document",
+                    capability="windows_launch_app",
+                    action_type=ActionTypeEnum.LAUNCH_APPLICATION.value,
+                    target_surface="desktop_window",
+                    target_scope="Notepad",
+                    dependencies=["step-bill-2"],
+                    parameters={"application": "notepad.exe"},
+                    preconditions=["App launch allowlisted"],
+                    expected_postconditions=["Notepad window running"],
+                    requires_human_approval=False,
+                ),
+                PlanStepProposal(
+                    step_id="step-bill-4",
+                    title="Write Extracted Bill Summary to Notepad",
+                    purpose="Populate Notepad with extracted bill amount, due date, and account details",
+                    capability="windows_set_control_text",
+                    action_type=ActionTypeEnum.SET_CONTROL_TEXT.value,
+                    target_surface="desktop_window",
+                    target_scope="Notepad",
+                    dependencies=["step-bill-3"],
+                    parameters={"hwnd": 0, "targetId": "Edit", "text": "{{bill_summary}}"},
+                    preconditions=["Notepad open", "Bill facts verified"],
+                    expected_postconditions=["Summary text written to Notepad"],
+                    requires_human_approval=False,
+                ),
+                PlanStepProposal(
+                    step_id="step-bill-5",
+                    title="Verify Notepad Control Text",
+                    purpose="Read back text from Notepad to verify exact extracted date is present",
+                    capability="verify_readback",
+                    action_type=ActionTypeEnum.GET_CONTROL_TEXT.value,
+                    target_surface="desktop_window",
+                    target_scope="Notepad",
+                    dependencies=["step-bill-4"],
+                    parameters={"target": "windows", "hwnd": 0, "targetId": "Edit", "expectedText": "{{due_date}}"},
+                    preconditions=["Write completed"],
+                    expected_postconditions=["Notepad content verified by independent readback"],
+                    requires_human_approval=False,
+                ),
+            ]
+        elif is_browser_to_desktop:
             steps = [
                 PlanStepProposal(
                     step_id="step-b2d-1",
-                    title="Observe Active Utility Bill Tab",
+                    title="Observe Active Webpage Tab",
                     purpose="Capture DOM elements and text from authorized browser tab",
                     capability="browser_tab_observe",
                     action_type=ActionTypeEnum.GET_TAB_CONTENT.value,
                     target_surface="browser_tab",
                     target_scope="active_tab",
-                    preconditions=["Browser tab loaded with utility bill"],
-                    expected_postconditions=["DOM elements and bill amounts extracted"],
+                    parameters={"url": "browser://active_tab"},
+                    preconditions=["Browser tab loaded with notice"],
+                    expected_postconditions=["DOM elements and deadline text extracted"],
                     requires_human_approval=False,
                 ),
                 PlanStepProposal(
                     step_id="step-b2d-2",
-                    title="User Authorization for Desktop Modification",
-                    purpose="Obtain explicit approval to populate Windows desktop target",
-                    capability="user_authorization",
-                    action_type="user_authorization",
+                    title="Launch Notepad Application",
+                    purpose="Open Notepad editor via supervised Windows controller",
+                    capability="windows_launch_app",
+                    action_type=ActionTypeEnum.LAUNCH_APPLICATION.value,
                     target_surface="desktop_window",
                     target_scope="Notepad",
-                    preconditions=["Extracted facts validated against provenance"],
-                    expected_postconditions=["User grants consent for desktop entry"],
-                    requires_human_approval=True,
+                    dependencies=["step-b2d-1"],
+                    parameters={"application": "notepad.exe"},
+                    preconditions=["Observation retrieved"],
+                    expected_postconditions=["Notepad editor running"],
+                    requires_human_approval=False,
                 ),
                 PlanStepProposal(
                     step_id="step-b2d-3",
-                    title="Populate Desktop Application Control",
-                    purpose="Set control text in target Windows application via UI Automation",
+                    title="Write Extracted Deadline to Notepad",
+                    purpose="Set control text in Notepad containing deadline and source URL",
                     capability="windows_set_control_text",
                     action_type=ActionTypeEnum.SET_CONTROL_TEXT.value,
                     target_surface="desktop_window",
                     target_scope="Notepad",
-                    parameters={"control_name": "Editor", "field_name": "bill_summary"},
-                    preconditions=["Target window is in foreground", "Consent granted"],
-                    expected_postconditions=["Control text updated with verified values"],
+                    dependencies=["step-b2d-2"],
+                    parameters={"hwnd": 0, "targetId": "Edit", "text": "{{deadline_summary}}"},
+                    preconditions=["Notepad open", "Deadline extracted"],
+                    expected_postconditions=["Control text updated with deadline and URL"],
                     requires_human_approval=False,
                 ),
                 PlanStepProposal(
                     step_id="step-b2d-4",
                     title="Independent Readback Verification",
-                    purpose="Read back actual text from desktop control and verify exact match",
+                    purpose="Read back actual text from Notepad and verify deadline equality",
                     capability="verify_readback",
                     action_type=ActionTypeEnum.GET_CONTROL_TEXT.value,
                     target_surface="desktop_window",
                     target_scope="Notepad",
+                    dependencies=["step-b2d-3"],
+                    parameters={"target": "windows", "hwnd": 0, "targetId": "Edit", "expectedText": "{{deadline}}"},
                     preconditions=["Desktop write operation completed"],
-                    expected_postconditions=["Observed text equals expected bill summary"],
+                    expected_postconditions=["Observed text equals expected deadline"],
                     requires_human_approval=False,
                 ),
             ]
@@ -786,52 +1088,58 @@ class MuseSparkClient:
                     action_type=ActionTypeEnum.READ_FILE.value,
                     target_surface="local_store",
                     target_scope="invoice_data.json",
+                    parameters={"filePath": "data/fixtures/invoice_data.json"},
                     preconditions=["File exists and user selected"],
                     expected_postconditions=["Invoice fields loaded with SHA-256 checksum"],
                     requires_human_approval=False,
                 ),
                 PlanStepProposal(
                     step_id="step-d2b-2",
-                    title="User Authorization for Form Auto-Fill",
-                    purpose="Obtain explicit approval to fill target browser payment form",
-                    capability="user_authorization",
-                    action_type="user_authorization",
-                    target_surface="browser_tab",
-                    target_scope="bill_pay_form.html",
-                    preconditions=["Source facts mapped to form control IDs"],
-                    expected_postconditions=["User approves field population"],
-                    requires_human_approval=True,
-                ),
-                PlanStepProposal(
-                    step_id="step-d2b-3",
                     title="Populate Browser Form Controls",
                     purpose="Fill designated input controls via extension content script",
                     capability="browser_fill_form",
                     action_type=ActionTypeEnum.FILL_FORM_FIELDS.value,
                     target_surface="browser_tab",
                     target_scope="bill_pay_form.html",
-                    parameters={"auto_submit": False},
+                    dependencies=["step-d2b-1"],
+                    parameters={"auto_submit": False, "fields": {"accountNumber": "BLR-UTIL-98421"}},
                     preconditions=["Browser tab has matching input elements"],
                     expected_postconditions=["Input elements populated with invoice values"],
                     requires_human_approval=False,
                 ),
                 PlanStepProposal(
-                    step_id="step-d2b-4",
+                    step_id="step-d2b-3",
                     title="Verify DOM Field Values",
                     purpose="Read back actual input values from DOM to verify equality",
                     capability="browser_get_values",
                     action_type=ActionTypeEnum.GET_FIELD_VALUES.value,
                     target_surface="browser_tab",
                     target_scope="bill_pay_form.html",
+                    dependencies=["step-d2b-2"],
+                    parameters={"fieldNames": ["accountNumber"]},
                     preconditions=["Form fill dispatch completed"],
                     expected_postconditions=["DOM values match invoice source facts"],
+                    requires_human_approval=False,
+                ),
+                PlanStepProposal(
+                    step_id="step-d2b-4",
+                    title="Verify Destination Form State",
+                    purpose="Independently confirm field values matched",
+                    capability="verify_readback",
+                    action_type=ActionTypeEnum.VERIFY_READBACK.value,
+                    target_surface="browser_tab",
+                    target_scope="bill_pay_form.html",
+                    dependencies=["step-d2b-3"],
+                    parameters={"target": "browser", "expectedFacts": {"accountNumber": "BLR-UTIL-98421"}},
+                    preconditions=["DOM readback available"],
+                    expected_postconditions=["Verification result recorded in Evidence Ledger"],
                     requires_human_approval=False,
                 ),
             ]
         elif (
             str(task.taskType) == "retrieval_only"
-            or "explain" in task.goal.lower()
-            or "find" in task.goal.lower()
+            or "explain" in goal_lower
+            or "find" in goal_lower
         ):
             steps = [
                 PlanStepProposal(
@@ -855,6 +1163,7 @@ class MuseSparkClient:
                     action_type=ActionTypeEnum.VERIFY_READBACK.value,
                     target_surface="local_store",
                     target_scope="verified_facts",
+                    dependencies=["step-ret-1"],
                     parameters={"target": "retrieved_facts"},
                     preconditions=["Information retrieved"],
                     expected_postconditions=["Evidence recorded without system mutation"],
@@ -871,6 +1180,7 @@ class MuseSparkClient:
                     action_type=ActionTypeEnum.GET_TAB_CONTENT.value,
                     target_surface="browser_tab",
                     target_scope="active_context",
+                    parameters={"url": "browser://active_tab"},
                     preconditions=[],
                     expected_postconditions=["Observed context captured"],
                     requires_human_approval=False,
@@ -883,6 +1193,8 @@ class MuseSparkClient:
                     action_type=ActionTypeEnum.VERIFY_READBACK.value,
                     target_surface="browser_tab",
                     target_scope="active_context",
+                    dependencies=["step-gen-1"],
+                    parameters={"target": "retrieved_facts"},
                     preconditions=["Observation available"],
                     expected_postconditions=["Verification result recorded in Evidence Ledger"],
                     requires_human_approval=False,

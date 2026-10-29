@@ -330,25 +330,73 @@ class TaskDagEngine:
                 # Collect extracted facts into accumulated_facts
                 if isinstance(exec_data, dict):
                     for k, v in exec_data.items():
-                        if k in (
-                            "content",
-                            "facts",
-                            "sha256",
-                            "volumePercent",
-                            "writtenText",
-                            "value",
-                            "results",
-                        ):
-                            accumulated_facts[f"{node.step_id}_{k}"] = v
+                        accumulated_facts[f"{node.step_id}_{k}"] = v
+                        accumulated_facts[f"{node.step_id}.{k}"] = v
                         accumulated_facts[k] = v
 
+                    # Extract grounded entities if text payload is present
+                    text_to_extract = (
+                        exec_data.get("pageText")
+                        or exec_data.get("content")
+                        or exec_data.get("extractedText")
+                        or exec_data.get("text")
+                    )
+                    if text_to_extract and isinstance(text_to_extract, str) and len(text_to_extract.strip()) > 10:
+                        try:
+                            from sahaay_core.models.meta.muse_spark import muse_spark
+
+                            extracted = await muse_spark.extract_grounded_facts(
+                                source_id=f"{task_id_str}_{node.step_id}",
+                                source_text=text_to_extract,
+                            )
+                            for ek, ev in extracted.items():
+                                accumulated_facts[ek] = ev
+                                accumulated_facts[f"{node.step_id}_{ek}"] = ev
+                                accumulated_facts[f"{node.step_id}.{ek}"] = ev
+                        except Exception as ex:
+                            logger.debug("Fact extraction skipped on step %s: %s", node.step_id, ex)
+
+                    # Dynamic helper summaries for composite workflows
+                    deadline_val = accumulated_facts.get("deadline") or accumulated_facts.get("due_date")
+                    url_val = (
+                        accumulated_facts.get("url")
+                        or exec_data.get("url")
+                        or accumulated_facts.get("source_url")
+                    )
+                    if deadline_val:
+                        summary = f"Deadline: {deadline_val}" + (f" (Source: {url_val})" if url_val else "")
+                        accumulated_facts["deadline_summary"] = summary
+                        accumulated_facts[f"{node.step_id}_deadline_summary"] = summary
+                        accumulated_facts[f"{node.step_id}.deadline_summary"] = summary
+
+                    amt = accumulated_facts.get("amount_due") or accumulated_facts.get("amount")
+                    dt = accumulated_facts.get("due_date") or accumulated_facts.get("deadline")
+                    cust = accumulated_facts.get("consumer_name") or accumulated_facts.get("customer")
+                    acct = accumulated_facts.get("account_number") or accumulated_facts.get("account")
+                    if amt or dt:
+                        bill_parts = []
+                        if cust:
+                            bill_parts.append(f"Customer: {cust}")
+                        if acct:
+                            bill_parts.append(f"Account: {acct}")
+                        if amt:
+                            bill_parts.append(f"Amount: {amt}")
+                        if dt:
+                            bill_parts.append(f"Due: {dt}")
+                        bill_sum = "Electricity Bill Summary: " + " | ".join(bill_parts)
+                        accumulated_facts["bill_summary"] = bill_sum
+                        accumulated_facts[f"{node.step_id}_bill_summary"] = bill_sum
+                        accumulated_facts[f"{node.step_id}.bill_summary"] = bill_sum
+
                 # 5. Independent Verification
+                driver_prov = exec_data.get("driverProvenance") if isinstance(exec_data, dict) else None
                 exec_result = ExecutionResult(
                     executionId=uuid4(),
                     actionId=action_contract.actionId,
                     isSuccess=True,
                     durationMs=25.0,
                     outputData=exec_data,
+                    driverProvenance=driver_prov,
                 )
 
                 verification = IndependentVerifier.verify_action_outcome(
@@ -358,6 +406,26 @@ class TaskDagEngine:
                     is_model_self_attestation=False,
                 )
                 node.verification_status = verification.status
+
+                if verification.status in (VerificationStatusEnum.FAILED, VerificationStatusEnum.CONFLICT):
+                    node.status = TaskStatusEnum.FAILED
+                    err_msg = f"Step '{node.step_id}' verification failed: {verification.details}"
+                    node.error = err_msg
+                    step_results[node.step_id] = {"success": False, "error": err_msg}
+                    task.status = TaskStatusEnum.FAILED
+                    durable_storage.save_task(task)
+                    return DAGExecutionReport(
+                        task_id=task_id_str,
+                        goal=task.goal,
+                        is_success=False,
+                        final_status=TaskStatusEnum.FAILED,
+                        completed_steps_count=completed_count,
+                        total_steps_count=len(nodes),
+                        step_results=step_results,
+                        accumulated_facts=accumulated_facts,
+                        evidence_ids=evidence_ids,
+                        error=err_msg,
+                    )
 
                 # 6. Record Cryptographic Evidence
                 evidence = self.evidence_ledger.record_evidence(

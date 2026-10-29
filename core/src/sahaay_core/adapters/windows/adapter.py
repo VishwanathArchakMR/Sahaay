@@ -189,6 +189,7 @@ class WindowsNativeAdapter:
     AUTHORIZED_LAUNCH_APPS = {
         "calc",
         "calc.exe",
+        "calculator",
         "notepad",
         "notepad.exe",
         "explorer",

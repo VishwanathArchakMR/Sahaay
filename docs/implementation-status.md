@@ -8,7 +8,7 @@ This document tracks the verified status of all architectural components across 
 
 ---
 
-## Component Status Matrix (Milestone 10 — Runtime Supervisor, Strict Driver Provenance, and Self-Managing Windows Execution)
+## Component Status Matrix (Milestone 11 — The Intelligent Task Completion Engine)
 
 | Component / Subsystem | State | Evidence / Automated Test Command | Notes |
 | :--- | :--- | :--- | :--- |
@@ -22,7 +22,7 @@ This document tracks the verified status of all architectural components across 
 | **Action Gate Policy Engine** | `TESTED` | `pytest tests/unit/test_action_gate.py` | Denies shell commands, unallowlisted actions, and requires consent grants |
 | **Retrieval-Only Task Enforcement** | `TESTED` | `pytest tests/unit/test_combined_and_retrieval_tasks.py` | Action Gate strictly blocks physical actions (`PolicyDecisionEnum.DENY`) when task is `retrieval_only` |
 | **Combined Retrieval & Action Workflow** | `TESTED` | `pytest tests/unit/test_combined_and_retrieval_tasks.py` | Verifies source assertions prior to action dispatch; safely triggers `HANDOFF_REQUESTED` on conflicts |
-| **Local Document Ingestion Service** | `TESTED` | `pytest tests/unit/test_document_ingestion.py` | Safely parses `.txt`, `.md`, and `.pdf` via `pypdf`, chunking paragraphs/pages with SHA-256 fingerprinting |
+| **Local Document Ingestion Service** | `TESTED` | `pytest tests/unit/test_document_ingestion.py` | Safely parses `.txt`, `.md`, `.pdf`, `.html`, and `.htm`, chunking paragraphs/pages with SHA-256 fingerprinting |
 | **Document Ingestion Security Gate** | `TESTED` | `pytest tests/unit/test_document_ingestion.py` | Enforces 10MB limit and rejects sensitive paths (`system32`, `.env`, `id_rsa`) |
 | **Enhanced Deterministic Retrieval** | `TESTED` | `pytest tests/unit/test_deterministic_retrieval.py` | Exact keyword search with provenance URI, match location, confidence score, and clear limitation disclaimer |
 | **Tab Staleness Tracking & Re-Observation** | `TESTED` | `pytest tests/unit/test_browser_endpoints.py` | Detects tab navigation away from observation; Action Gate rejects stale actions with `REOBSERVE` |
@@ -62,13 +62,14 @@ This document tracks the verified status of all architectural components across 
 | **Liquid Glass Execution Surface & UI** | `TESTED` | `npm run build` in `apps/desktop` | Layered glassmorphism, animated living liquid-flow reacting to real backend events, accessibility reduced-motion, Task Passport, real microphone recording |
 | **Runtime Supervisor** | `TESTED` | `apps/desktop/src/main/supervisor.ts` | Supervised management of FastAPI core and Sahaay.Controller interactive daemon in Session 1 desktop; health polling, auto-recovery, and process tree termination |
 | **Strict Driver Provenance Enforcement** | `TESTED` | `pytest tests/integration/test_milestone10_reliability_and_provenance.py` | Enforces provenance tag (`real_native_driver`, `real_browser_extension`, `owned_playwright_context`, `test_fixture`, `mock`, `offline_simulation`). Offline simulation strictly prohibited from yielding `VERIFIED` |
-| **Milestone 09 & 10 E2E Workflows** | `TESTED` | `pytest tests/integration/` | 11 comprehensive integration tests verifying citation, browser retrieval, Notepad writing, compound DAGs, allowlist, and deadline notice extraction |
+| **Intelligent Goal Decomposition & Adaptive DAG Engine** | `TESTED` | `pytest tests/integration/test_milestone11_intelligent_task_completion.py` | Decomposes compound goals into typed dependencies, dynamically extracts grounded facts (dates, amounts, URLs, findings), and propagates parameters across steps |
+| **Verified Acceptance Workflows (A through G)** | `TESTED` | `pytest tests/integration/test_milestone11_intelligent_task_completion.py` | Local research, browser-to-desktop, bill extraction to Notepad, web vs local research comparison, Calculator action, Voice-to-Task pipeline, and prerequisite failure halts |
 
 ---
 
 ## Operational Verification Summary
 
-- **Total Python Automated Tests**: 137 passed (100% passing across unit, security, privacy, models, workflows, persistence, storytelling, and integration suites).
+- **Total Python Automated Tests**: 144 passed (100% passing across unit, security, privacy, models, workflows, persistence, storytelling, and milestone 09/10/11 integration suites).
 - **Total .NET xUnit Tests**: 12 passed (100% passing in native companion solution).
 - **Browser Extension**: Compiles cleanly with TypeScript (`tsc --noEmit` and Vite build).
 - **Desktop Electron App**: Compiles cleanly with TypeScript (`tsc --noEmit && tsc -p tsconfig.main.json --noEmit` and Vite build).

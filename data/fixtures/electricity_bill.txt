@@ -1,0 +1,7 @@
+BANGALORE ELECTRICITY SUPPLY COMPANY (BESCOM)
+Consumer Name: Aarav Sharma
+Account Number: BLR-UTIL-98421
+Billing Period: October 2026
+Amount Due: INR 2,450.00
+Due Date: Nov 15, 2026
+Status: Payment Pending
