@@ -10,6 +10,7 @@
  */
 
 import { app, BrowserWindow, ipcMain } from "electron";
+import { existsSync } from "fs";
 import { join } from "path";
 import { RuntimeSupervisor } from "./supervisor";
 
@@ -62,7 +63,18 @@ function createWindow(): void {
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
   } else {
-    mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
+    const candidates = [
+      join(__dirname, "../../dist/index.html"),
+      join(app.getAppPath(), "dist/index.html"),
+      join(__dirname, "../renderer/index.html"),
+    ];
+    const htmlPath = candidates.find((p) => existsSync(p));
+    if (htmlPath) {
+      mainWindow.loadFile(htmlPath);
+    } else {
+      console.error(`[Main] Could not find compiled UI at candidate paths: ${candidates.join(", ")}`);
+      mainWindow.loadURL("data:text/html,<h2>Sahaay UI not built</h2><p>Please run: <code>npm run build</code> in apps/desktop</p>");
+    }
   }
 }
 

@@ -301,4 +301,5 @@ async def test_workflow_g_failure_halts_downstream_and_prevents_false_success(m1
 
     # Stored task reflects failure
     stored_task = durable_storage.get_task(task.taskId)
+    assert stored_task is not None
     assert stored_task.status == TaskStatusEnum.FAILED

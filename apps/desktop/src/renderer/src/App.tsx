@@ -12,7 +12,6 @@ import {
   ArrowLeftRight,
   RefreshCw,
   Layers,
-  Settings,
   Sparkles,
   Activity,
   Check,
@@ -25,6 +24,11 @@ import {
   ChevronDown,
   ChevronRight,
   Info,
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
+  Database,
+  Terminal,
 } from "lucide-react";
 
 const API_BASE = "http://127.0.0.1:8000/api/v1";
@@ -150,6 +154,23 @@ interface ModelsStatusReport {
   };
 }
 
+export interface SupervisorReport {
+  backend: { name: string; status: string; pid?: number; endpoint: string; details: string; restartCount: number };
+  controller: { name: string; status: string; pid?: number; endpoint: string; details: string; restartCount: number };
+  nativeHost: { name: string; status: string; endpoint: string; details: string };
+  overallReady: boolean;
+  platform: string;
+}
+
+export interface BackendHealthReport {
+  status: string;
+  systemVersion: string;
+  pythonVersion: string;
+  localOnlyMode: boolean;
+  databaseReady: boolean;
+  timestamp: string;
+}
+
 export function App(): React.JSX.Element {
   // Session & Core state
   const [sessionId, setSessionId] = useState<string>("");
@@ -161,6 +182,14 @@ export function App(): React.JSX.Element {
   const [statusNarrative, setStatusNarrative] = useState<string>(
     "Sahaay agent is idle. Ready for voice or text prompt."
   );
+
+  // Runtime diagnostics & health state
+  const [isBackendReachable, setIsBackendReachable] = useState<boolean>(false);
+  const [backendHealth, setBackendHealth] = useState<BackendHealthReport | null>(null);
+  const [supervisorReport, setSupervisorReport] = useState<SupervisorReport | null>(null);
+  const [micStatus, setMicStatus] = useState<"READY" | "PROMPT" | "DENIED" | "NOT_SUPPORTED">("PROMPT");
+  const [lastProbedTime, setLastProbedTime] = useState<string>("");
+  const [isProbing, setIsProbing] = useState<boolean>(false);
 
   // Models diagnostics
   const [modelsStatus, setModelsStatus] = useState<ModelsStatusReport | null>(null);
@@ -203,43 +232,114 @@ export function App(): React.JSX.Element {
   // 1. Initialize session and probe diagnostics
   useEffect(() => {
     initSession();
-    fetchModelsStatus();
+    runDiagnosticsProbe();
     const interval = setInterval(() => {
-      fetchModelsStatus();
-    }, 6000);
+      runDiagnosticsProbe();
+    }, 5000);
     return () => clearInterval(interval);
   }, []);
 
-  const initSession = async () => {
+  const runDiagnosticsProbe = async () => {
+    setIsProbing(true);
+    setLastProbedTime(new Date().toLocaleTimeString());
+
+    // 1. Probe supervisor via Electron IPC
+    if (typeof window !== "undefined" && (window as any).sahaay?.getRuntimeHealth) {
+      try {
+        const rep = await (window as any).sahaay.getRuntimeHealth();
+        setSupervisorReport(rep);
+      } catch (e) {
+        console.warn("Supervisor IPC unavailable:", e);
+      }
+    }
+
+    // 2. Probe FastAPI Backend /health
     try {
-      const res = await fetch(`${API_BASE}/sessions`, {
-        method: "POST",
-        headers: API_HEADERS,
-        body: JSON.stringify({ localOnlyMode: true }),
-      });
+      const res = await fetch(`${API_BASE}/health`, { headers: getApiHeaders() });
       if (res.ok) {
         const data = await res.json();
-        setSessionId(data.sessionId);
-        setLocalOnlyMode(data.localOnlyMode);
-        addTimelineEntry("IDLE", "Session Initialized", `Session ID: ${data.sessionId.slice(0, 8)}... (Local-only mode active)`);
+        setBackendHealth(data);
+        setIsBackendReachable(true);
+      } else {
+        setIsBackendReachable(false);
       }
-    } catch (err) {
-      console.warn("Backend not yet reachable on loopback:", err);
+    } catch {
+      setIsBackendReachable(false);
     }
-  };
 
-  const fetchModelsStatus = async () => {
+    // 3. Probe Models & Integrations
     try {
-      const res = await fetch(`${API_BASE}/models/status`, { headers: API_HEADERS });
+      const res = await fetch(`${API_BASE}/models/status`, { headers: getApiHeaders() });
       if (res.ok) {
         const data = await res.json();
         setModelsStatus(data);
         setLocalOnlyMode(data.privacyMode?.localOnlyMode ?? true);
       }
-    } catch (err) {
+    } catch {
       // offline probe
     }
+
+    // 4. Probe Microphone Permission
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setMicStatus("NOT_SUPPORTED");
+      } else if (navigator.permissions && (navigator.permissions as any).query) {
+        const p = await (navigator.permissions as any).query({ name: "microphone" });
+        if (p.state === "granted") setMicStatus("READY");
+        else if (p.state === "denied") setMicStatus("DENIED");
+        else setMicStatus("PROMPT");
+      } else {
+        setMicStatus("PROMPT");
+      }
+    } catch {
+      setMicStatus("PROMPT");
+    }
+
+    setIsProbing(false);
   };
+
+  const initSession = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/sessions`, {
+        method: "POST",
+        headers: getApiHeaders(),
+        body: JSON.stringify({ localOnlyMode }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSessionId(data.sessionId);
+        setLocalOnlyMode(data.localOnlyMode);
+        setIsBackendReachable(true);
+        addTimelineEntry("IDLE", "Session Initialized", `Session ID: ${data.sessionId.slice(0, 8)}... (${data.localOnlyMode ? "Local-only mode active" : "Hosted models permitted"})`);
+      } else {
+        setIsBackendReachable(false);
+      }
+    } catch (err) {
+      setIsBackendReachable(false);
+      console.warn("Backend not yet reachable on loopback:", err);
+    }
+  };
+
+  const toggleLocalOnlyMode = async () => {
+    const newMode = !localOnlyMode;
+    try {
+      const res = await fetch(`${API_BASE}/sessions`, {
+        method: "POST",
+        headers: getApiHeaders(),
+        body: JSON.stringify({ localOnlyMode: newMode }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSessionId(data.sessionId);
+        setLocalOnlyMode(data.localOnlyMode);
+        addTimelineEntry("IDLE", "Privacy Mode Toggled", `Local-Only Mode is now: ${newMode ? "ACTIVE" : "DISABLED"}`);
+        await runDiagnosticsProbe();
+      }
+    } catch (e) {
+      console.error("Failed to toggle privacy mode:", e);
+    }
+  };
+
 
   const fetchTaskPassport = async (taskId: string) => {
     try {
@@ -546,72 +646,125 @@ export function App(): React.JSX.Element {
     if (!promptText.trim()) return;
     const lower = promptText.toLowerCase();
 
-    if (
-      lower.includes("search") ||
-      lower.includes("find") ||
-      lower.includes("look up") ||
-      lower.includes("tariff") ||
-      lower.includes("rate")
-    ) {
-      // Internet research query
-      setTaskState("OBSERVE");
-      setStatusNarrative(`Public Internet Research: Querying keyless search for "${promptText}"...`);
-      addTimelineEntry("OBSERVE", "Internet Research", `Query: "${promptText}"`);
+    // Ensure active session
+    let currSessionId = sessionId;
+    if (!currSessionId) {
       try {
-        const res = await fetch(`${API_BASE}/research/search`, {
+        const sRes = await fetch(`${API_BASE}/sessions`, {
           method: "POST",
           headers: getApiHeaders(),
-          body: JSON.stringify({ query: promptText, sessionId }),
+          body: JSON.stringify({ localOnlyMode }),
         });
-        const data = await res.json();
-        if (data.status === "COMPLETED" && data.resultsCount > 0) {
-          setTaskState("VERIFIED");
-          const firstResult = data.results[0];
-          setStatusNarrative(`Research Completed: Found ${data.resultsCount} sources. Top: "${firstResult.title}"`);
-          addTimelineEntry("VERIFIED", `Research: ${data.resultsCount} Sources`, firstResult.snippet, firstResult.sha256);
-        } else if (data.status === "LOCAL_ONLY_BLOCKED") {
-          setTaskState("HANDOFF");
-          setStatusNarrative("Internet research blocked by local-only mode. Provide consent to allow outbound search.");
-          addTimelineEntry("HANDOFF", "Local-Only Mode", "Public search blocked by Privacy Gateway");
-        } else {
-          setTaskState("FAILED");
-          setStatusNarrative(data.notice || "No search results found.");
-          addTimelineEntry("FAILED", "Search Unavailable", data.notice || "Unavailable");
+        if (sRes.ok) {
+          const sData = await sRes.json();
+          currSessionId = sData.sessionId;
+          setSessionId(sData.sessionId);
         }
-      } catch (err: any) {
-        setTaskState("FAILED");
-        setStatusNarrative(`Search error: ${err.message}`);
+      } catch (e) {
+        console.error("Could not initialize session:", e);
       }
-    } else if (lower.includes("bill") || lower.includes("current") || lower.includes("bescom")) {
-      await triggerBrowserToDesktopWorkflow(true);
-    } else if (lower.includes("form") || lower.includes("invoice") || lower.includes("pay")) {
-      await triggerDesktopToBrowserWorkflow(true);
-    } else {
-      setTaskState("PROPOSE");
-      setStatusNarrative(`Analyzing goal with planner: "${promptText}"`);
-      try {
-        const res = await fetch(`${API_BASE}/models/meta/muse-spark/plan`, {
-          method: "POST",
-          headers: getApiHeaders(),
-          body: JSON.stringify({ goal: promptText }),
-        });
-        const planData = await res.json();
+    }
+
+    // Determine workflowMode: ask (retrieval-only), do (action-only), or combined
+    const isAskMode =
+      lower.startsWith("find") ||
+      lower.startsWith("search") ||
+      lower.startsWith("what") ||
+      lower.startsWith("summarize") ||
+      lower.startsWith("read") ||
+      lower.startsWith("extract") ||
+      lower.startsWith("check") ||
+      lower.includes("report") ||
+      lower.includes("notes");
+
+    const isDoMode =
+      lower.startsWith("open") ||
+      lower.startsWith("calculate") ||
+      lower.startsWith("launch") ||
+      lower.startsWith("write") ||
+      lower.startsWith("fill") ||
+      lower.startsWith("click");
+
+    const workflowMode = isAskMode ? "ask" : (isDoMode ? "do" : "combined_retrieval_and_action");
+
+    setTaskState("PROPOSE");
+    setStatusNarrative(`Formulating dependency-aware plan for: "${promptText}" (${workflowMode.toUpperCase()} mode)...`);
+    addTimelineEntry("PROPOSE", `Goal: "${promptText.slice(0, 48)}..."`, `Decomposing into execution DAG using Meta Muse Spark / deterministic engine`);
+
+    try {
+      setTaskState("EXECUTE_B2D");
+      setStatusNarrative("Executing dependency-aware task DAG across authorized capabilities...");
+
+      const res = await fetch(`${API_BASE}/workflows/execute-goal`, {
+        method: "POST",
+        headers: getApiHeaders(),
+        body: JSON.stringify({
+          sessionId: currSessionId,
+          goal: promptText,
+          workflowMode,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || `Server returned ${res.status}`);
+      }
+
+      setLastWorkflowResult(data);
+      if (data.taskId) {
+        setActiveTaskId(data.taskId);
+        await fetchTaskPassport(data.taskId);
+      }
+
+      if (data.status === "VERIFIED" && data.isVerified) {
         setTaskState("VERIFIED");
-        setStatusNarrative(`Plan formulated (${planData.validation_status || "LOCAL_FALLBACK"}): ${planData.steps?.length || 0} steps prepared.`);
-        addTimelineEntry("VERIFIED", "Plan Generated", `Validation: ${planData.validation_status || "LOCAL_FALLBACK"}`);
-      } catch (err: any) {
+        const facts = data.accumulatedFacts || {};
+        const summaryText =
+          facts.deadline_summary ||
+          facts.bill_summary ||
+          facts.key_findings ||
+          facts.extracted_text ||
+          facts.calculation_result ||
+          `Task completed successfully with ${data.completedSteps}/${data.totalSteps} steps verified.`;
+
+        setStatusNarrative(`VERIFIED: ${summaryText}`);
+        addTimelineEntry(
+          "VERIFIED",
+          `Task Verified (${data.completedSteps}/${data.totalSteps} Steps)`,
+          summaryText,
+          data.evidenceIds?.[0] || undefined
+        );
+      } else if (data.status === "FAILED") {
         setTaskState("FAILED");
-        setStatusNarrative(`Planner unavailable: ${err.message}`);
-        addTimelineEntry("FAILED", "Planning Failed", err.message);
+        setStatusNarrative(`TASK FAILED: ${data.error || "Step postcondition verification failed."}`);
+        addTimelineEntry("FAILED", "Execution Halted", data.error || "Postcondition check failed");
+      } else {
+        setTaskState("HANDOFF");
+        setStatusNarrative(`STATUS: ${data.status} — ${data.error || "Awaiting authorization or manual step."}`);
+        addTimelineEntry("HANDOFF", `Status: ${data.status}`, `Workflow ended with status ${data.status}`);
       }
+    } catch (err: any) {
+      setTaskState("FAILED");
+      setStatusNarrative(`Execution error: ${err.message}`);
+      addTimelineEntry("FAILED", "Request Error", err.message);
     }
     setUserPrompt("");
   };
 
-  const handleStopExecution = () => {
+  const handleStopExecution = async () => {
+    if (activeTaskId) {
+      try {
+        await fetch(`${API_BASE}/tasks/${activeTaskId}/cancel`, {
+          method: "POST",
+          headers: getApiHeaders(),
+        });
+      } catch (e) {
+        console.warn("Cancel request failed:", e);
+      }
+    }
     setTaskState("IDLE");
-    setStatusNarrative("Task execution cancelled by user. Pending actions blocked.");
-    addTimelineEntry("HANDOFF", "Cancelled by User", "Execution halted; all queued actions dropped.");
+    setStatusNarrative("Task execution cancelled. Pending actions blocked.");
+    addTimelineEntry("HANDOFF", "Cancelled by User", "Execution halted; all pending actions dropped.");
   };
 
   const testMetaConnectivity = async () => {
@@ -726,49 +879,106 @@ export function App(): React.JSX.Element {
           </div>
         </div>
 
-        {/* Global Status Pills */}
+        {/* Global Status Pills & Actions */}
         <div className="flex items-center gap-3">
           {(() => {
             const isMetaConfigured = Boolean(modelsStatus?.metaHosted?.isConfigured);
             const isLlamaReady = Boolean(modelsStatus?.localLlama?.isReady);
+            const isCompanionUp = modelsStatus?.systemIntegrations?.windowsCompanion === "CONNECTED";
 
             return (
               <>
+                {/* 1. Overall System Integrity Pill */}
+                <button
+                  onClick={() => setIsSettingsOpen(true)}
+                  className={`badge ${
+                    !isBackendReachable
+                      ? "badge-danger animate-pulse"
+                      : isCompanionUp
+                      ? "badge-success"
+                      : "badge-cyan"
+                  } flex items-center gap-1.5 cursor-pointer hover:opacity-90 transition-opacity`}
+                  title="Click to open System Diagnostics"
+                >
+                  {!isBackendReachable ? (
+                    <>
+                      <XCircle className="h-3 w-3 text-rose-400" />
+                      <span>Backend Offline</span>
+                    </>
+                  ) : isCompanionUp ? (
+                    <>
+                      <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                      <span>System Ready</span>
+                    </>
+                  ) : (
+                    <>
+                      <Activity className="h-3 w-3 text-sky-400" />
+                      <span>Local Retrieval Ready</span>
+                    </>
+                  )}
+                </button>
+
+                {/* 2. Planner Status */}
                 <span
                   className={`badge ${isMetaConfigured ? "badge-cyan" : "badge-neutral"} flex items-center gap-1.5`}
-                  title={isMetaConfigured ? "Meta Muse Spark 1.3 configured" : "No Meta API key configured (Local fallback active)"}
+                  title={isMetaConfigured ? "Meta Muse Spark 1.3 configured" : "Deterministic local planner active (Zero external leaks)"}
                 >
                   <Radio className={`h-3 w-3 ${isMetaConfigured ? "text-sky-400 animate-pulse" : "text-slate-500"}`} />
-                  {isMetaConfigured ? "Meta Muse Spark Ready" : "Planner: Local Fallback"}
+                  {isMetaConfigured ? "Meta Muse Spark" : "Local Planner"}
                 </span>
 
+                {/* 3. Local Llama */}
                 <span
                   className={`badge ${isLlamaReady ? "badge-purple" : "badge-neutral"} flex items-center gap-1.5`}
-                  title={isLlamaReady ? "Local Llama 3.2 3B active" : "Local Llama 3.2 3B weights not detected"}
+                  title={isLlamaReady ? "Local Llama 3.2 3B active" : "Local Llama weights not detected"}
                 >
                   <Cpu className={`h-3 w-3 ${isLlamaReady ? "text-purple-400" : "text-slate-500"}`} />
-                  {isLlamaReady ? "Llama 3.2 3B Ready" : "Llama Offline"}
+                  {isLlamaReady ? "Llama 3.2 Ready" : "Llama Offline"}
                 </span>
 
-                <span
-                  className={`badge ${localOnlyMode ? "badge-neutral" : "badge-success"} flex items-center gap-1.5`}
+                {/* 4. Local-Only Mode Toggle */}
+                <button
+                  onClick={toggleLocalOnlyMode}
+                  className={`badge ${localOnlyMode ? "badge-neutral" : "badge-success"} flex items-center gap-1.5 cursor-pointer hover:opacity-90 transition-opacity`}
+                  title="Click to toggle Local-Only Privacy Mode"
                 >
                   <Shield className="h-3 w-3" />
-                  {localOnlyMode ? "Local-Only Mode" : "Hosted Consent Granted"}
-                </span>
+                  {localOnlyMode ? "Local-Only Mode" : "Hosted Inference Permitted"}
+                </button>
               </>
             );
           })()}
 
+          {/* Diagnostics Drawer Toggle */}
           <button
             onClick={() => setIsSettingsOpen(!isSettingsOpen)}
             className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 transition-colors"
-            title="Model Diagnostics & Settings"
+            title="System Diagnostics & Runtime Status"
           >
-            <Settings className="h-4 w-4" />
+            <Activity className="h-4 w-4 text-sky-400" />
           </button>
         </div>
       </header>
+
+      {/* Offline Alert Banner if backend is unreachable */}
+      {!isBackendReachable && (
+        <div className="bg-red-950/75 border-b border-red-500/40 px-6 py-2.5 flex items-center justify-between text-xs text-red-200 z-10 backdrop-blur-md">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="h-4 w-4 text-red-400 shrink-0" />
+            <span>
+              <strong>Core Backend Offline:</strong> FastAPI is unreachable at <code>http://127.0.0.1:8000</code>. Start via <code>.\scripts\start-sahaay.ps1</code> or check supervisor logs.
+            </span>
+          </div>
+          <button
+            onClick={runDiagnosticsProbe}
+            disabled={isProbing}
+            className="btn btn-secondary text-xs py-1 px-3 flex items-center gap-1.5 border border-red-400/30 hover:bg-red-500/20"
+          >
+            <RefreshCw className={`h-3 w-3 ${isProbing ? "animate-spin" : ""}`} />
+            {isProbing ? "Checking..." : "Retry Connection"}
+          </button>
+        </div>
+      )}
 
       {/* 2. Main Execution Surface */}
       <div className="flex flex-1 overflow-hidden relative">
@@ -1289,123 +1499,248 @@ export function App(): React.JSX.Element {
         </div>
       )}
 
-      {/* 4. Model Diagnostics & Settings Drawer */}
+      {/* 4. Real Runtime Diagnostics & System Integrity Drawer */}
       {isSettingsOpen && (
         <div className="fixed inset-0 z-40 flex justify-end bg-black/60 backdrop-blur-sm">
-          <div className="w-[420px] h-full bg-[#0c1220] border-l border-white/10 p-5 overflow-y-auto flex flex-col gap-4 shadow-2xl">
+          <div className="w-[460px] h-full bg-[#0c1220] border-l border-white/10 p-5 overflow-y-auto flex flex-col gap-4 shadow-2xl">
+            {/* Drawer Header */}
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <span className="font-heading font-bold text-sm text-white flex items-center gap-2">
-                <Settings className="h-4 w-4 text-sky-400" /> Models &amp; Diagnostics
-              </span>
-              <button
-                onClick={() => setIsSettingsOpen(false)}
-                className="text-slate-400 hover:text-white text-sm"
-              >
-                &times;
-              </button>
-            </div>
-
-            {/* Meta Muse Spark 1.3 Section */}
-            <div className="space-y-2">
-              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                <Sparkles className="h-3.5 w-3.5 text-sky-400" /> Meta Muse Spark 1.3 (Primary Planner)
-              </h4>
-              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-xs space-y-2">
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-300">Model ID:</span>
-                  <span className="font-mono text-[11px] text-sky-300">
-                    {modelsStatus?.metaHosted?.models?.museSpark?.id || "muse-spark-1.3"}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-300">Endpoint:</span>
-                  <span className="font-mono text-[10px] text-slate-400">
-                    {modelsStatus?.metaHosted?.baseUrl || "https://api.meta.ai/v1"}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-300">Readiness:</span>
-                  <span
-                    className={`badge ${
-                      modelsStatus?.metaHosted?.models?.museSpark?.ready
-                        ? "badge-success"
-                        : modelsStatus?.metaHosted?.isConfigured
-                        ? "badge-cyan"
-                        : "badge-neutral"
-                    }`}
-                  >
-                    {modelsStatus?.metaHosted?.models?.museSpark?.ready
-                      ? "READY"
-                      : modelsStatus?.metaHosted?.isConfigured
-                      ? "CONFIGURED"
-                      : "NOT_CONFIGURED"}
-                  </span>
-                </div>
-                <p className="text-[10px] text-slate-400 pt-1 border-t border-white/5">
-                  Meta Muse Spark 1.3 is the primary hosted reasoning and planning engine for Sahaay, generating validated plans.
-                </p>
+              <div>
+                <span className="font-heading font-bold text-sm text-white flex items-center gap-2">
+                  <Activity className="h-4 w-4 text-sky-400" /> System Diagnostics &amp; Runtime Status
+                </span>
+                <span className="text-[10px] text-slate-400">
+                  {lastProbedTime ? `Last probed: ${lastProbedTime}` : "Probing live system..."}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={runDiagnosticsProbe}
+                  disabled={isProbing}
+                  className="btn btn-secondary text-xs py-1 px-2.5 flex items-center gap-1 border border-white/10"
+                  title="Re-probe all system channels and services"
+                >
+                  <RefreshCw className={`h-3 w-3 ${isProbing ? "animate-spin" : ""}`} />
+                  {isProbing ? "Probing..." : "Refresh"}
+                </button>
+                <button
+                  onClick={() => setIsSettingsOpen(false)}
+                  className="text-slate-400 hover:text-white text-lg px-1.5"
+                  title="Close Drawer"
+                >
+                  &times;
+                </button>
               </div>
             </div>
 
-            {/* Meta Muse Image Section */}
+            {/* 1. Overall System Integrity Banner */}
+            {(() => {
+              const isCompanionUp = modelsStatus?.systemIntegrations?.windowsCompanion === "CONNECTED";
+              const isBridgeUp = modelsStatus?.systemIntegrations?.nativeMessaging === "CONNECTED";
+              const isExtAttached = modelsStatus?.systemIntegrations?.browserExtension === "ATTACHED";
+
+              let overallState = "READY";
+              let badgeClass = "badge-success";
+              let titleText = "SYSTEM READY";
+              const blockingReasons: string[] = [];
+
+              if (!isBackendReachable) {
+                overallState = "ERROR";
+                badgeClass = "badge-danger";
+                titleText = "BACKEND OFFLINE";
+                blockingReasons.push("FastAPI Core Backend is not responding on 127.0.0.1:8000. Launch via .\\scripts\\start-sahaay.ps1.");
+              } else if (!isCompanionUp) {
+                overallState = "DEGRADED";
+                badgeClass = "badge-cyan";
+                titleText = "DEGRADED (LOCAL RETRIEVAL ONLY)";
+                blockingReasons.push("Windows Companion (UIA) named pipe is stopped. Desktop automation degraded; file retrieval active.");
+              }
+
+              if (!isExtAttached && isBackendReachable) {
+                blockingReasons.push("Browser extension not attached. Requires Sahaay extension loaded in Chrome/Edge on an active tab.");
+              }
+              if (!isBridgeUp && isBackendReachable) {
+                blockingReasons.push("Browser native messaging pipe inactive. Waiting for extension connection.");
+              }
+
+              return (
+                <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-xs space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-slate-200">Overall System Readiness:</span>
+                    <span className={`badge ${badgeClass}`}>{overallState}: {titleText}</span>
+                  </div>
+                  {blockingReasons.length > 0 ? (
+                    <div className="space-y-1 pt-1 border-t border-white/5">
+                      <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Active Operational Blockers:</span>
+                      {blockingReasons.map((reason, idx) => (
+                        <div key={idx} className="text-[11px] text-amber-300/90 flex items-start gap-1.5">
+                          <span className="text-amber-400 shrink-0">•</span>
+                          <span>{reason}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-emerald-300/90 pt-1 border-t border-white/5">
+                      All core components operational. Desktop and browser capabilities verified.
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* 2. Core Platform Services */}
             <div className="space-y-2">
               <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                <Compass className="h-3.5 w-3.5 text-purple-400" /> Meta Muse Image (Storytelling)
+                <Database className="h-3.5 w-3.5 text-sky-400" /> Core Services &amp; Persistence
               </h4>
               <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-xs space-y-2">
+                {/* Desktop App */}
                 <div className="flex justify-between items-center">
-                  <span className="text-slate-300">Model ID:</span>
-                  <span className="font-mono text-[11px] text-purple-300">
-                    {modelsStatus?.museImage?.model || "muse-image-1.0"}
+                  <span className="text-slate-300">Desktop Shell:</span>
+                  <span className="badge badge-success">ONLINE {supervisorReport?.platform ? `(${supervisorReport.platform})` : ""}</span>
+                </div>
+
+                {/* Backend Reachability */}
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-300">FastAPI Core Backend:</span>
+                  <span className={`badge ${isBackendReachable ? "badge-success" : "badge-danger"}`}>
+                    {isBackendReachable ? `ONLINE (127.0.0.1:8000${supervisorReport?.backend?.pid ? ` PID ${supervisorReport.backend.pid}` : ""})` : "DISCONNECTED"}
                   </span>
                 </div>
+
+                {/* SQLite Evidence Ledger */}
                 <div className="flex justify-between items-center">
-                  <span className="text-slate-300">Readiness:</span>
-                  <span
-                    className={`badge ${
-                      modelsStatus?.museImage?.isConfigured ? "badge-success" : "badge-neutral"
-                    }`}
-                  >
-                    {modelsStatus?.museImage?.status || "OFFLINE_VECTOR_FALLBACK"}
+                  <span className="text-slate-300">SQLite Evidence Ledger:</span>
+                  <span className={`badge ${isBackendReachable && backendHealth?.databaseReady ? "badge-success" : "badge-neutral"}`}>
+                    {isBackendReachable && backendHealth?.databaseReady ? "READY (WAL MODE)" : "DISCONNECTED"}
                   </span>
                 </div>
+
+                {/* Action Gate Policy Engine */}
                 <div className="flex justify-between items-center">
-                  <span className="text-slate-300">Generation Budget:</span>
-                  <span className="badge badge-purple">
-                    {modelsStatus?.storytelling?.budget ?? 10} IMAGES/TASK
+                  <span className="text-slate-300">Action Gate &amp; Privacy:</span>
+                  <span className="badge badge-success">
+                    {localOnlyMode ? "LOCAL-ONLY (FAIL-CLOSED)" : "HOSTED PERMITTED"}
                   </span>
                 </div>
-                <p className="text-[10px] text-slate-400 pt-1 border-t border-white/5">
-                  Generates abstract visual metaphors for Task Passports. Falls back cleanly to vector SVG when offline.
-                </p>
+
+                {/* Task Orchestrator Status */}
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-300">Task Orchestrator:</span>
+                  <span className={`badge ${taskState === "IDLE" ? "badge-neutral" : "badge-purple"}`}>
+                    {taskState}
+                  </span>
+                </div>
               </div>
             </div>
 
-            {/* Meta Hosted Models Section */}
+            {/* 3. Automation Drivers & Surface Bridges */}
             <div className="space-y-2">
-              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Meta Hosted Suite (api.meta.ai)
+              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                <AppWindow className="h-3.5 w-3.5 text-emerald-400" /> Automation Drivers &amp; Bridges
               </h4>
               <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-xs space-y-2">
+                {/* Windows Companion Controller */}
                 <div className="flex justify-between items-center">
-                  <span className="text-slate-300">API Key Configured:</span>
-                  <span className={`badge ${modelsStatus?.metaHosted?.isConfigured ? "badge-success" : "badge-warning"}`}>
-                    {modelsStatus?.metaHosted?.isConfigured ? "CONFIGURED" : "NOT SET (Offline Mocks)"}
+                  <div>
+                    <span className="text-slate-300 block">Windows Controller (UIA):</span>
+                    <span className="text-[10px] text-slate-500 font-mono">\\.\pipe\SahaayControllerPipe</span>
+                  </div>
+                  <span className={`badge ${
+                    modelsStatus?.systemIntegrations?.windowsCompanion === "CONNECTED"
+                      ? "badge-success"
+                      : "badge-neutral"
+                  }`}>
+                    {modelsStatus?.systemIntegrations?.windowsCompanion || "DISCONNECTED"}
                   </span>
                 </div>
-                <div className="flex justify-between items-center text-slate-400">
-                  <span>Muse Wonder (Computer-Use):</span>
-                  <span className="font-mono text-[11px] text-slate-200">muse-wonder-1.0</span>
-                </div>
-                <div className="flex justify-between items-center text-slate-400">
-                  <span>Muse Voice Transcribe:</span>
-                  <span className="font-mono text-[11px] text-slate-200">muse-voice-transcribe-1.0</span>
-                </div>
-                <div className="flex justify-between items-center text-slate-400">
-                  <span>SAM 3.1:</span>
-                  <span className="font-mono text-[11px] text-slate-200">sam-3.1</span>
+
+                {/* Native Messaging Host */}
+                <div className="flex justify-between items-center">
+                  <div>
+                    <span className="text-slate-300 block">Native Messaging Host:</span>
+                    <span className="text-[10px] text-slate-500 font-mono">com.sahaay.nativehost (HKCU)</span>
+                  </div>
+                  <span className={`badge ${
+                    modelsStatus?.systemIntegrations?.nativeMessaging === "CONNECTED"
+                      ? "badge-success"
+                      : "badge-neutral"
+                  }`}>
+                    {modelsStatus?.systemIntegrations?.nativeMessaging || "DISCONNECTED"}
+                  </span>
                 </div>
 
+                {/* Browser Extension Bridge */}
+                <div className="flex justify-between items-center">
+                  <div>
+                    <span className="text-slate-300 block">Browser Tab Observation:</span>
+                    <span className="text-[10px] text-slate-500">Manifest V3 Extension</span>
+                  </div>
+                  <span className={`badge ${
+                    modelsStatus?.systemIntegrations?.browserExtension === "ATTACHED"
+                      ? "badge-success"
+                      : modelsStatus?.systemIntegrations?.browserExtension === "HOST_WAITING"
+                      ? "badge-warning"
+                      : "badge-neutral"
+                  }`}>
+                    {modelsStatus?.systemIntegrations?.browserExtension || "DISCONNECTED"}
+                  </span>
+                </div>
+
+                {/* Microphone Readiness */}
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-300">Microphone Audio Capture:</span>
+                  <span className={`badge ${
+                    micStatus === "READY"
+                      ? "badge-success"
+                      : micStatus === "DENIED"
+                      ? "badge-danger"
+                      : "badge-warning"
+                  }`}>
+                    {micStatus === "READY" ? "READY" : micStatus}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* 4. Model Providers & Reasoning */}
+            <div className="space-y-2">
+              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Sparkles className="h-3.5 w-3.5 text-purple-400" /> Model Providers &amp; Intelligence
+              </h4>
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-xs space-y-2">
+                {/* Deterministic Local Provider */}
+                <div className="flex justify-between items-center">
+                  <div>
+                    <span className="text-slate-300 block">Deterministic Local Provider:</span>
+                    <span className="text-[10px] text-slate-500">Zero-leak regex &amp; DAG formulation</span>
+                  </div>
+                  <span className="badge badge-success">READY</span>
+                </div>
+
+                {/* Meta Hosted Suite */}
+                <div className="flex justify-between items-center">
+                  <div>
+                    <span className="text-slate-300 block">Meta Hosted Suite:</span>
+                    <span className="text-[10px] text-slate-500 font-mono">api.meta.ai/v1</span>
+                  </div>
+                  <span className={`badge ${modelsStatus?.metaHosted?.isConfigured ? "badge-cyan" : "badge-neutral"}`}>
+                    {modelsStatus?.metaHosted?.isConfigured ? "CONFIGURED" : "NOT_CONFIGURED"}
+                  </span>
+                </div>
+
+                {/* Local Llama 3.2 3B */}
+                <div className="flex justify-between items-center">
+                  <div>
+                    <span className="text-slate-300 block">Local Llama 3.2 3B:</span>
+                    <span className="text-[10px] text-slate-500 font-mono">127.0.0.1:8080</span>
+                  </div>
+                  <span className={`badge ${modelsStatus?.localLlama?.isReady ? "badge-success" : "badge-neutral"}`}>
+                    {modelsStatus?.localLlama?.status || "MODEL_FILE_MISSING"}
+                  </span>
+                </div>
+
+                {/* Connectivity test button */}
                 <button
                   onClick={testMetaConnectivity}
                   disabled={isTestingConn}
@@ -1418,106 +1753,24 @@ export function App(): React.JSX.Element {
                 {testConnResult && (
                   <div className="p-2 rounded bg-black/40 text-[11px] font-mono text-slate-300 mt-2 space-y-1">
                     <div>Meta API: {testConnResult.metaApi?.status || "NOT_CONFIGURED"}</div>
-                    <div>Muse Image: {testConnResult.museImage?.status || "NOT_CONFIGURED"}</div>
                     <div>Local Llama: {modelsStatus?.localLlama?.status || "NOT_CONFIGURED"}</div>
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Local Llama Runtime Section */}
-            <div className="space-y-2">
-              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Local Llama Runtime (Llama 3.2 3B)
-              </h4>
-              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-xs space-y-2">
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-300">Status:</span>
-                  <span className={`badge ${modelsStatus?.localLlama?.isReady ? "badge-success" : "badge-neutral"}`}>
-                    {modelsStatus?.localLlama?.status || "MODEL_FILE_MISSING"}
-                  </span>
-                </div>
-                <div className="text-[11px] text-slate-400">
-                  {modelsStatus?.localLlama?.message}
-                </div>
-                <div className="flex justify-between items-center text-slate-400 text-[11px]">
-                  <span>Server Loopback:</span>
-                  <span className="font-mono text-slate-200">127.0.0.1:8080</span>
-                </div>
-                {modelsStatus?.localLlama?.hardwareProfile && (
-                  <div className="pt-1 text-[11px] text-slate-400 border-t border-white/5 space-y-1">
-                    <div>CPU Cores: {modelsStatus.localLlama.hardwareProfile.cpuCores}</div>
-                    <div>Backend: {modelsStatus.localLlama.hardwareProfile.accelerationBackend}</div>
-                    {modelsStatus.localLlama.hardwareProfile.gpuName && (
-                      <div>GPU: {modelsStatus.localLlama.hardwareProfile.gpuName}</div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* System Integrations */}
-            <div className="space-y-2">
-              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                System Integrations
-              </h4>
-              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-xs space-y-2">
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-300">Browser Extension:</span>
-                  <span className={`badge ${
-                    modelsStatus?.systemIntegrations?.browserExtension === "ATTACHED"
-                      ? "badge-success"
-                      : modelsStatus?.systemIntegrations?.browserExtension === "HOST_WAITING"
-                      ? "badge-warning"
-                      : "badge-neutral"
-                  }`}>
-                    {modelsStatus?.systemIntegrations?.browserExtension || "DISCONNECTED"}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-300">Native Messaging Host:</span>
-                  <span className={`badge ${
-                    modelsStatus?.systemIntegrations?.nativeMessaging === "CONNECTED"
-                      ? "badge-success"
-                      : "badge-neutral"
-                  }`}>
-                    {modelsStatus?.systemIntegrations?.nativeMessaging || "DISCONNECTED"}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-300">Windows Companion (UIA):</span>
-                  <span className={`badge ${
-                    modelsStatus?.systemIntegrations?.windowsCompanion === "CONNECTED"
-                      ? "badge-success"
-                      : "badge-neutral"
-                  }`}>
-                    {modelsStatus?.systemIntegrations?.windowsCompanion || "DISCONNECTED"}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-300">SQLite Evidence Ledger:</span>
-                  <span className={`badge ${
-                    modelsStatus?.systemIntegrations?.sqliteLedger === "READY"
-                      ? "badge-success"
-                      : "badge-neutral"
-                  }`}>
-                    {modelsStatus?.systemIntegrations?.sqliteLedger || "READY"}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Privacy Gateway Mode */}
+            {/* 5. Quick Corrective Commands */}
             <div className="space-y-2 mt-auto">
-              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Privacy Gateway</h4>
-              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-xs space-y-2">
-                <p className="text-[11px] text-slate-400">
-                  Local-only mode blocks all outbound transmissions to external model APIs fail-closed.
-                </p>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-300 font-medium">Local-Only Enforcement:</span>
-                  <span className="badge badge-success">ACTIVE</span>
-                </div>
+              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Terminal className="h-3.5 w-3.5 text-sky-400" /> Corrective Commands
+              </h4>
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-2.5 text-[11px] font-mono space-y-1.5 text-slate-400">
+                <div># Launch Sahaay:</div>
+                <div className="text-sky-300 bg-black/40 px-2 py-1 rounded select-all">.\scripts\start-sahaay.ps1</div>
+                <div># Run System Diagnostics:</div>
+                <div className="text-sky-300 bg-black/40 px-2 py-1 rounded select-all">.\scripts\start-sahaay.ps1 -DiagnosticsOnly</div>
+                <div># Build Windows Controller:</div>
+                <div className="text-sky-300 bg-black/40 px-2 py-1 rounded select-all">.\scripts\build-companion.ps1</div>
               </div>
             </div>
           </div>

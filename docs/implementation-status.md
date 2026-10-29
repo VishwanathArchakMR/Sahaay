@@ -8,7 +8,7 @@ This document tracks the verified status of all architectural components across 
 
 ---
 
-## Component Status Matrix (Milestone 11 — The Intelligent Task Completion Engine)
+## Component Status Matrix (Milestone 12A — Product Boot, Runtime Integrity, and First Real User Experience)
 
 | Component / Subsystem | State | Evidence / Automated Test Command | Notes |
 | :--- | :--- | :--- | :--- |
@@ -64,12 +64,15 @@ This document tracks the verified status of all architectural components across 
 | **Strict Driver Provenance Enforcement** | `TESTED` | `pytest tests/integration/test_milestone10_reliability_and_provenance.py` | Enforces provenance tag (`real_native_driver`, `real_browser_extension`, `owned_playwright_context`, `test_fixture`, `mock`, `offline_simulation`). Offline simulation strictly prohibited from yielding `VERIFIED` |
 | **Intelligent Goal Decomposition & Adaptive DAG Engine** | `TESTED` | `pytest tests/integration/test_milestone11_intelligent_task_completion.py` | Decomposes compound goals into typed dependencies, dynamically extracts grounded facts (dates, amounts, URLs, findings), and propagates parameters across steps |
 | **Verified Acceptance Workflows (A through G)** | `TESTED` | `pytest tests/integration/test_milestone11_intelligent_task_completion.py` | Local research, browser-to-desktop, bill extraction to Notepad, web vs local research comparison, Calculator action, Voice-to-Task pipeline, and prerequisite failure halts |
+| **Supervised Unified Launcher (`start-sahaay.ps1`)** | `TESTED` | `.\scripts\start-sahaay.ps1 -DiagnosticsOnly` | Unified launcher with `-DiagnosticsOnly`, `-Mode Headless`, and `-Mode Desktop`; validates venv, .NET build, HKCU registry keys, and UI bundles with actionable repair instructions |
+| **Real-Time Runtime Diagnostics Drawer** | `TESTED` | `npm run build` in `apps/desktop` & `pytest tests/integration/test_milestone12a_product_boot_and_integrity.py` | Replaces models-only drawer with full system integrity center: live health badges, PID readouts, named pipe probe, browser extension status, copyable corrective commands |
+| **Product Boot & Runtime Integrity Suite** | `TESTED` | `pytest tests/integration/test_milestone12a_product_boot_and_integrity.py` | 9 automated integration tests validating truthful diagnostics, backend lifespan, SQLite restart persistence, credential-free local-only mode, driver disconnect blocks, cancellation, verifier policy, and e2e local retrieval |
 
 ---
 
 ## Operational Verification Summary
 
-- **Total Python Automated Tests**: 144 passed (100% passing across unit, security, privacy, models, workflows, persistence, storytelling, and milestone 09/10/11 integration suites).
+- **Total Python Automated Tests**: 153 passed (100% passing across unit, security, privacy, models, workflows, persistence, storytelling, milestone 09/10/11 suites, and milestone 12A boot & integrity suite).
 - **Total .NET xUnit Tests**: 12 passed (100% passing in native companion solution).
 - **Browser Extension**: Compiles cleanly with TypeScript (`tsc --noEmit` and Vite build).
 - **Desktop Electron App**: Compiles cleanly with TypeScript (`tsc --noEmit && tsc -p tsconfig.main.json --noEmit` and Vite build).
