@@ -163,8 +163,7 @@ class BrowserAdapter:
         """Perform independent verification on scroll action postcondition."""
         actual_delta = post_scroll_y - pre_scroll_y
         is_verified = (actual_delta != 0) and (
-            (requested_delta > 0 and actual_delta > 0)
-            or (requested_delta < 0 and actual_delta < 0)
+            (requested_delta > 0 and actual_delta > 0) or (requested_delta < 0 and actual_delta < 0)
         )
 
         return {

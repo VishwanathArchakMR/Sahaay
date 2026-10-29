@@ -121,6 +121,17 @@ async def execute_browser_to_desktop(req: BrowserToDesktopRequest) -> Dict[str, 
     orchestrator.transition_state(task_id, TaskStatusEnum.OBSERVING)
 
     bill_text = req.browserObservationExcerpt
+    if not bill_text and not is_fixture:
+        try:
+            live_browser_adapter = BrowserAdapter()
+            if live_browser_adapter.is_connected() and live_browser_adapter.is_browser_attached():
+                live_obs = live_browser_adapter.get_active_tab_observation()
+                bill_text = live_obs.get("pageText") or live_obs.get("visibleTextExcerpt")
+                if not req.sourceTabUrl:
+                    req.sourceTabUrl = live_obs.get("url")
+        except Exception:
+            pass
+
     if not bill_text:
         if is_fixture:
             fixture_file = FIXTURES_DIR / "utility_bill.html"
@@ -138,7 +149,22 @@ async def execute_browser_to_desktop(req: BrowserToDesktopRequest) -> Dict[str, 
                 "error": "Missing browser observation. Real workflow requires an active observation from an authorized browser tab.",
             }
 
-    # Validate target window handle for real execution
+    # Validate target window handle for real execution; discover open Notepad or launch if needed
+    if not is_fixture and (req.targetHwnd is None or req.targetHwnd <= 0):
+        try:
+            from sahaay_core.adapters.windows.adapter import WindowsNativeAdapter
+
+            win_adapter = WindowsNativeAdapter(allow_simulation=False)
+            for win in win_adapter.list_open_windows():
+                if "notepad" in win.get("processName", "").lower() and win.get("hwnd", 0) > 0:
+                    req.targetHwnd = win["hwnd"]
+                    break
+            if not req.targetHwnd or req.targetHwnd <= 0:
+                launch_res = win_adapter.launch_application("notepad.exe")
+                req.targetHwnd = launch_res.get("hwnd", 0)
+        except Exception:
+            pass
+
     if not is_fixture and (req.targetHwnd is None or req.targetHwnd <= 0):
         orchestrator.transition_state(task_id, TaskStatusEnum.FAILED)
         return {

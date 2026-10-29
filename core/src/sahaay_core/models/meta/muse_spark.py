@@ -10,6 +10,7 @@ import json
 import logging
 import re
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple
 from uuid import uuid4
 
@@ -757,10 +758,9 @@ class MuseSparkClient:
         )
 
         # 2. Internet Research & Local Comparison
-        is_research_and_compare = (
-            any(w in goal_lower for w in ["research", "compare", "conflict"])
-            and any(w in goal_lower for w in ["deadline", "notes", "date"])
-        )
+        is_research_and_compare = any(
+            w in goal_lower for w in ["research", "compare", "conflict"]
+        ) and any(w in goal_lower for w in ["deadline", "notes", "date"])
 
         # 3. Local Report Finding Summarization
         is_local_report = (
@@ -770,10 +770,9 @@ class MuseSparkClient:
         )
 
         # 4. Electricity Bill to Notepad Workflow
-        is_bill_to_notepad = (
-            any(w in goal_lower for w in ["bill", "electricity", "utility"])
-            and any(w in goal_lower for w in ["notepad", "summary", "extract"])
-        )
+        is_bill_to_notepad = any(
+            w in goal_lower for w in ["bill", "electricity", "utility"]
+        ) and any(w in goal_lower for w in ["notepad", "summary", "extract"])
 
         # 5. Browser Webpage to Desktop Transfer
         is_browser_to_desktop = (
@@ -783,9 +782,8 @@ class MuseSparkClient:
         )
 
         # 6. Desktop Document to Browser Form Fill
-        is_desktop_to_browser = (
-            any(w in goal_lower for w in ["form", "fill", "populate"])
-            and any(w in goal_lower for w in ["browser", "web", "utility web"])
+        is_desktop_to_browser = any(w in goal_lower for w in ["form", "fill", "populate"]) and any(
+            w in goal_lower for w in ["browser", "web", "utility web"]
         )
 
         if is_calculator:
@@ -812,7 +810,7 @@ class MuseSparkClient:
                     target_surface="desktop_window",
                     target_scope="Calculator",
                     dependencies=["step-calc-1"],
-                    parameters={"hwnd": 1002},
+                    parameters={"hwnd": 0},
                     preconditions=["Calculator is running"],
                     expected_postconditions=["Accessible controls discovered"],
                     requires_human_approval=False,
@@ -826,7 +824,7 @@ class MuseSparkClient:
                     target_surface="desktop_window",
                     target_scope="Calculator",
                     dependencies=["step-calc-2"],
-                    parameters={"hwnd": 1002, "targetId": "CalculatorResults", "text": "3000"},
+                    parameters={"hwnd": 0, "targetId": "CalculatorResults", "text": "3000"},
                     preconditions=["Calculator control identified"],
                     expected_postconditions=["Calculation outcome populated"],
                     requires_human_approval=False,
@@ -840,7 +838,12 @@ class MuseSparkClient:
                     target_surface="desktop_window",
                     target_scope="Calculator",
                     dependencies=["step-calc-3"],
-                    parameters={"target": "windows", "hwnd": 1002, "targetId": "CalculatorResults", "expectedText": "3000"},
+                    parameters={
+                        "target": "windows",
+                        "hwnd": 0,
+                        "targetId": "CalculatorResults",
+                        "expectedText": "3000",
+                    },
                     preconditions=["Calculation executed"],
                     expected_postconditions=["Value 3000 confirmed by readback"],
                     requires_human_approval=False,
@@ -898,7 +901,10 @@ class MuseSparkClient:
                     target_surface="local_store",
                     target_scope="retrieved_facts",
                     dependencies=["step-res-3"],
-                    parameters={"target": "retrieved_facts", "expectedFacts": {"source_verified": True}},
+                    parameters={
+                        "target": "retrieved_facts",
+                        "expectedFacts": {"source_verified": True},
+                    },
                     preconditions=["Research facts and local facts available"],
                     expected_postconditions=["Evidence recorded without machine mutation"],
                     requires_human_approval=False,
@@ -916,7 +922,9 @@ class MuseSparkClient:
                     target_scope="project_report.txt",
                     parameters={"filePath": "data/fixtures/project_report.txt"},
                     preconditions=["Report file exists in permitted directory"],
-                    expected_postconditions=["Report chunks and SHA-256 registered in source manager"],
+                    expected_postconditions=[
+                        "Report chunks and SHA-256 registered in source manager"
+                    ],
                     requires_human_approval=False,
                 ),
                 PlanStepProposal(
@@ -942,13 +950,21 @@ class MuseSparkClient:
                     target_surface="local_store",
                     target_scope="retrieved_facts",
                     dependencies=["step-rep-2"],
-                    parameters={"target": "retrieved_facts", "expectedFacts": {"findings_cited": True}},
+                    parameters={
+                        "target": "retrieved_facts",
+                        "expectedFacts": {"findings_cited": True},
+                    },
                     preconditions=["Findings retrieved"],
                     expected_postconditions=["Cryptographic evidence recorded in SQLite ledger"],
                     requires_human_approval=False,
                 ),
             ]
         elif is_bill_to_notepad:
+            bill_file_path = (
+                "data/fixtures/electricity_bill.txt"
+                if Path("data/fixtures/electricity_bill.txt").exists()
+                else "data/fixtures/utility_bill.html"
+            )
             steps = [
                 PlanStepProposal(
                     step_id="step-bill-1",
@@ -958,7 +974,7 @@ class MuseSparkClient:
                     action_type=ActionTypeEnum.READ_FILE.value,
                     target_surface="local_store",
                     target_scope="utility_bill",
-                    parameters={"filePath": "data/fixtures/utility_bill.html"},
+                    parameters={"filePath": bill_file_path},
                     preconditions=["Authorized utility bill document exists"],
                     expected_postconditions=["Bill ingested with verified checksum"],
                     requires_human_approval=False,
@@ -1014,7 +1030,12 @@ class MuseSparkClient:
                     target_surface="desktop_window",
                     target_scope="Notepad",
                     dependencies=["step-bill-4"],
-                    parameters={"target": "windows", "hwnd": 0, "targetId": "Edit", "expectedText": "{{due_date}}"},
+                    parameters={
+                        "target": "windows",
+                        "hwnd": 0,
+                        "targetId": "Edit",
+                        "expectedText": "{{due_date}}",
+                    },
                     preconditions=["Write completed"],
                     expected_postconditions=["Notepad content verified by independent readback"],
                     requires_human_approval=False,
@@ -1072,7 +1093,12 @@ class MuseSparkClient:
                     target_surface="desktop_window",
                     target_scope="Notepad",
                     dependencies=["step-b2d-3"],
-                    parameters={"target": "windows", "hwnd": 0, "targetId": "Edit", "expectedText": "{{deadline}}"},
+                    parameters={
+                        "target": "windows",
+                        "hwnd": 0,
+                        "targetId": "Edit",
+                        "expectedText": "{{deadline}}",
+                    },
                     preconditions=["Desktop write operation completed"],
                     expected_postconditions=["Observed text equals expected deadline"],
                     requires_human_approval=False,
@@ -1102,7 +1128,10 @@ class MuseSparkClient:
                     target_surface="browser_tab",
                     target_scope="bill_pay_form.html",
                     dependencies=["step-d2b-1"],
-                    parameters={"auto_submit": False, "fields": {"accountNumber": "BLR-UTIL-98421"}},
+                    parameters={
+                        "auto_submit": False,
+                        "fields": {"accountNumber": "BLR-UTIL-98421"},
+                    },
                     preconditions=["Browser tab has matching input elements"],
                     expected_postconditions=["Input elements populated with invoice values"],
                     requires_human_approval=False,
@@ -1130,7 +1159,10 @@ class MuseSparkClient:
                     target_surface="browser_tab",
                     target_scope="bill_pay_form.html",
                     dependencies=["step-d2b-3"],
-                    parameters={"target": "browser", "expectedFacts": {"accountNumber": "BLR-UTIL-98421"}},
+                    parameters={
+                        "target": "browser",
+                        "expectedFacts": {"accountNumber": "BLR-UTIL-98421"},
+                    },
                     preconditions=["DOM readback available"],
                     expected_postconditions=["Verification result recorded in Evidence Ledger"],
                     requires_human_approval=False,

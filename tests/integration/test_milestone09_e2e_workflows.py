@@ -204,7 +204,9 @@ async def test_workflow_c_compound_dag_fact_propagation(e2e_environment):
     """Workflow C: DAG executes in dependency order, propagates preceding outputs, and stops on failure."""
     env = e2e_environment
     bill_file = env["tmp_path"] / "electricity_bill.txt"
-    bill_file.write_text("BESCOM Bill Account: 987654321 Amount: 1450.50 DueDate: 2026-11-15", encoding="utf-8")
+    bill_file.write_text(
+        "BESCOM Bill Account: 987654321 Amount: 1450.50 DueDate: 2026-11-15", encoding="utf-8"
+    )
 
     task = TaskContract(
         taskId=uuid4(),

@@ -103,7 +103,10 @@ class ActionGate:
             )
 
         # 1b. If task is declared retrieval_only, deny physical computer and browser actions
-        if task_type == "retrieval_only" and action.actionType not in RETRIEVAL_ONLY_PERMITTED_ACTIONS:
+        if (
+            task_type == "retrieval_only"
+            and action.actionType not in RETRIEVAL_ONLY_PERMITTED_ACTIONS
+        ):
             return PolicyDecision(
                 decisionId=uuid4(),
                 actionId=action.actionId,

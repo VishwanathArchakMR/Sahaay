@@ -297,7 +297,10 @@ async def test_workflow_g_failure_halts_downstream_and_prevents_false_success(m1
     assert report.completed_steps_count == 0
     assert "step-fail-1" in report.step_results
     assert report.step_results["step-fail-1"]["success"] is False
-    assert "step-fail-2" not in report.step_results or report.step_results["step-fail-2"]["success"] is False
+    assert (
+        "step-fail-2" not in report.step_results
+        or report.step_results["step-fail-2"]["success"] is False
+    )
 
     # Stored task reflects failure
     stored_task = durable_storage.get_task(task.taskId)

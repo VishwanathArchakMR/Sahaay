@@ -40,15 +40,12 @@ class WindowsUIAutomationGrounder:
 class CoordinateBBoxGrounder:
     """Evaluates visual coordinate grounding against target bounding boxes with geometric hit-testing."""
 
-    def is_point_in_rect(
-        self, point: Tuple[float, float], rect: Dict[str, float]
-    ) -> bool:
+    def is_point_in_rect(self, point: Tuple[float, float], rect: Dict[str, float]) -> bool:
         """Check if 2D coordinate falls strictly within a bounding rectangle."""
         x, y = point
-        return (
-            rect.get("left", 0) <= x <= rect.get("right", 0)
-            and rect.get("top", 0) <= y <= rect.get("bottom", 0)
-        )
+        return rect.get("left", 0) <= x <= rect.get("right", 0) and rect.get(
+            "top", 0
+        ) <= y <= rect.get("bottom", 0)
 
     def resolve_control(
         self,
@@ -95,7 +92,9 @@ class CoordinateBBoxGrounder:
             "actualBoundingRect": {k: round(v, 1) for k, v in actual_rect.items()},
             "dpiScale": dpi_scale,
             "windowOffset": window_offset,
-            "error": None if hit else "Coordinate miss: predicted point falls outside shifted/scaled bounding box",
+            "error": None
+            if hit
+            else "Coordinate miss: predicted point falls outside shifted/scaled bounding box",
         }
 
 
@@ -161,7 +160,7 @@ class DesktopEvaluator:
 
             # 50% of tasks simulate repositioned window (user dragged window or DPI scaled to 125%)
             task_idx = int(task_id.split("_")[-1]) if "_" in task_id else 0
-            is_repositioned = (task_idx % 2 == 1)
+            is_repositioned = task_idx % 2 == 1
             dpi = 1.25 if is_repositioned else 1.0
             offset = (150, 80) if is_repositioned else (0, 0)
 
@@ -175,13 +174,15 @@ class DesktopEvaluator:
                 coord_correct += 1
                 category_breakdown[cat]["coord_correct"] += 1
 
-            per_task_results.append({
-                "taskId": task_id,
-                "category": cat,
-                "uiAutomationMatched": res_uia.get("matched"),
-                "coordinateMatched": res_coord.get("matched"),
-                "coordinateDetails": res_coord,
-            })
+            per_task_results.append(
+                {
+                    "taskId": task_id,
+                    "category": cat,
+                    "uiAutomationMatched": res_uia.get("matched"),
+                    "coordinateMatched": res_coord.get("matched"),
+                    "coordinateDetails": res_coord,
+                }
+            )
 
         elapsed_ms = (time.perf_counter() - start_time) * 1000
 
@@ -216,7 +217,11 @@ class DesktopEvaluator:
         if shutil.which("nvidia-smi"):
             try:
                 proc = subprocess.run(
-                    ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
+                    [
+                        "nvidia-smi",
+                        "--query-gpu=name,memory.total",
+                        "--format=csv,noheader,nounits",
+                    ],
                     capture_output=True,
                     text=True,
                     timeout=5,
@@ -235,7 +240,8 @@ class DesktopEvaluator:
         system_ram_gb = 16.0
         try:
             import psutil
-            system_ram_gb = round(psutil.virtual_memory().total / (1024.0 ** 3), 1)
+
+            system_ram_gb = round(psutil.virtual_memory().total / (1024.0**3), 1)
         except Exception:
             pass
 
@@ -261,7 +267,11 @@ class DesktopEvaluator:
                 "feasibleOnLocalRtx3050": measured_vram >= 5.8,
                 "reason": (
                     f"Measured VRAM: {measured_vram} GB. "
-                    + ("Sufficient VRAM." if measured_vram >= 5.8 else "Exceeds available VRAM even with 4-bit quantization (requires >= 5.8 GB VRAM).")
+                    + (
+                        "Sufficient VRAM."
+                        if measured_vram >= 5.8
+                        else "Exceeds available VRAM even with 4-bit quantization (requires >= 5.8 GB VRAM)."
+                    )
                 ),
             },
             {
@@ -273,7 +283,11 @@ class DesktopEvaluator:
                 "feasibleOnLocalRtx3050": measured_vram >= 5.5,
                 "reason": (
                     f"Measured VRAM: {measured_vram} GB. "
-                    + ("Sufficient VRAM." if measured_vram >= 5.5 else "Exceeds available VRAM; triggers CUDA Out Of Memory or heavy CPU offloading latency.")
+                    + (
+                        "Sufficient VRAM."
+                        if measured_vram >= 5.5
+                        else "Exceeds available VRAM; triggers CUDA Out Of Memory or heavy CPU offloading latency."
+                    )
                 ),
             },
             {

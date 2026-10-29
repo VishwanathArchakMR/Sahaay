@@ -58,7 +58,23 @@ class SemanticElementSelector:
         if not text:
             return set()
         words = re.findall(r"[a-z0-9]+", str(text).lower())
-        stopwords = {"the", "a", "an", "to", "in", "for", "on", "of", "and", "or", "by", "from", "with", "is", "at"}
+        stopwords = {
+            "the",
+            "a",
+            "an",
+            "to",
+            "in",
+            "for",
+            "on",
+            "of",
+            "and",
+            "or",
+            "by",
+            "from",
+            "with",
+            "is",
+            "at",
+        }
         return {w for w in words if w not in stopwords}
 
     def _token_jaccard_similarity(self, set_a: set[str], set_b: set[str]) -> float:
@@ -171,11 +187,18 @@ class SemanticElementSelector:
             if margin <= ambiguity_margin:
                 scored[0].is_ambiguous = True
                 scored[0].confidence_margin = margin
-                scored[0].competing_candidate_ids = [s.element_id for s in scored[1:] if (scored[0].score - s.score) <= ambiguity_margin]
+                scored[0].competing_candidate_ids = [
+                    s.element_id
+                    for s in scored[1:]
+                    if (scored[0].score - s.score) <= ambiguity_margin
+                ]
                 if abstain_on_ambiguity:
                     logger.info(
                         "Abstaining from target selection due to ambiguity: top candidate '%s' (score %.2f) vs '%s' (score %.2f)",
-                        scored[0].element_id, scored[0].score, scored[1].element_id, scored[1].score
+                        scored[0].element_id,
+                        scored[0].score,
+                        scored[1].element_id,
+                        scored[1].score,
                     )
                     return None
 
@@ -196,13 +219,17 @@ class SemanticElementSelector:
             if margin <= ambiguity_margin:
                 scored[0].is_ambiguous = True
                 scored[0].confidence_margin = margin
-                scored[0].competing_candidate_ids = [s.element_id for s in scored[1:] if (scored[0].score - s.score) <= ambiguity_margin]
+                scored[0].competing_candidate_ids = [
+                    s.element_id
+                    for s in scored[1:]
+                    if (scored[0].score - s.score) <= ambiguity_margin
+                ]
         return scored
 
 
 class FewShotActionRetriever:
     """Bounded in-memory retriever for relevant browser action demonstrations.
-    
+
     Provides sanitized examples to the planner without unverified live web scraping.
     """
 
@@ -227,12 +254,14 @@ class FewShotActionRetriever:
         results = []
         for task, sim in scored[:top_k]:
             if sim > 0.10:  # Only include if there is meaningful overlap
-                results.append({
-                    "intent": task.get("userIntent"),
-                    "recommendedAction": task.get("groundTruthAction"),
-                    "targetRole": task.get("expectedRole"),
-                    "similarity": round(sim, 3),
-                })
+                results.append(
+                    {
+                        "intent": task.get("userIntent"),
+                        "recommendedAction": task.get("groundTruthAction"),
+                        "targetRole": task.get("expectedRole"),
+                        "similarity": round(sim, 3),
+                    }
+                )
         return results
 
     def format_examples_for_planner(self, intent: str, top_k: int = 2) -> Optional[str]:

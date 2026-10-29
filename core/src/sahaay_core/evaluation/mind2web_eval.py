@@ -113,7 +113,9 @@ class Mind2WebEvaluator:
             for t in tasks:
                 examples = few_shot_retriever.retrieve_relevant_examples(t["userIntent"], top_k=2)
                 # Check if retrieved pattern matched expected action
-                if any(ex.get("recommendedAction") == t.get("groundTruthAction") for ex in examples):
+                if any(
+                    ex.get("recommendedAction") == t.get("groundTruthAction") for ex in examples
+                ):
                     retrieval_hits += 1
 
         baseline_acc = (baseline_correct / total_tasks) * 100 if total_tasks else 0.0
@@ -126,13 +128,17 @@ class Mind2WebEvaluator:
                 "correctCount": baseline_correct,
                 "accuracyPercent": round(baseline_acc, 2),
                 "totalTimeMs": round(baseline_time_ms, 2),
-                "avgLatencyMsPerTask": round(baseline_time_ms / total_tasks, 4) if total_tasks else 0.0,
+                "avgLatencyMsPerTask": round(baseline_time_ms / total_tasks, 4)
+                if total_tasks
+                else 0.0,
             },
             "semanticSelector": {
                 "correctCount": semantic_correct,
                 "accuracyPercent": round(semantic_acc, 2),
                 "totalTimeMs": round(semantic_time_ms, 2),
-                "avgLatencyMsPerTask": round(semantic_time_ms / total_tasks, 4) if total_tasks else 0.0,
+                "avgLatencyMsPerTask": round(semantic_time_ms / total_tasks, 4)
+                if total_tasks
+                else 0.0,
                 "accuracyGainPercent": round(semantic_acc - baseline_acc, 2),
                 "domainBreakdown": domain_breakdown,
             },

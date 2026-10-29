@@ -639,7 +639,10 @@ class CapabilityRegistry:
                         "target": {"type": "string"},
                     },
                 },
-                preconditions=["Active browser tab loaded", "Target element is visible and interactive"],
+                preconditions=[
+                    "Active browser tab loaded",
+                    "Target element is visible and interactive",
+                ],
                 required_permission_scopes=["action:browser_tab"],
                 risk_category=RiskCategory.MEDIUM,
                 requires_human_confirmation=False,

@@ -148,7 +148,9 @@ async def get_models_status() -> Dict[str, Any]:
             "hostedModelsPermitted": settings.hosted_models_permitted,
         },
         "systemIntegrations": {
-            "browserExtension": "ATTACHED" if is_ext_attached else ("HOST_WAITING" if is_native_host_up else "DISCONNECTED"),
+            "browserExtension": "ATTACHED"
+            if is_ext_attached
+            else ("HOST_WAITING" if is_native_host_up else "DISCONNECTED"),
             "nativeMessaging": "CONNECTED" if is_native_host_up else "DISCONNECTED",
             "windowsCompanion": "CONNECTED" if is_companion_up else "DISCONNECTED",
             "sqliteLedger": "READY",

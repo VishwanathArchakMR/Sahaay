@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Windows.Automation;
 using Sahaay.Contracts;
 
@@ -9,6 +11,19 @@ public static class UiAutomationInspector
 {
     private const int MaxElements = 80;
     private const int MaxDepth = 4;
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    private static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, string lParam);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    private static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, StringBuilder lParam);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    private static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+    private const uint WM_SETTEXT = 0x000C;
+    private const uint WM_GETTEXT = 0x000D;
+    private const uint WM_GETTEXTLENGTH = 0x000E;
 
     public static List<UiElementDescriptor> InspectWindow(long hwnd)
     {
@@ -130,8 +145,22 @@ public static class UiAutomationInspector
 
             if (target.TryGetCurrentPattern(ValuePattern.Pattern, out object? patternObj) && patternObj is ValuePattern valPattern)
             {
-                valPattern.SetValue(text);
-                return (true, valPattern.Current.Value, null);
+                try
+                {
+                    valPattern.SetValue(text);
+                    return (true, valPattern.Current.Value, null);
+                }
+                catch
+                {
+                    // Fall through to NativeWindowHandle
+                }
+            }
+
+            int nativeHandle = target.Current.NativeWindowHandle;
+            if (nativeHandle != 0)
+            {
+                SendMessage(new IntPtr(nativeHandle), WM_SETTEXT, IntPtr.Zero, text);
+                return (true, text, null);
             }
 
             target.SetFocus();
@@ -178,7 +207,32 @@ public static class UiAutomationInspector
 
             if (target.TryGetCurrentPattern(ValuePattern.Pattern, out object? patternObj) && patternObj is ValuePattern valPattern)
             {
-                return (true, valPattern.Current.Value, null);
+                string val = valPattern.Current.Value;
+                if (!string.IsNullOrEmpty(val))
+                {
+                    return (true, val, null);
+                }
+            }
+
+            if (target.TryGetCurrentPattern(TextPattern.Pattern, out object? textObj) && textObj is TextPattern textPattern)
+            {
+                string docText = textPattern.DocumentRange.GetText(-1);
+                if (!string.IsNullOrEmpty(docText))
+                {
+                    return (true, docText, null);
+                }
+            }
+
+            int nativeHandle = target.Current.NativeWindowHandle;
+            if (nativeHandle != 0)
+            {
+                int len = (int)SendMessage(new IntPtr(nativeHandle), WM_GETTEXTLENGTH, IntPtr.Zero, IntPtr.Zero);
+                if (len > 0)
+                {
+                    var sb = new StringBuilder(len + 1);
+                    SendMessage(new IntPtr(nativeHandle), WM_GETTEXT, new IntPtr(len + 1), sb);
+                    return (true, sb.ToString(), null);
+                }
             }
 
             return (true, target.Current.Name ?? string.Empty, null);

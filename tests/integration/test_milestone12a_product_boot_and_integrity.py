@@ -181,7 +181,12 @@ def test_condition_f_disconnected_browser_blocks_existing_tab_action(m12a_sessio
     assert res_obs.status_code in (200, 404)
     if res_obs.status_code == 200:
         obs_data = res_obs.json()
-        assert obs_data["status"] in ("NO_ACTIVE_OBSERVATION", "MOCK_FALLBACK", "DISCONNECTED", "NO_ACTIVE_TAB")
+        assert obs_data["status"] in (
+            "NO_ACTIVE_OBSERVATION",
+            "MOCK_FALLBACK",
+            "DISCONNECTED",
+            "NO_ACTIVE_TAB",
+        )
 
 
 def test_condition_g_cancellation_invariant(m12a_session):
@@ -235,7 +240,10 @@ def test_condition_h_failure_postcondition_cannot_be_overridden_by_model():
         observed_postcondition_data={"text": "Submitted"},
         is_model_self_attestation=True,
     )
-    assert self_attested.status in (VerificationStatusEnum.FAILED, VerificationStatusEnum.UNVERIFIED)
+    assert self_attested.status in (
+        VerificationStatusEnum.FAILED,
+        VerificationStatusEnum.UNVERIFIED,
+    )
     assert self_attested.status != VerificationStatusEnum.VERIFIED
     assert "rejected" in self_attested.details.lower()
 

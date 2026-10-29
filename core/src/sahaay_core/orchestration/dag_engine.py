@@ -179,6 +179,27 @@ class TaskDagEngine:
                 resolved[k] = resolved_val
             else:
                 resolved[k] = v
+
+        # Dynamically propagate discovered HWND if current step has hwnd <= 0 or missing,
+        # but a prior step discovered a valid HWND (e.g. from launch_app or inspect_window)
+        if "hwnd" in resolved:
+            try:
+                curr_hwnd = int(resolved["hwnd"])
+            except (ValueError, TypeError):
+                curr_hwnd = 0
+            if curr_hwnd <= 0 and "hwnd" in accumulated_facts:
+                try:
+                    resolved["hwnd"] = int(accumulated_facts["hwnd"])
+                except (ValueError, TypeError):
+                    pass
+            elif curr_hwnd > 0:
+                resolved["hwnd"] = curr_hwnd
+        elif "hwnd" in accumulated_facts:
+            try:
+                resolved["hwnd"] = int(accumulated_facts["hwnd"])
+            except (ValueError, TypeError):
+                pass
+
         return resolved
 
     async def execute_dag(
@@ -341,7 +362,11 @@ class TaskDagEngine:
                         or exec_data.get("extractedText")
                         or exec_data.get("text")
                     )
-                    if text_to_extract and isinstance(text_to_extract, str) and len(text_to_extract.strip()) > 10:
+                    if (
+                        text_to_extract
+                        and isinstance(text_to_extract, str)
+                        and len(text_to_extract.strip()) > 10
+                    ):
                         try:
                             from sahaay_core.models.meta.muse_spark import muse_spark
 
@@ -357,22 +382,30 @@ class TaskDagEngine:
                             logger.debug("Fact extraction skipped on step %s: %s", node.step_id, ex)
 
                     # Dynamic helper summaries for composite workflows
-                    deadline_val = accumulated_facts.get("deadline") or accumulated_facts.get("due_date")
+                    deadline_val = accumulated_facts.get("deadline") or accumulated_facts.get(
+                        "due_date"
+                    )
                     url_val = (
                         accumulated_facts.get("url")
                         or exec_data.get("url")
                         or accumulated_facts.get("source_url")
                     )
                     if deadline_val:
-                        summary = f"Deadline: {deadline_val}" + (f" (Source: {url_val})" if url_val else "")
+                        summary = f"Deadline: {deadline_val}" + (
+                            f" (Source: {url_val})" if url_val else ""
+                        )
                         accumulated_facts["deadline_summary"] = summary
                         accumulated_facts[f"{node.step_id}_deadline_summary"] = summary
                         accumulated_facts[f"{node.step_id}.deadline_summary"] = summary
 
                     amt = accumulated_facts.get("amount_due") or accumulated_facts.get("amount")
                     dt = accumulated_facts.get("due_date") or accumulated_facts.get("deadline")
-                    cust = accumulated_facts.get("consumer_name") or accumulated_facts.get("customer")
-                    acct = accumulated_facts.get("account_number") or accumulated_facts.get("account")
+                    cust = accumulated_facts.get("consumer_name") or accumulated_facts.get(
+                        "customer"
+                    )
+                    acct = accumulated_facts.get("account_number") or accumulated_facts.get(
+                        "account"
+                    )
                     if amt or dt:
                         bill_parts = []
                         if cust:
@@ -389,7 +422,9 @@ class TaskDagEngine:
                         accumulated_facts[f"{node.step_id}.bill_summary"] = bill_sum
 
                 # 5. Independent Verification
-                driver_prov = exec_data.get("driverProvenance") if isinstance(exec_data, dict) else None
+                driver_prov = (
+                    exec_data.get("driverProvenance") if isinstance(exec_data, dict) else None
+                )
                 exec_result = ExecutionResult(
                     executionId=uuid4(),
                     actionId=action_contract.actionId,
@@ -407,7 +442,10 @@ class TaskDagEngine:
                 )
                 node.verification_status = verification.status
 
-                if verification.status in (VerificationStatusEnum.FAILED, VerificationStatusEnum.CONFLICT):
+                if verification.status in (
+                    VerificationStatusEnum.FAILED,
+                    VerificationStatusEnum.CONFLICT,
+                ):
                     node.status = TaskStatusEnum.FAILED
                     err_msg = f"Step '{node.step_id}' verification failed: {verification.details}"
                     node.error = err_msg

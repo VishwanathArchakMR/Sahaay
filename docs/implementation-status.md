@@ -8,7 +8,7 @@ This document tracks the verified status of all architectural components across 
 
 ---
 
-## Component Status Matrix (Milestone 12A — Product Boot, Runtime Integrity, and First Real User Experience)
+## Component Status Matrix (Milestone 12B — Real Browser + Windows Execution and Cross-Surface Verification)
 
 | Component / Subsystem | State | Evidence / Automated Test Command | Notes |
 | :--- | :--- | :--- | :--- |
@@ -41,7 +41,7 @@ This document tracks the verified status of all architectural components across 
 | **.NET Companion Unit Tests** | `TESTED` | `dotnet test apps/windows-companion/Sahaay.sln` | 12 xUnit tests verifying framing, allowlist, Named Pipe dispatch, SetControlText/GetControlText validation, and manifest inspection |
 | **Native Messaging Host (Sahaay.NativeHost)** | `TESTED` | `dotnet test` + `tests/desktop/test_native_host_contracts.py` | 4-byte stdio framing, dual-scheme origin validation (`chrome-extension://` and `extension://`), forwarder to Named Pipe |
 | **Native Host Registration Scripts** | `TESTED` | `register-native-host.ps1` & `install-browser-native-host.ps1` | User-level HKCU registration for Google Chrome and Microsoft Edge with manifest validation and unpacked extension ID auto-detection |
-| **Windows UI Automation Inspector & Text Control** | `TESTED` | `pytest tests/unit/test_windows_endpoints.py` | Discovers open windows via Win32 `EnumWindows`, inspects UI elements, sets/reads control text |
+| **Windows UI Automation Inspector & Text Control** | `TESTED` | `pytest tests/unit/test_windows_endpoints.py` | Discovers open windows via Win32 `EnumWindows`, inspects UI elements, sets/reads control text with ValuePattern, TextPattern, and WM_SETTEXT/WM_GETTEXT fallbacks |
 | **Windows Named Pipe IPC Bridge** | `TESTED` | `pytest tests/unit/test_windows_endpoints.py` | Authenticated `\\.\pipe\SahaayControllerPipe` client supporting inspection, text operations, and master audio control |
 | **Meta Model Provider Foundation** | `TESTED` | `pytest tests/unit/test_meta_models.py` | `MetaClient` async client for `https://api.meta.ai/v1`, bearer redaction, bounded retries, connectivity check |
 | **Muse Spark (Semantic Reasoning & Planning)** | `TESTED` | `pytest tests/unit/test_meta_models.py` | Indic language detection (Kannada, Hindi, code-switched), grounded fact extraction, conflict detection, structured plan proposals |
@@ -49,7 +49,7 @@ This document tracks the verified status of all architectural components across 
 | **Muse Voice Transcribe Pipeline** | `TESTED` | `pytest tests/unit/test_meta_models.py` | Speech-to-text pipeline with language context biasing and mandatory editable confirmation dialog |
 | **SAM 3.1 Visual Grounding Adapter** | `TESTED` | `pytest tests/unit/test_meta_models.py` | Visual element grounding mapping target prompts to bounding boxes, center coordinates, and observation versions |
 | **Meta Muse Spark 1.3 Planner (`MuseSparkClient`)** | `TESTED` | `pytest tests/unit/test_meta_muse_spark.py` | Primary hosted task reasoning and structured planning via `https://api.meta.ai/v1`, validated against Capability Registry |
-| **Central Capability Registry** | `TESTED` | `pytest tests/unit/test_capability_registry.py` | 12 registered capabilities with typed descriptors, risk classifications, readiness state, and plan step validator |
+| **Central Capability Registry** | `TESTED` | `pytest tests/unit/test_capability_registry.py` | 14 registered capabilities with typed descriptors, risk classifications, readiness state, and plan step validator |
 | **Durable State Persistence Engine (`DurableStorage`)** | `TESTED` | `pytest tests/unit/test_persistence_durable.py` | SQLite WAL durable persistence across application restarts for sessions, tasks, sources, facts, evidence, and passports |
 | **Internet Research Subsystem** | `TESTED` | `pytest tests/unit/test_internet_research.py` | Safe SSRF-protected webpage fetcher, metasearch adapter, citation normalization, and conflict detection |
 | **No False-Success Invariant** | `TESTED` | `pytest tests/unit/test_no_false_success.py` | Enforces non-zero window handles, live browser observations, driver readbacks, 404 for unknown passports, no auto-wildcard grants |
@@ -63,16 +63,20 @@ This document tracks the verified status of all architectural components across 
 | **Runtime Supervisor** | `TESTED` | `apps/desktop/src/main/supervisor.ts` | Supervised management of FastAPI core and Sahaay.Controller interactive daemon in Session 1 desktop; health polling, auto-recovery, and process tree termination |
 | **Strict Driver Provenance Enforcement** | `TESTED` | `pytest tests/integration/test_milestone10_reliability_and_provenance.py` | Enforces provenance tag (`real_native_driver`, `real_browser_extension`, `owned_playwright_context`, `test_fixture`, `mock`, `offline_simulation`). Offline simulation strictly prohibited from yielding `VERIFIED` |
 | **Intelligent Goal Decomposition & Adaptive DAG Engine** | `TESTED` | `pytest tests/integration/test_milestone11_intelligent_task_completion.py` | Decomposes compound goals into typed dependencies, dynamically extracts grounded facts (dates, amounts, URLs, findings), and propagates parameters across steps |
-| **Verified Acceptance Workflows (A through G)** | `TESTED` | `pytest tests/integration/test_milestone11_intelligent_task_completion.py` | Local research, browser-to-desktop, bill extraction to Notepad, web vs local research comparison, Calculator action, Voice-to-Task pipeline, and prerequisite failure halts |
+| **Dynamic HWND Resolution & Parameter Propagation** | `TESTED` | `pytest tests/integration/test_milestone12b_real_cross_surface_execution.py` | Dynamically discovers open and launched application HWNDs and propagates them across dependent DAG steps, eliminating hardcoded window handles |
+| **Live Browser Tab → Notepad Cross-Surface Workflow** | `TESTED` | `pytest tests/integration/test_milestone12b_real_cross_surface_execution.py` | Real browser tab observation, deadline and URL extraction, dynamic Notepad discovery/launch, control write, readback verification, and SQLite evidence recording |
+| **Local Document → Notepad Cross-Surface Workflow** | `TESTED` | `pytest tests/integration/test_milestone12b_real_cross_surface_execution.py` | Local electricity bill document ingestion, amount and due date extraction, Notepad launch, summary text population, readback verification, and Task Passport updates |
+| **Calculator Native Execution & Readback Workflow** | `TESTED` | `pytest tests/integration/test_milestone12b_real_cross_surface_execution.py` | Launches Calculator without hardcoded handles, performs math expression, reads back display result (3000), and independently verifies postcondition |
 | **Supervised Unified Launcher (`start-sahaay.ps1`)** | `TESTED` | `.\scripts\start-sahaay.ps1 -DiagnosticsOnly` | Unified launcher with `-DiagnosticsOnly`, `-Mode Headless`, and `-Mode Desktop`; validates venv, .NET build, HKCU registry keys, and UI bundles with actionable repair instructions |
 | **Real-Time Runtime Diagnostics Drawer** | `TESTED` | `npm run build` in `apps/desktop` & `pytest tests/integration/test_milestone12a_product_boot_and_integrity.py` | Replaces models-only drawer with full system integrity center: live health badges, PID readouts, named pipe probe, browser extension status, copyable corrective commands |
 | **Product Boot & Runtime Integrity Suite** | `TESTED` | `pytest tests/integration/test_milestone12a_product_boot_and_integrity.py` | 9 automated integration tests validating truthful diagnostics, backend lifespan, SQLite restart persistence, credential-free local-only mode, driver disconnect blocks, cancellation, verifier policy, and e2e local retrieval |
+| **Milestone 12B Cross-Surface Execution Suite** | `TESTED` | `pytest tests/integration/test_milestone12b_real_cross_surface_execution.py` | 11 automated integration tests validating Browser->Notepad, Document->Notepad, Calculator, fail-closed disconnected states, cancellation, prompt-injection defense, and evidence restart persistence |
 
 ---
 
 ## Operational Verification Summary
 
-- **Total Python Automated Tests**: 153 passed (100% passing across unit, security, privacy, models, workflows, persistence, storytelling, milestone 09/10/11 suites, and milestone 12A boot & integrity suite).
+- **Total Python Automated Tests**: 164 passed (100% passing across unit, security, privacy, models, workflows, persistence, storytelling, milestone 09/10/11/12A suites, and milestone 12B cross-surface execution suite).
 - **Total .NET xUnit Tests**: 12 passed (100% passing in native companion solution).
 - **Browser Extension**: Compiles cleanly with TypeScript (`tsc --noEmit` and Vite build).
 - **Desktop Electron App**: Compiles cleanly with TypeScript (`tsc --noEmit && tsc -p tsconfig.main.json --noEmit` and Vite build).

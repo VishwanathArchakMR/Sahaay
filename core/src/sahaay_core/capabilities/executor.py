@@ -74,6 +74,30 @@ class CapabilityExecutor:
             # 1. Windows Native Capabilities
             if capability_id == "windows_launch_app":
                 app_name = parameters.get("application") or parameters.get("appName") or ""
+                target_proc = (
+                    "notepad"
+                    if "notepad" in app_name.lower()
+                    else ("calc" if "calc" in app_name.lower() else "")
+                )
+                if target_proc:
+                    try:
+                        open_wins = self.windows_adapter.list_open_windows()
+                        for win in open_wins:
+                            p_name = win.get("processName", "").lower()
+                            if target_proc in p_name and win.get("hwnd", 0) > 0:
+                                return {
+                                    "success": True,
+                                    "isLaunched": True,
+                                    "alreadyRunning": True,
+                                    "application": app_name,
+                                    "hwnd": win["hwnd"],
+                                    "windowTitle": win.get("title", ""),
+                                    "processName": win.get("processName", ""),
+                                    "processId": win.get("processId", 0),
+                                    "driverProvenance": "real_native_driver",
+                                }
+                    except Exception:
+                        pass
                 return self.windows_adapter.launch_application(app_name)
 
             elif capability_id == "windows_inspect_window":
@@ -87,11 +111,33 @@ class CapabilityExecutor:
 
             elif capability_id == "windows_get_control_text":
                 hwnd = int(parameters.get("hwnd", 0))
+                if hwnd <= 0:
+                    try:
+                        for win in self.windows_adapter.list_open_windows():
+                            if (
+                                "notepad" in win.get("processName", "").lower()
+                                and win.get("hwnd", 0) > 0
+                            ):
+                                hwnd = win["hwnd"]
+                                break
+                    except Exception:
+                        pass
                 target_id = parameters.get("targetId") or parameters.get("automationId")
                 return self.windows_adapter.get_control_text(hwnd, target_id)
 
             elif capability_id == "windows_set_control_text":
                 hwnd = int(parameters.get("hwnd", 0))
+                if hwnd <= 0:
+                    try:
+                        for win in self.windows_adapter.list_open_windows():
+                            if (
+                                "notepad" in win.get("processName", "").lower()
+                                and win.get("hwnd", 0) > 0
+                            ):
+                                hwnd = win["hwnd"]
+                                break
+                    except Exception:
+                        pass
                 text = str(parameters.get("text", ""))
                 target_id = parameters.get("targetId") or parameters.get("automationId")
                 return self.windows_adapter.set_control_text(hwnd, text, target_id)
@@ -111,30 +157,60 @@ class CapabilityExecutor:
             # 2. Browser Capabilities
             elif capability_id == "browser_tab_observe":
                 tab_id = parameters.get("tabId")
+                obs = {}
                 try:
-                    obs = self.browser_adapter.get_active_tab_observation()
+                    if self.browser_adapter.is_connected():
+                        obs = self.browser_adapter.get_active_tab_observation()
                 except Exception:
                     obs = {}
-                page_text = obs.get("pageText") or parameters.get("pageText", "")
-                url = obs.get("url") or parameters.get("url", "browser://active_tab")
+
+                page_text = (
+                    obs.get("pageText")
+                    or obs.get("visibleTextExcerpt")
+                    or parameters.get("pageText", "")
+                )
+                url = obs.get("url") or parameters.get("url", "")
                 title = obs.get("title") or parameters.get("title", "")
-                if not page_text:
+                driver_prov = obs.get("driverProvenance") or (
+                    "real_browser_extension" if obs else None
+                )
+
+                # In live mode with explicit isFixtureMode=False, do not fall back to fixtures
+                allow_fixture = (
+                    parameters.get("isFixtureMode") is not False
+                    and context.get("isFixtureMode") is not False
+                )
+                if not page_text and allow_fixture:
                     for fix_name in ("deadline_notice.html", "utility_bill.html"):
                         fix_path = Path("c:/Sahaay/data/fixtures") / fix_name
                         if fix_path.exists():
                             page_text = fix_path.read_text(encoding="utf-8")
                             if not title:
-                                title = "Public Utility Scheme - Application Deadline Notice"
-                            if url == "browser://active_tab":
+                                title = (
+                                    "Public Utility Scheme - Application Deadline Notice (Fixture)"
+                                )
+                            if not url:
                                 url = "https://solar.karnataka.gov.in/apply"
+                            driver_prov = "test_fixture"
                             break
+
+                if not driver_prov:
+                    driver_prov = "test_fixture" if allow_fixture else "offline_simulation"
+
+                if not page_text:
+                    raise CapabilityExecutionError(
+                        "No active browser tab observation available. "
+                        "Please ensure Chrome or Edge is running with Sahaay Browser Bridge extension connected."
+                    )
+
                 return {
                     "tabId": obs.get("tabId") or tab_id or 0,
-                    "url": url,
+                    "url": url or "browser://active_tab",
                     "title": title,
                     "pageText": page_text,
                     "interactiveControls": obs.get("interactiveControls", []),
                     "isBridgeConnected": self.browser_adapter.is_connected(),
+                    "driverProvenance": driver_prov,
                 }
 
             elif capability_id == "browser_scroll_tab":
@@ -150,7 +226,12 @@ class CapabilityExecutor:
                 return self.browser_adapter.get_field_values(field_names)
 
             elif capability_id == "browser_click_element":
-                target = parameters.get("targetId") or parameters.get("selector") or parameters.get("id") or ""
+                target = (
+                    parameters.get("targetId")
+                    or parameters.get("selector")
+                    or parameters.get("id")
+                    or ""
+                )
                 return self.browser_adapter.click_element(target_id_or_selector=str(target))
 
             # 3. Document Ingestion & Local Information Retrieval
@@ -160,7 +241,13 @@ class CapabilityExecutor:
                 file_text = ""
                 try:
                     p = Path(file_path).resolve()
-                    if p.is_file() and p.suffix.lower() in (".txt", ".md", ".html", ".htm", ".json"):
+                    if p.is_file() and p.suffix.lower() in (
+                        ".txt",
+                        ".md",
+                        ".html",
+                        ".htm",
+                        ".json",
+                    ):
                         file_text = p.read_text(encoding="utf-8", errors="replace")[:4000]
                 except Exception:
                     file_text = ""
@@ -229,17 +316,34 @@ class CapabilityExecutor:
                     for k, expected_v in expected.items():
                         actual_v = readback_values.get(k)
                         if str(actual_v).strip().lower() != str(expected_v).strip().lower():
-                            mismatches.append(f"Field '{k}': expected '{expected_v}', got '{actual_v}'")
+                            mismatches.append(
+                                f"Field '{k}': expected '{expected_v}', got '{actual_v}'"
+                            )
 
                 elif target in ("windows", "desktop", "notepad"):
                     hwnd = int(parameters.get("hwnd", 0))
+                    if hwnd <= 0:
+                        try:
+                            for win in self.windows_adapter.list_open_windows():
+                                if (
+                                    "notepad" in win.get("processName", "").lower()
+                                    and win.get("hwnd", 0) > 0
+                                ):
+                                    hwnd = win["hwnd"]
+                                    break
+                        except Exception:
+                            pass
                     target_id = parameters.get("targetId") or parameters.get("automationId")
-                    expected_text = parameters.get("expectedText") or (expected.get("text") if isinstance(expected, dict) else str(expected))
+                    expected_text = parameters.get("expectedText") or (
+                        expected.get("text") if isinstance(expected, dict) else str(expected)
+                    )
                     readback = self.windows_adapter.get_control_text(hwnd, target_id)
                     actual_text = readback.get("text", "")
                     readback_data = {"text": actual_text}
                     if expected_text and expected_text.strip() not in actual_text:
-                        mismatches.append(f"Text mismatch: expected '{expected_text}' to be contained in '{actual_text}'")
+                        mismatches.append(
+                            f"Text mismatch: expected '{expected_text}' to be contained in '{actual_text}'"
+                        )
 
                 elif target == "volume":
                     expected_vol = int(parameters.get("expectedVolume", 50))
@@ -247,17 +351,23 @@ class CapabilityExecutor:
                     actual_vol = int(readback.get("volumePercent", -1))
                     readback_data = {"volumePercent": actual_vol}
                     if actual_vol != expected_vol:
-                        mismatches.append(f"Volume mismatch: expected {expected_vol}%, got {actual_vol}%")
+                        mismatches.append(
+                            f"Volume mismatch: expected {expected_vol}%, got {actual_vol}%"
+                        )
 
                 else:
                     # Generic fact verification against context store
-                    for k, expected_v in (expected.items() if isinstance(expected, dict) else []):
+                    for k, expected_v in expected.items() if isinstance(expected, dict) else []:
                         facts = self.context_store.search_facts(str(expected_v))
                         if not facts:
-                            mismatches.append(f"Fact '{k}' with value '{expected_v}' not found in context store.")
+                            mismatches.append(
+                                f"Fact '{k}' with value '{expected_v}' not found in context store."
+                            )
 
-                is_verified = (len(mismatches) == 0)
-                driver_prov = readback.get("driverProvenance") if isinstance(readback, dict) else None
+                is_verified = len(mismatches) == 0
+                driver_prov = (
+                    readback.get("driverProvenance") if isinstance(readback, dict) else None
+                )
                 return {
                     "isVerified": is_verified,
                     "target": target,
@@ -280,7 +390,9 @@ class CapabilityExecutor:
                 grant_id = None
                 if session_id:
                     try:
-                        grants = durable_storage.get_consent_grants_for_session(UUID(str(session_id)))
+                        grants = durable_storage.get_consent_grants_for_session(
+                            UUID(str(session_id))
+                        )
                         for g in grants:
                             if g.is_valid() and (g.scope == "*" or g.scope == scope):
                                 has_grant = True

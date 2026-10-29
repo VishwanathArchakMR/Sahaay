@@ -12,7 +12,9 @@ from sahaay_core.adapters.windows.named_pipe_client import NamedPipeClient
 class WindowsNativeAdapter:
     """Adapter communicating with native Windows companion daemon."""
 
-    def __init__(self, pipe_name: str = "SahaayControllerPipe", allow_simulation: bool = True) -> None:
+    def __init__(
+        self, pipe_name: str = "SahaayControllerPipe", allow_simulation: bool = True
+    ) -> None:
         self.pipe_name = pipe_name
         self.allow_simulation = allow_simulation
         self.client = NamedPipeClient(pipe_name=pipe_name)
@@ -48,6 +50,7 @@ class WindowsNativeAdapter:
                 raise RuntimeError(res.get("error", "Failed to retrieve capabilities."))
             data = res.get("data", {})
             if isinstance(data, dict):
+                data["success"] = True
                 data["driverProvenance"] = "real_native_driver"
             return data
         except ConnectionError:
@@ -114,6 +117,7 @@ class WindowsNativeAdapter:
                 raise RuntimeError(res.get("error", f"Failed to capture window {hwnd}."))
             data = res.get("data", {})
             if isinstance(data, dict):
+                data["success"] = True
                 data["driverProvenance"] = "real_native_driver"
             return data
         except ConnectionError:
@@ -135,7 +139,9 @@ class WindowsNativeAdapter:
         try:
             res = self.client.send_command("set_control_text", parameters=params)
             if not res.get("success"):
-                raise RuntimeError(res.get("error", f"Failed to set control text in window {hwnd}."))
+                raise RuntimeError(
+                    res.get("error", f"Failed to set control text in window {hwnd}.")
+                )
             data = res.get("data", {})
             if isinstance(data, dict):
                 if "text" not in data and "value" in data:
@@ -165,7 +171,9 @@ class WindowsNativeAdapter:
         try:
             res = self.client.send_command("get_control_text", parameters=params)
             if not res.get("success"):
-                raise RuntimeError(res.get("error", f"Failed to get control text in window {hwnd}."))
+                raise RuntimeError(
+                    res.get("error", f"Failed to get control text in window {hwnd}.")
+                )
             data = res.get("data", {})
             if isinstance(data, dict):
                 if "text" not in data and "value" in data:
@@ -213,6 +221,7 @@ class WindowsNativeAdapter:
                 )
             data = res.get("data", {})
             if isinstance(data, dict):
+                data["success"] = True
                 data["driverProvenance"] = "real_native_driver"
             return data
         except ConnectionError:
@@ -237,6 +246,7 @@ class WindowsNativeAdapter:
                 raise RuntimeError(res.get("error", f"Failed to click control in window {hwnd}."))
             data = res.get("data", {})
             if isinstance(data, dict):
+                data["success"] = True
                 data["driverProvenance"] = "real_native_driver"
             return data
         except ConnectionError:
@@ -269,6 +279,7 @@ class WindowsNativeAdapter:
                 raise RuntimeError(res.get("error", f"Failed to set system volume to {volume}%."))
             data = res.get("data", {})
             if isinstance(data, dict):
+                data["success"] = True
                 data["driverProvenance"] = "real_native_driver"
             return data
         except ConnectionError:
@@ -291,6 +302,7 @@ class WindowsNativeAdapter:
                 raise RuntimeError(res.get("error", "Failed to get system volume."))
             data = res.get("data", {})
             if isinstance(data, dict):
+                data["success"] = True
                 data["driverProvenance"] = "real_native_driver"
             return data
         except ConnectionError:

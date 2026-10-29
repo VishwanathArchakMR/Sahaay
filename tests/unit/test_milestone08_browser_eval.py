@@ -49,6 +49,7 @@ class TestMilestone08NativeHost:
         )
         assert proc.returncode == 0
         import json
+
         data = json.loads(proc.stdout)
         assert data["verified"] is True
         assert data["chrome"]["registered"] is True
@@ -133,10 +134,17 @@ class TestMilestone08Mind2Web:
         """Verify aria-label takes priority over generic element IDs or text."""
         selector = SemanticElementSelector()
         candidates = [
-            {"id": "btn-generic-1", "text": "Click Here", "ariaLabel": "Submit Application Form", "role": "button"},
+            {
+                "id": "btn-generic-1",
+                "text": "Click Here",
+                "ariaLabel": "Submit Application Form",
+                "role": "button",
+            },
             {"id": "btn-generic-2", "text": "Save", "ariaLabel": "Save Draft", "role": "button"},
         ]
-        best = selector.select_best_target("Submit the application form", candidates, action_hint="CLICK")
+        best = selector.select_best_target(
+            "Submit the application form", candidates, action_hint="CLICK"
+        )
         assert best is not None
         assert best.element_id == "btn-generic-1"
         assert best.matched_property == "aria_label"
@@ -148,15 +156,25 @@ class TestMilestone08Mind2Web:
             {"id": "search-btn", "role": "button", "text": "Search"},
             {"id": "search-input", "role": "textbox", "placeholder": "Search query", "name": "q"},
         ]
-        best = selector.select_best_target("Type query into search input", candidates, action_hint="TYPE")
+        best = selector.select_best_target(
+            "Type query into search input", candidates, action_hint="TYPE"
+        )
         assert best is not None
         assert best.element_id == "search-input"
 
     def test_few_shot_action_retriever(self):
         """Verify few-shot action retriever retrieves top matches for user intent."""
         tasks = [
-            {"userIntent": "Add item to shopping bag", "groundTruthAction": "CLICK", "expectedRole": "button"},
-            {"userIntent": "Enter email address", "groundTruthAction": "TYPE", "expectedRole": "textbox"},
+            {
+                "userIntent": "Add item to shopping bag",
+                "groundTruthAction": "CLICK",
+                "expectedRole": "button",
+            },
+            {
+                "userIntent": "Enter email address",
+                "groundTruthAction": "TYPE",
+                "expectedRole": "textbox",
+            },
         ]
         retriever = FewShotActionRetriever(tasks)
         matches = retriever.retrieve_relevant_examples("Add to bag", top_k=1)
@@ -173,7 +191,9 @@ class TestMilestone08Mind2Web:
         results = evaluator.run_evaluation(include_few_shot=True)
         assert results["totalTasks"] == 50
         assert results["semanticSelector"]["accuracyPercent"] >= 85.0
-        assert results["semanticSelector"]["accuracyPercent"] >= results["baseline"]["accuracyPercent"]
+        assert (
+            results["semanticSelector"]["accuracyPercent"] >= results["baseline"]["accuracyPercent"]
+        )
         assert results["fewShotRetriever"]["actionMatchRatePercent"] >= 90.0
 
 
@@ -189,7 +209,9 @@ class TestMilestone08DesktopEvaluation:
         assert res["uiAutomation"]["accuracyPercent"] == 100.0
         assert res["uiAutomation"]["deterministic"] is True
         # Coordinate guessing under 125% DPI scale fails
-        assert res["coordinateBoundingBox"]["accuracyPercent"] < res["uiAutomation"]["accuracyPercent"]
+        assert (
+            res["coordinateBoundingBox"]["accuracyPercent"] < res["uiAutomation"]["accuracyPercent"]
+        )
 
     def test_desktop_hardware_feasibility(self):
         """Test that hardware feasibility verifies RTX 3050 4GB VRAM and hybrid architecture."""
