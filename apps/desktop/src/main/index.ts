@@ -1,17 +1,20 @@
 /**
  * Electron Main Process for Sahaay.
- * Implements strict security policies:
+ * Implements strict security policies and active runtime supervision:
  * - contextIsolation: true
  * - nodeIntegration: false
  * - sandbox: true
  * - navigation & popup restrictions
  * - validated IPC handlers
+ * - supervised backend & interactive Windows companion lifecycle
  */
 
 import { app, BrowserWindow, ipcMain } from "electron";
 import { join } from "path";
+import { RuntimeSupervisor } from "./supervisor";
 
 let mainWindow: BrowserWindow | null = null;
+let supervisor: RuntimeSupervisor | null = null;
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -65,7 +68,6 @@ function createWindow(): void {
 
 // IPC Handlers with sender validation
 ipcMain.handle("sahaay:get-system-status", async (event) => {
-  // Validate sender
   if (!mainWindow || event.sender !== mainWindow.webContents) {
     throw new Error("Unauthorized IPC invocation from unknown webContents.");
   }
@@ -82,7 +84,39 @@ ipcMain.handle("sahaay:get-api-token", () => {
   return process.env.SAHAAY_API_TOKEN || process.env.VITE_SAHAAY_TOKEN || "";
 });
 
-app.whenReady().then(() => {
+ipcMain.handle("sahaay:get-runtime-health", async (event) => {
+  if (!mainWindow || event.sender !== mainWindow.webContents) {
+    throw new Error("Unauthorized IPC invocation from unknown webContents.");
+  }
+  if (!supervisor) {
+    return {
+      backend: { name: "Backend", status: "STOPPED", endpoint: "", details: "Supervisor not initialized", restartCount: 0 },
+      controller: { name: "Controller", status: "STOPPED", endpoint: "", details: "Supervisor not initialized", restartCount: 0 },
+      nativeHost: { name: "NativeHost", status: "STOPPED", endpoint: "", details: "Supervisor not initialized", restartCount: 0 },
+      overallReady: false,
+      platform: process.platform,
+    };
+  }
+  return await supervisor.getHealthReport();
+});
+
+ipcMain.handle("sahaay:restart-component", async (event, component: "backend" | "controller") => {
+  if (!mainWindow || event.sender !== mainWindow.webContents) {
+    throw new Error("Unauthorized IPC invocation from unknown webContents.");
+  }
+  if (!supervisor) return false;
+  if (component === "backend") {
+    return await supervisor.ensureBackendRunning();
+  } else if (component === "controller") {
+    return await supervisor.ensureControllerRunning();
+  }
+  return false;
+});
+
+app.whenReady().then(async () => {
+  supervisor = new RuntimeSupervisor(app.getAppPath());
+  await supervisor.startSupervisedRuntime();
+
   createWindow();
 
   app.on("activate", () => {
@@ -90,8 +124,17 @@ app.whenReady().then(() => {
   });
 });
 
+app.on("before-quit", () => {
+  supervisor?.shutdown();
+});
+
+app.on("will-quit", () => {
+  supervisor?.shutdown();
+});
+
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
+    supervisor?.shutdown();
     app.quit();
   }
 });

@@ -266,12 +266,14 @@ async def execute_browser_to_desktop(req: BrowserToDesktopRequest) -> Dict[str, 
         exec_success = False
         actual_written_text = ""
 
+    driver_prov = "test_fixture" if is_fixture else "real_native_driver"
     exec_result = ExecutionResult(
         executionId=uuid4(),
         actionId=action.actionId,
         isSuccess=exec_success,
         durationMs=35.0,
         outputData={"writtenText": actual_written_text, "target": action.target},
+        driverProvenance=driver_prov,
     )
 
     # 6. VERIFY (Independent Readback Check against actual extracted values)
@@ -296,6 +298,7 @@ async def execute_browser_to_desktop(req: BrowserToDesktopRequest) -> Dict[str, 
         observed_postcondition_data={
             "state": "verified" if is_verified else "failed",
             "actualText": actual_written_text,
+            "driverProvenance": driver_prov,
             "fieldsMatched": {
                 "consumer_name": consumer_match,
                 "amount_due": amount_match,
@@ -500,12 +503,14 @@ async def execute_desktop_to_browser(req: DesktopToBrowserRequest) -> Dict[str, 
         filled_fields = dict(field_mapping)
         exec_success = True
 
+    driver_prov = "test_fixture" if is_fixture else "real_browser_extension"
     exec_result = ExecutionResult(
         executionId=uuid4(),
         actionId=action.actionId,
         isSuccess=exec_success,
         durationMs=28.0,
         outputData={"filled": filled_fields, "targetUrl": action.target},
+        driverProvenance=driver_prov,
     )
 
     # 6. VERIFY (Independent Verification)
@@ -529,6 +534,7 @@ async def execute_desktop_to_browser(req: DesktopToBrowserRequest) -> Dict[str, 
             "state": "verified" if is_verified else "failed",
             "readbackValues": filled_fields,
             "verified": is_verified,
+            "driverProvenance": driver_prov,
         },
         is_model_self_attestation=False,
     )

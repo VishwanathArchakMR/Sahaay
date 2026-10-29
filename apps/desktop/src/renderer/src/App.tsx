@@ -1464,19 +1464,45 @@ export function App(): React.JSX.Element {
               <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-xs space-y-2">
                 <div className="flex justify-between items-center">
                   <span className="text-slate-300">Browser Extension:</span>
-                  <span className="badge badge-success">READY</span>
+                  <span className={`badge ${
+                    modelsStatus?.systemIntegrations?.browserExtension === "ATTACHED"
+                      ? "badge-success"
+                      : modelsStatus?.systemIntegrations?.browserExtension === "HOST_WAITING"
+                      ? "badge-warning"
+                      : "badge-neutral"
+                  }`}>
+                    {modelsStatus?.systemIntegrations?.browserExtension || "DISCONNECTED"}
+                  </span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-slate-300">Native Messaging Host:</span>
-                  <span className="badge badge-success">READY</span>
+                  <span className={`badge ${
+                    modelsStatus?.systemIntegrations?.nativeMessaging === "CONNECTED"
+                      ? "badge-success"
+                      : "badge-neutral"
+                  }`}>
+                    {modelsStatus?.systemIntegrations?.nativeMessaging || "DISCONNECTED"}
+                  </span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-slate-300">Windows Companion (UIA):</span>
-                  <span className="badge badge-success">READY</span>
+                  <span className={`badge ${
+                    modelsStatus?.systemIntegrations?.windowsCompanion === "CONNECTED"
+                      ? "badge-success"
+                      : "badge-neutral"
+                  }`}>
+                    {modelsStatus?.systemIntegrations?.windowsCompanion || "DISCONNECTED"}
+                  </span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-slate-300">SQLite Evidence Ledger:</span>
-                  <span className="badge badge-success">READY</span>
+                  <span className={`badge ${
+                    modelsStatus?.systemIntegrations?.sqliteLedger === "READY"
+                      ? "badge-success"
+                      : "badge-neutral"
+                  }`}>
+                    {modelsStatus?.systemIntegrations?.sqliteLedger || "READY"}
+                  </span>
                 </div>
               </div>
             </div>

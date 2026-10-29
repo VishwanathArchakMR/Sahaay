@@ -8,7 +8,7 @@ Derived from Mind2Web research:
 
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger("sahaay.adapters.browser.selector")
@@ -24,6 +24,9 @@ class ScoredElement:
     element_role: str
     element_text: str
     attributes: Dict[str, Any]
+    is_ambiguous: bool = False
+    confidence_margin: float = 1.0
+    competing_candidate_ids: List[str] = field(default_factory=list)
 
 
 class SemanticElementSelector:
@@ -149,24 +152,51 @@ class SemanticElementSelector:
         candidates: List[Dict[str, Any]],
         action_hint: Optional[str] = None,
         min_threshold: float = 0.20,
+        ambiguity_margin: float = 0.05,
+        abstain_on_ambiguity: bool = False,
     ) -> Optional[ScoredElement]:
-        """Rank candidates and return the top match above the confidence threshold."""
+        """Rank candidates and return top match. Identifies ambiguity and abstains if confidence is insufficient."""
         if not candidates:
             return None
 
         scored = [self.score_element(intent, elem, action_hint=action_hint) for elem in candidates]
         scored.sort(key=lambda s: s.score, reverse=True)
 
-        if scored and scored[0].score >= min_threshold:
-            return scored[0]
-        return None
+        if not scored or scored[0].score < min_threshold:
+            return None
+
+        # Ambiguity detection: check if runner-up candidate is within the ambiguity margin
+        if len(scored) > 1 and scored[1].score >= min_threshold:
+            margin = round(scored[0].score - scored[1].score, 4)
+            if margin <= ambiguity_margin:
+                scored[0].is_ambiguous = True
+                scored[0].confidence_margin = margin
+                scored[0].competing_candidate_ids = [s.element_id for s in scored[1:] if (scored[0].score - s.score) <= ambiguity_margin]
+                if abstain_on_ambiguity:
+                    logger.info(
+                        "Abstaining from target selection due to ambiguity: top candidate '%s' (score %.2f) vs '%s' (score %.2f)",
+                        scored[0].element_id, scored[0].score, scored[1].element_id, scored[1].score
+                    )
+                    return None
+
+        return scored[0]
 
     def rank_candidates(
-        self, intent: str, candidates: List[Dict[str, Any]], action_hint: Optional[str] = None
+        self,
+        intent: str,
+        candidates: List[Dict[str, Any]],
+        action_hint: Optional[str] = None,
+        ambiguity_margin: float = 0.05,
     ) -> List[ScoredElement]:
-        """Return all candidates sorted by semantic match score."""
+        """Return all candidates sorted by semantic match score with ambiguity annotations."""
         scored = [self.score_element(intent, elem, action_hint=action_hint) for elem in candidates]
         scored.sort(key=lambda s: s.score, reverse=True)
+        if len(scored) > 1 and scored[1].score > 0:
+            margin = round(scored[0].score - scored[1].score, 4)
+            if margin <= ambiguity_margin:
+                scored[0].is_ambiguous = True
+                scored[0].confidence_margin = margin
+                scored[0].competing_candidate_ids = [s.element_id for s in scored[1:] if (scored[0].score - s.score) <= ambiguity_margin]
         return scored
 
 

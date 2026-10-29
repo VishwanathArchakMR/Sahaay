@@ -9,6 +9,8 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, File, Form, UploadFile
 from pydantic import BaseModel
 
+from sahaay_core.adapters.browser.adapter import BrowserAdapter
+from sahaay_core.adapters.windows.adapter import WindowsNativeAdapter
 from sahaay_core.config.settings import settings
 from sahaay_core.contracts.models import TaskContract
 from sahaay_core.models.local.client import LocalLlamaClient
@@ -31,6 +33,8 @@ muse_wonder = MuseWonderClient(meta_client=meta_client)
 muse_voice = MuseVoiceClient(meta_client=meta_client)
 sam_client = Sam31Client(meta_client=meta_client)
 local_llama_client = LocalLlamaClient(manager=local_llama_manager)
+browser_adapter = BrowserAdapter()
+windows_adapter = WindowsNativeAdapter()
 
 
 class ModelPlanningRequest(BaseModel):
@@ -88,6 +92,11 @@ async def get_models_status() -> Dict[str, Any]:
     meta_status = _resolve_provider_readiness(meta_client.is_configured, "meta")
     muse_image_status = _resolve_provider_readiness(muse_image.is_configured, "muse_image")
 
+    # Live probe of system bridge and pipe connections
+    is_native_host_up = browser_adapter.is_connected()
+    is_ext_attached = browser_adapter.is_browser_attached() if is_native_host_up else False
+    is_companion_up = windows_adapter.is_connected()
+
     return {
         "metaHosted": {
             "isConfigured": meta_client.is_configured,
@@ -137,6 +146,12 @@ async def get_models_status() -> Dict[str, Any]:
         "privacyMode": {
             "localOnlyMode": settings.local_only_mode,
             "hostedModelsPermitted": settings.hosted_models_permitted,
+        },
+        "systemIntegrations": {
+            "browserExtension": "ATTACHED" if is_ext_attached else ("HOST_WAITING" if is_native_host_up else "DISCONNECTED"),
+            "nativeMessaging": "CONNECTED" if is_native_host_up else "DISCONNECTED",
+            "windowsCompanion": "CONNECTED" if is_companion_up else "DISCONNECTED",
+            "sqliteLedger": "READY",
         },
     }
 

@@ -3,8 +3,8 @@
 Uninstalls and unregisters Sahaay Native Messaging Host from Google Chrome and Microsoft Edge.
 
 .DESCRIPTION
-Removes the native messaging registry keys for Chrome and Edge from HKCU and cleans up manifest files,
-without modifying any other application or system configuration.
+Stops running native host processes, removes the native messaging registry keys for Chrome
+and Edge from HKCU, and cleans up manifest files without modifying any other system settings.
 #>
 
 $ErrorActionPreference = "SilentlyContinue"
@@ -12,6 +12,12 @@ $HostName = "com.sahaay.nativehost"
 $InstallDir = Join-Path $env:LOCALAPPDATA "Sahaay\native-host"
 
 Write-Host "=== Uninstalling Sahaay Native Messaging Host ===" -ForegroundColor Cyan
+
+# 0. Terminate running host process if active
+Get-Process -Name "Sahaay.NativeHost" -ErrorAction SilentlyContinue | ForEach-Object {
+    Write-Host "Stopping running process PID $($_.Id)..." -ForegroundColor Yellow
+    Stop-Process -Id $_.Id -Force
+}
 
 # 1. Remove registry keys
 $RegTargets = @(

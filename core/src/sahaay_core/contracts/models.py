@@ -185,6 +185,7 @@ class ExecutionResult(BaseModel):
     durationMs: float = Field(ge=0.0)
     outputData: Optional[Dict[str, Any]] = None
     errorMessage: Optional[str] = None
+    driverProvenance: Optional[str] = None
 
 
 class VerificationResult(BaseModel):
@@ -196,6 +197,7 @@ class VerificationResult(BaseModel):
     details: str
     observedPostcondition: Optional[str] = None
     verifiedAt: datetime = Field(default_factory=utc_now)
+    driverProvenance: Optional[str] = None
 
 
 class EvidenceReference(BaseModel):

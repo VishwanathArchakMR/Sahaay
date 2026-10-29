@@ -22,11 +22,14 @@ public class Program
     private static volatile bool _isBrowserAttached = false;
     private static Stream? _activeStdout;
 
-    // Configured permitted extension IDs
+    // Configured permitted extension IDs (Chrome and Edge origins)
     private static readonly HashSet<string> AllowedExtensionOrigins = new()
     {
         "chrome-extension://sahaay-dev-extension-id/",
         "chrome-extension://knldjmfmopnpolahpmmgbagdohdnhkik/", // Common unpacked dev ID pattern
+        "extension://knldjmfmopnpolahpmmgbagdohdnhkik/",        // Microsoft Edge native scheme
+        "chrome-extension://nokchmadkhaghgooijgkgpheoieaibdp/", // Unpacked repo path ID
+        "extension://nokchmadkhaghgooijgkgpheoieaibdp/",        // Unpacked repo path Edge scheme
     };
 
     public static async Task Main(string[] args)
@@ -399,16 +402,46 @@ public class Program
         }
         catch { }
 
-        bool chromeOk = !string.IsNullOrEmpty(chromePath) && File.Exists(chromePath);
-        bool edgeOk = !string.IsNullOrEmpty(edgePath) && File.Exists(edgePath);
+        bool chromeManifestExists = !string.IsNullOrEmpty(chromePath) && File.Exists(chromePath);
+        bool edgeManifestExists = !string.IsNullOrEmpty(edgePath) && File.Exists(edgePath);
+
+        // Real inspection of on-disk manifest JSON
+        string? manifestExePath = null;
+        bool manifestExeExists = false;
+        List<string> origins = new();
+
+        string? validManifestPath = chromeManifestExists ? chromePath : (edgeManifestExists ? edgePath : null);
+        if (validManifestPath != null)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(validManifestPath));
+                if (doc.RootElement.TryGetProperty("path", out var pProp))
+                {
+                    manifestExePath = pProp.GetString();
+                    manifestExeExists = !string.IsNullOrEmpty(manifestExePath) && File.Exists(manifestExePath);
+                }
+                if (doc.RootElement.TryGetProperty("allowed_origins", out var oProp) && oProp.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var elem in oProp.EnumerateArray())
+                    {
+                        if (elem.GetString() is { } s) origins.Add(s);
+                    }
+                }
+            }
+            catch { }
+        }
 
         var report = new
         {
-            verified = chromeOk || edgeOk,
+            verified = (chromeManifestExists || edgeManifestExists) && (manifestExeExists || Environment.ProcessPath != null),
             hostName,
             executablePath = Environment.ProcessPath,
-            chrome = new { registered = chromeOk, manifestPath = chromePath },
-            edge = new { registered = edgeOk, manifestPath = edgePath },
+            manifestExecutablePath = manifestExePath,
+            manifestExecutableExists = manifestExeExists,
+            chrome = new { registered = chromeManifestExists, manifestPath = chromePath },
+            edge = new { registered = edgeManifestExists, manifestPath = edgePath },
+            allowedOrigins = origins,
             supportedBrowsers = new[] { "Google Chrome", "Microsoft Edge" }
         };
 

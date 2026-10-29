@@ -4,7 +4,8 @@ Installs and registers Sahaay Native Messaging Host for Google Chrome and Micros
 
 .DESCRIPTION
 Deploys standalone Sahaay.NativeHost executable to %LOCALAPPDATA%\Sahaay\native-host,
-generates the native messaging manifest, and registers it in HKCU for Chrome and Edge.
+generates the native messaging manifest with dual Chrome/Edge scheme support and
+unpacked extension auto-detection, and registers it in HKCU for both Chrome and Edge.
 
 .PARAMETER ExtensionId
 Target browser extension ID (default: "knldjmfmopnpolahpmmgbagdohdnhkik").
@@ -23,9 +24,31 @@ $SourceExe = Join-Path $RepoRoot "bin\dist\native-host-standalone\Sahaay.NativeH
 $TargetExe = Join-Path $InstallDir "Sahaay.NativeHost.exe"
 $ManifestPath = Join-Path $InstallDir "com.sahaay.nativehost.json"
 
+# Calculate unpacked extension ID derived from repository path
+function Get-ChromiumExtensionId([string]$folderPath) {
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($folderPath)
+    $hash = $sha256.ComputeHash($bytes)
+    $chars = [char[]]::new(32)
+    for ($i = 0; $i -lt 16; $i++) {
+        $b = $hash[$i]
+        $chars[$i * 2] = [char]([byte][char]'a' + ($b -shr 4))
+        $chars[$i * 2 + 1] = [char]([byte][char]'a' + ($b -band 0x0F))
+    }
+    return [string]::new($chars)
+}
+
+$ExtensionDir = Join-Path $RepoRoot "apps\browser-extension"
+$UnpackedId = if (Test-Path $ExtensionDir) {
+    Get-ChromiumExtensionId (Resolve-Path $ExtensionDir).Path
+} else {
+    $ExtensionId
+}
+
 Write-Host "=== Installing Sahaay Native Messaging Host ===" -ForegroundColor Cyan
-Write-Host "Target Directory: $InstallDir"
-Write-Host "Extension ID:     $ExtensionId"
+Write-Host "Target Directory:     $InstallDir"
+Write-Host "Configured Ext ID:    $ExtensionId"
+Write-Host "Unpacked Repo Ext ID: $UnpackedId"
 
 # 1. Build if not already built or requested
 if (-not (Test-Path $SourceExe) -and -not $SkipBuild) {
@@ -55,20 +78,31 @@ if (-not (Test-Path $InstallDir)) {
 Copy-Item -Path (Join-Path (Split-Path $SourceExe) "*") -Destination $InstallDir -Recurse -Force
 Write-Host "[OK] Binary deployed to: $TargetExe" -ForegroundColor Green
 
-# 3. Generate Native Messaging Manifest
-$manifest = @{
+# 3. Generate Native Messaging Manifest with dual Chrome & Edge origin support
+$allowedOrigins = [System.Collections.Generic.List[string]]::new()
+$allowedOrigins.Add("chrome-extension://$ExtensionId/")
+$allowedOrigins.Add("extension://$ExtensionId/")
+
+if ($UnpackedId -ne $ExtensionId) {
+    $allowedOrigins.Add("chrome-extension://$UnpackedId/")
+    $allowedOrigins.Add("extension://$UnpackedId/")
+}
+
+$manifest = [ordered]@{
     name = $HostName
     description = "Sahaay Native Messaging Host for Chrome and Edge"
     path = $TargetExe
     type = "stdio"
-    allowed_origins = @(
-        "chrome-extension://$ExtensionId/"
-    )
+    allowed_origins = $allowedOrigins.ToArray()
 }
 
 $manifestJson = $manifest | ConvertTo-Json -Depth 4
 [System.IO.File]::WriteAllText($ManifestPath, $manifestJson)
 Write-Host "[OK] Manifest generated: $ManifestPath" -ForegroundColor Green
+Write-Host "Allowed Origins:" -ForegroundColor Gray
+foreach ($origin in $allowedOrigins) {
+    Write-Host "  - $origin" -ForegroundColor Gray
+}
 
 # 4. Register in HKCU (Google Chrome & Microsoft Edge)
 $RegTargets = @(

@@ -8,12 +8,12 @@ This document tracks the verified status of all architectural components across 
 
 ---
 
-## Component Status Matrix (Milestone 05 — Baseten Muse Spark Open, Muse Image Task Storytelling, and Premium Liquid-Glass Experience)
+## Component Status Matrix (Milestone 10 — Runtime Supervisor, Strict Driver Provenance, and Self-Managing Windows Execution)
 
 | Component / Subsystem | State | Evidence / Automated Test Command | Notes |
 | :--- | :--- | :--- | :--- |
 | **Monorepo & Git Foundation** | `TESTED` | `git status`, `git log`, remote check | Clean repository on `main` branch with comprehensive `.gitignore` |
-| **Authoritative Shared Contracts (v1)** | `TESTED` | `pytest tests/unit/test_contracts.py` | JSON Schema & Pydantic models for Session, Task, Action, Fact, Evidence |
+| **Authoritative Shared Contracts (v1)** | `TESTED` | `pytest tests/unit/test_contracts.py` | JSON Schema & Pydantic models for Session, Task, Action, Fact, Evidence, with strict driver provenance annotations |
 | **FastAPI Backend Server & Lifespan** | `TESTED` | `pytest tests/unit/test_health_and_capabilities.py` | Starts cleanly on 127.0.0.1 with database tables initialized |
 | **Health Diagnostic Endpoint** | `TESTED` | `pytest tests/unit/test_health_and_capabilities.py` | Probes system status, python version, local-only flag, and DB readiness |
 | **Capabilities Endpoint** | `TESTED` | `pytest tests/unit/test_health_and_capabilities.py` | Accurately reports companion named pipe probe, active browser bridge, and external models status |
@@ -38,11 +38,11 @@ This document tracks the verified status of all architectural components across 
 | **Browser Ingestion & Observation API** | `TESTED` | `pytest tests/unit/test_browser_endpoints.py` | Ingests tab observation, registers source, writes observed context facts |
 | **Bounded Scroll Action & Verification**| `TESTED` | `pytest tests/unit/test_browser_endpoints.py` | Evaluates via ActionGate, checks delta, records to EvidenceLedger, detects conflicts |
 | **.NET 10 Companion Migration & Build** | `TESTED` | `dotnet build apps/windows-companion/Sahaay.sln` | Solution and 3 projects in .NET 10 LTS; builds Release and Debug |
-| **.NET Companion Unit Tests** | `TESTED` | `dotnet test apps/windows-companion/Sahaay.sln` | 9 xUnit tests verifying framing, allowlist, Named Pipe dispatch, and SetControlText/GetControlText validation |
-| **Native Messaging Host (Sahaay.NativeHost)** | `TESTED` | `dotnet test` + `tests/desktop/test_native_host_contracts.py` | 4-byte stdio framing, origin validation, forwarder to Named Pipe |
-| **Native Host Registration Scripts** | `TESTED` | `register-native-host.ps1` & `unregister-native-host.ps1` | User-level HKCU registration for Chrome and Edge with validation |
+| **.NET Companion Unit Tests** | `TESTED` | `dotnet test apps/windows-companion/Sahaay.sln` | 12 xUnit tests verifying framing, allowlist, Named Pipe dispatch, SetControlText/GetControlText validation, and manifest inspection |
+| **Native Messaging Host (Sahaay.NativeHost)** | `TESTED` | `dotnet test` + `tests/desktop/test_native_host_contracts.py` | 4-byte stdio framing, dual-scheme origin validation (`chrome-extension://` and `extension://`), forwarder to Named Pipe |
+| **Native Host Registration Scripts** | `TESTED` | `register-native-host.ps1` & `install-browser-native-host.ps1` | User-level HKCU registration for Google Chrome and Microsoft Edge with manifest validation and unpacked extension ID auto-detection |
 | **Windows UI Automation Inspector & Text Control** | `TESTED` | `pytest tests/unit/test_windows_endpoints.py` | Discovers open windows via Win32 `EnumWindows`, inspects UI elements, sets/reads control text |
-| **Windows Named Pipe IPC Bridge** | `TESTED` | `pytest tests/unit/test_windows_endpoints.py` | Authenticated `\\.\pipe\SahaayControllerPipe` client supporting inspection and text operations |
+| **Windows Named Pipe IPC Bridge** | `TESTED` | `pytest tests/unit/test_windows_endpoints.py` | Authenticated `\\.\pipe\SahaayControllerPipe` client supporting inspection, text operations, and master audio control |
 | **Meta Model Provider Foundation** | `TESTED` | `pytest tests/unit/test_meta_models.py` | `MetaClient` async client for `https://api.meta.ai/v1`, bearer redaction, bounded retries, connectivity check |
 | **Muse Spark (Semantic Reasoning & Planning)** | `TESTED` | `pytest tests/unit/test_meta_models.py` | Indic language detection (Kannada, Hindi, code-switched), grounded fact extraction, conflict detection, structured plan proposals |
 | **Muse Wonder (Computer-Use Proposals)** | `TESTED` | `pytest tests/unit/test_meta_models.py` | Responses API `computer` tool protocol parser, coordinate validation within display boundaries, Action Gate mapping |
@@ -54,23 +54,23 @@ This document tracks the verified status of all architectural components across 
 | **Internet Research Subsystem** | `TESTED` | `pytest tests/unit/test_internet_research.py` | Safe SSRF-protected webpage fetcher, metasearch adapter, citation normalization, and conflict detection |
 | **No False-Success Invariant** | `TESTED` | `pytest tests/unit/test_no_false_success.py` | Enforces non-zero window handles, live browser observations, driver readbacks, 404 for unknown passports, no auto-wildcard grants |
 | **Meta Muse Image Adapter (`MuseImageClient`)** | `TESTED` | `pytest tests/unit/test_muse_image_storytelling.py` | Meta Model API client for `muse-image-1.0` on `https://api.meta.ai/v1/images/generations`, base64 PNG decoding/validation (<= 5MB) |
-| **Prompt Minimization & Privacy Protection** | `TESTED` | `pytest tests/unit/test_muse_image_storytelling.py` | Generates abstract visual metaphors only; scrubs raw PII, account numbers, and credentials from prompts |
-| **Obsidian/Liquid Vector SVG Fallback** | `TESTED` | `pytest tests/unit/test_muse_image_storytelling.py` | Generates bespoke inline SVG artwork when in local-only mode, unconfigured, or offline |
-| **Artifact Management & Cache Lifecycle** | `TESTED` | `pytest tests/unit/test_muse_image_storytelling.py` | SHA-256 prompt hashing, artifact caching, task-scoped deletion, and storage in `data/artifacts/images/` |
 | **Task Passport & Step Story System** | `TESTED` | `pytest tests/unit/test_task_passport.py` | Visual milestone tracking (Source, Plan, Authorize, Execute, Verify) with independent React labels and verification proof |
 | **Storytelling API Endpoints** | `TESTED` | `pytest tests/unit/test_task_passport.py` | `GET /tasks/{id}/passport`, `POST /tasks/{id}/steps/{id}/illustrate`, `DELETE /tasks/{id}/artifacts` |
 | **Local Llama 3.2 3B Runtime Lifecycle** | `TESTED` | `pytest tests/unit/test_local_llama.py` | `llama-server.exe` process management on `127.0.0.1:8080`, hardware profiling (CPU, RAM, RTX 3050 CUDA detection), truthful status |
 | **Browser → Desktop Workflow Execution** | `TESTED` | `pytest tests/unit/test_cross_surface_workflows.py` | BESCOM bill ingested from browser tab, facts grounded in SHA-256 provenance, populated into desktop target, verified |
 | **Desktop → Browser Workflow Execution** | `TESTED` | `pytest tests/unit/test_cross_surface_workflows.py` | Invoice ingested from local JSON, fields mapped and populated into browser form, verified readback, auto-submit blocked |
 | **Liquid Glass Execution Surface & UI** | `TESTED` | `npm run build` in `apps/desktop` | Layered glassmorphism, animated living liquid-flow reacting to real backend events, accessibility reduced-motion, Task Passport, real microphone recording |
+| **Runtime Supervisor** | `TESTED` | `apps/desktop/src/main/supervisor.ts` | Supervised management of FastAPI core and Sahaay.Controller interactive daemon in Session 1 desktop; health polling, auto-recovery, and process tree termination |
+| **Strict Driver Provenance Enforcement** | `TESTED` | `pytest tests/integration/test_milestone10_reliability_and_provenance.py` | Enforces provenance tag (`real_native_driver`, `real_browser_extension`, `owned_playwright_context`, `test_fixture`, `mock`, `offline_simulation`). Offline simulation strictly prohibited from yielding `VERIFIED` |
+| **Milestone 09 & 10 E2E Workflows** | `TESTED` | `pytest tests/integration/` | 11 comprehensive integration tests verifying citation, browser retrieval, Notepad writing, compound DAGs, allowlist, and deadline notice extraction |
 
 ---
 
 ## Operational Verification Summary
 
-- **Total Python Automated Tests**: 100 passed (100% passing across unit, security, privacy, models, workflows, persistence, and storytelling).
-- **Total .NET xUnit Tests**: 9 passed (100% passing in native companion solution).
+- **Total Python Automated Tests**: 137 passed (100% passing across unit, security, privacy, models, workflows, persistence, storytelling, and integration suites).
+- **Total .NET xUnit Tests**: 12 passed (100% passing in native companion solution).
 - **Browser Extension**: Compiles cleanly with TypeScript (`tsc --noEmit` and Vite build).
-- **Desktop Electron App**: Compiles cleanly with TypeScript (`tsc --noEmit` and Vite build, production bundle).
-- **Truthful Status Invariant**: Meta Model API and Local Llama weights are not faked. When `MODEL_API_KEY` is not configured, status truthfully reports `NOT_CONFIGURED` or `LOCAL_FALLBACK`. Deterministic vector SVG and local planning fallbacks execute and test verified. Baseten has been completely removed.
-
+- **Desktop Electron App**: Compiles cleanly with TypeScript (`tsc --noEmit && tsc -p tsconfig.main.json --noEmit` and Vite build).
+- **Truthful Status Invariant**: Meta Model API and Local Llama weights are not faked. When `MODEL_API_KEY` is not configured, status truthfully reports `NOT_CONFIGURED` or `LOCAL_FALLBACK`.
+- **Zero False Success Invariant**: A capability whose companion daemon or browser extension is disconnected reports truthful disconnected status, and `allow_simulation=False` raises `ConnectionError`. Offline simulation drivers cannot yield `VERIFIED`.

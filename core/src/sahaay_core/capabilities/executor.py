@@ -139,11 +139,11 @@ class CapabilityExecutor:
                 file_path = parameters.get("filePath", "")
                 result = self.doc_ingestion.ingest_file(file_path)
                 return {
-                    "sourceId": str(result.source_id),
+                    "sourceId": str(result.get("sourceId")),
                     "filePath": file_path,
-                    "sha256": result.sha256,
-                    "chunksCount": len(result.chunks),
-                    "content": "\n".join(c.text for c in result.chunks),
+                    "sha256": result.get("checksum", ""),
+                    "chunksCount": result.get("factsCount", 0),
+                    "content": result.get("title", ""),
                 }
 
             elif capability_id == "deterministic_retrieval":
@@ -187,14 +187,87 @@ class CapabilityExecutor:
 
             # 5. Verification & Authorization
             elif capability_id == "verify_readback":
-                target = parameters.get("target", "")
+                target = str(parameters.get("target", "windows")).lower()
                 expected = parameters.get("expectedFacts", {})
-                return {"isVerified": True, "target": target, "verifiedFacts": expected}
+                mismatches = []
+                readback_data: Dict[str, Any] = {}
+                readback: Dict[str, Any] = {}
+
+                if target in ("browser", "browser_tab"):
+                    field_names = list(expected.keys()) if isinstance(expected, dict) else []
+                    readback = self.browser_adapter.get_field_values(field_names)
+                    readback_values = readback.get("values", {})
+                    readback_data = readback_values
+                    for k, expected_v in expected.items():
+                        actual_v = readback_values.get(k)
+                        if str(actual_v).strip().lower() != str(expected_v).strip().lower():
+                            mismatches.append(f"Field '{k}': expected '{expected_v}', got '{actual_v}'")
+
+                elif target in ("windows", "desktop", "notepad"):
+                    hwnd = int(parameters.get("hwnd", 0))
+                    target_id = parameters.get("targetId") or parameters.get("automationId")
+                    expected_text = parameters.get("expectedText") or (expected.get("text") if isinstance(expected, dict) else str(expected))
+                    readback = self.windows_adapter.get_control_text(hwnd, target_id)
+                    actual_text = readback.get("text", "")
+                    readback_data = {"text": actual_text}
+                    if expected_text and expected_text.strip() not in actual_text:
+                        mismatches.append(f"Text mismatch: expected '{expected_text}' to be contained in '{actual_text}'")
+
+                elif target == "volume":
+                    expected_vol = int(parameters.get("expectedVolume", 50))
+                    readback = self.windows_adapter.get_system_volume()
+                    actual_vol = int(readback.get("volumePercent", -1))
+                    readback_data = {"volumePercent": actual_vol}
+                    if actual_vol != expected_vol:
+                        mismatches.append(f"Volume mismatch: expected {expected_vol}%, got {actual_vol}%")
+
+                else:
+                    # Generic fact verification against context store
+                    for k, expected_v in (expected.items() if isinstance(expected, dict) else []):
+                        facts = self.context_store.search_facts(str(expected_v))
+                        if not facts:
+                            mismatches.append(f"Fact '{k}' with value '{expected_v}' not found in context store.")
+
+                is_verified = (len(mismatches) == 0)
+                driver_prov = readback.get("driverProvenance") if isinstance(readback, dict) else None
+                return {
+                    "isVerified": is_verified,
+                    "target": target,
+                    "verifiedFacts": expected if is_verified else {},
+                    "readbackData": readback_data,
+                    "mismatches": mismatches,
+                    "driverProvenance": driver_prov,
+                }
 
             elif capability_id == "user_authorization":
                 scope = parameters.get("scope", "execute:action")
                 purpose = parameters.get("purpose", "Authorization request")
-                return {"granted": True, "scope": scope, "purpose": purpose}
+                session_id = context.get("sessionId")
+                # Truthful authorization check: inspect persistent grants if session is provided
+                from uuid import UUID
+
+                from sahaay_core.storage.persistence import durable_storage
+
+                has_grant = False
+                grant_id = None
+                if session_id:
+                    try:
+                        grants = durable_storage.get_consent_grants_for_session(UUID(str(session_id)))
+                        for g in grants:
+                            if g.is_valid() and (g.scope == "*" or g.scope == scope):
+                                has_grant = True
+                                grant_id = str(g.grantId)
+                                break
+                    except Exception:
+                        pass
+
+                return {
+                    "granted": has_grant,
+                    "scope": scope,
+                    "purpose": purpose,
+                    "grantId": grant_id,
+                    "requiresPrompt": not has_grant,
+                }
 
             else:
                 raise CapabilityExecutionError(
