@@ -57,11 +57,12 @@ sahaay/
 # 2. Run all quality checks & tests
 .\scripts\run-tests.ps1
 
-# 3. Start Backend Orchestrator (http://127.0.0.1:8000)
-.\scripts\start-backend.ps1
+# 3. Run System-Wide Held-Out Evaluation Suite (27 scenarios across Categories A-I)
+$env:PYTHONPATH = "core/src"
+.\core\.venv\Scripts\python.exe -c "import asyncio; from sahaay_core.evaluation.system_eval_harness import system_eval_harness; asyncio.run(system_eval_harness.run_evaluation_suite())"
 
-# 4. Start Electron Desktop Application
-.\scripts\start-desktop.ps1
+# 4. Supervised Single-Command Application Launch (Backend + Companion + Diagnostics + Desktop UI)
+.\scripts\start-sahaay.ps1
 ```
 
 ---

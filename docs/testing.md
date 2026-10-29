@@ -25,6 +25,8 @@ The automated test suite across Python and .NET validates the security invariant
 | `tests/unit/test_meta_models.py` | Validates MetaClient, Muse Spark Indic language understanding/planning, Muse Wonder computer tool call parsing, Voice transcription confirmation, SAM 3.1 visual grounding, and Privacy Gateway | `pytest tests/unit/test_meta_models.py` |
 | `tests/unit/test_local_llama.py` | Validates local Llama runtime lifecycle, hardware profiling (CPU, RAM, GPU/CUDA), loopback binding, and truthful missing-weights status reporting | `pytest tests/unit/test_local_llama.py` |
 | `tests/unit/test_cross_surface_workflows.py` | Validates Browser → Desktop and Desktop → Browser end-to-end execution, provenance recording, independent verification, and diagnostics | `pytest tests/unit/test_cross_surface_workflows.py` |
+| `tests/integration/test_milestone12b_real_cross_surface_execution.py` | 11 automated integration tests validating Browser->Notepad, Document->Notepad, Calculator, fail-closed disconnected states, cancellation, prompt-injection defense, and evidence restart persistence | `pytest tests/integration/test_milestone12b_real_cross_surface_execution.py` |
+| `tests/integration/test_milestone12c_held_out_evaluation.py` | 11 automated integration tests verifying all 9 evaluation categories, prompt injection defenses, Action Gate barriers, SQLite durability, and DAG cancellation | `pytest tests/integration/test_milestone12c_held_out_evaluation.py` |
 | `apps/windows-companion/tests` (.NET) | Verifies native host 4-byte message framing, oversized payload rejection, origin allowlist, Named Pipe protocol, and SetControlText/GetControlText validation | `dotnet test apps/windows-companion/Sahaay.sln` |
 
 ---
@@ -34,6 +36,12 @@ The automated test suite across Python and .NET validates the security invariant
 ### Run All Test Suites via Master Script
 ```powershell
 .\scripts\run-tests.ps1
+```
+
+### Run Held-Out System Evaluation Harness (27 Scenarios)
+```powershell
+$env:PYTHONPATH = "core/src"
+.\core\.venv\Scripts\python.exe -c "import asyncio; from sahaay_core.evaluation.system_eval_harness import system_eval_harness; asyncio.run(system_eval_harness.run_evaluation_suite())"
 ```
 
 ### Run Python Test Suite
