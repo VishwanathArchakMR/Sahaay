@@ -22,7 +22,7 @@ try {
 Push-Location "$RepoRoot\apps\windows-companion"
 try {
     Write-Host "Building Sahaay Native Companion Solution..." -ForegroundColor Cyan
-    dotnet build Sahaay.sln -c Release
+    dotnet build Sahaay.sln -c Release -p:UseSharedCompilation=false
 } finally {
     Pop-Location
 }

@@ -24,36 +24,55 @@ public class PipeServer
         {
             try
             {
-                using var pipe = new NamedPipeServerStream(
+                var pipe = new NamedPipeServerStream(
                     PipeName,
                     PipeDirection.InOut,
                     NamedPipeServerStream.MaxAllowedServerInstances,
                     PipeTransmissionMode.Byte,
-                    PipeOptions.Asynchronous
+                    PipeOptions.Asynchronous,
+                    65536,
+                    65536
                 );
 
-                Console.WriteLine("[PipeServer] Waiting for client connection...");
                 await pipe.WaitForConnectionAsync(_cts.Token);
-                Console.WriteLine("[PipeServer] Client connected.");
+                _ = Task.Run(() => HandleClientSessionAsync(pipe, _cts.Token));
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[PipeServer] Server listener error: {ex.Message}");
+                await Task.Delay(200, _cts.Token);
+            }
+        }
+    }
 
-                using var reader = new StreamReader(pipe, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 4096, leaveOpen: true);
-                using var writer = new StreamWriter(pipe, System.Text.Encoding.UTF8, bufferSize: 4096, leaveOpen: true) { AutoFlush = true };
+    private static readonly System.Text.UTF8Encoding Utf8NoBom = new(false);
 
-                while (pipe.IsConnected && !_cts.IsCancellationRequested)
+    private async Task HandleClientSessionAsync(NamedPipeServerStream pipe, CancellationToken ct)
+    {
+        using (pipe)
+        {
+            try
+            {
+                using var reader = new StreamReader(pipe, Utf8NoBom, detectEncodingFromByteOrderMarks: false, bufferSize: 4096, leaveOpen: true);
+                using var writer = new StreamWriter(pipe, Utf8NoBom, bufferSize: 4096, leaveOpen: true) { AutoFlush = true };
+
+                while (pipe.IsConnected && !ct.IsCancellationRequested)
                 {
                     string? line;
                     try
                     {
-                        line = await reader.ReadLineAsync(_cts.Token);
+                        line = await reader.ReadLineAsync(ct);
                     }
                     catch (IOException ex) when (IsBrokenPipe(ex))
                     {
-                        // Expected client disconnection when client closes its handle after receiving response
                         break;
                     }
                     catch (InvalidOperationException ex) when (ex.Message.Contains("disconnected", StringComparison.OrdinalIgnoreCase))
                     {
-                        // Client closed pipe while reading
                         break;
                     }
 
@@ -61,31 +80,27 @@ public class PipeServer
 
                     var response = HandleRequest(line);
                     string jsonResponse = JsonSerializer.Serialize(response);
-                    await writer.WriteLineAsync(jsonResponse.AsMemory(), _cts.Token);
-                    await writer.FlushAsync(_cts.Token);
+                    await writer.WriteLineAsync(jsonResponse.AsMemory(), ct);
+                    await writer.FlushAsync(ct);
                 }
 
                 if (pipe.IsConnected)
                 {
                     try { pipe.Disconnect(); } catch { }
                 }
-                Console.WriteLine("[PipeServer] Client disconnected.");
             }
             catch (OperationCanceledException)
             {
-                break;
             }
             catch (IOException ex) when (IsBrokenPipe(ex))
             {
-                Console.WriteLine("[PipeServer] Client disconnected (pipe closed).");
             }
             catch (InvalidOperationException ex) when (ex.Message.Contains("disconnected", StringComparison.OrdinalIgnoreCase))
             {
-                Console.WriteLine("[PipeServer] Client disconnected (pipe disconnected).");
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[PipeServer] Unexpected connection error: {ex.GetType().Name}: {ex.Message}");
+                Console.Error.WriteLine($"[PipeServer] Connection session error: {ex.GetType().Name}: {ex.Message}");
             }
         }
     }

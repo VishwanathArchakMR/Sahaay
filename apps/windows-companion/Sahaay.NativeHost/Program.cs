@@ -43,6 +43,14 @@ public class Program
     public static async Task Main(string[] args)
     {
         // 1. Diagnostics / Verification CLI mode
+        if (args.Any(a => a.Equals("--register", StringComparison.OrdinalIgnoreCase) ||
+                          a.Equals("--install", StringComparison.OrdinalIgnoreCase)))
+        {
+            string? extId = args.FirstOrDefault(a => !a.StartsWith("-"));
+            RegisterNativeHost(extId);
+            return;
+        }
+
         if (args.Any(a => a.Equals("--test", StringComparison.OrdinalIgnoreCase) ||
                           a.Equals("--verify", StringComparison.OrdinalIgnoreCase) ||
                           a.Equals("--diagnostics", StringComparison.OrdinalIgnoreCase)))
@@ -132,13 +140,15 @@ public class Program
                     PipeDirection.InOut,
                     NamedPipeServerStream.MaxAllowedServerInstances,
                     PipeTransmissionMode.Byte,
-                    PipeOptions.Asynchronous
+                    PipeOptions.Asynchronous,
+                    65536,
+                    65536
                 );
 
                 await pipeServer.WaitForConnectionAsync(ct);
 
-                using var reader = new StreamReader(pipeServer, Encoding.UTF8);
-                using var writer = new StreamWriter(pipeServer, Encoding.UTF8) { AutoFlush = true };
+                using var reader = new StreamReader(pipeServer, new UTF8Encoding(false));
+                using var writer = new StreamWriter(pipeServer, new UTF8Encoding(false)) { AutoFlush = true };
 
                 string? line = await reader.ReadLineAsync(ct);
                 if (string.IsNullOrWhiteSpace(line)) continue;
@@ -256,11 +266,16 @@ public class Program
     public static string? ReadRawMessage(Stream stream)
     {
         byte[] lengthBytes = new byte[4];
-        int bytesRead = stream.Read(lengthBytes, 0, 4);
-        if (bytesRead == 0) return null;
-        if (bytesRead < 4)
+        int totalRead = 0;
+        while (totalRead < 4)
         {
-            throw new InvalidOperationException($"Truncated message length prefix: read only {bytesRead} bytes.");
+            int read = stream.Read(lengthBytes, totalRead, 4 - totalRead);
+            if (read == 0)
+            {
+                if (totalRead == 0) return null;
+                throw new InvalidOperationException($"Truncated message length prefix: read only {totalRead} bytes.");
+            }
+            totalRead += read;
         }
 
         int messageLength = BitConverter.ToInt32(lengthBytes, 0);
@@ -270,7 +285,7 @@ public class Program
         }
 
         byte[] messageBuffer = new byte[messageLength];
-        int totalRead = 0;
+        totalRead = 0;
         while (totalRead < messageLength)
         {
             int read = stream.Read(messageBuffer, totalRead, messageLength - totalRead);
@@ -398,6 +413,72 @@ public class Program
         {
             return new NativeHostMessageResponse(false, request.Command, null, $"Forwarding to controller failed: {ex.Message}");
         }
+    }
+
+    private static void RegisterNativeHost(string? customExtensionId = null)
+    {
+        const string hostName = "com.sahaay.nativehost";
+        string exePath = Environment.ProcessPath ??
+                         System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName ??
+                         Path.Combine(AppContext.BaseDirectory, "Sahaay.NativeHost.exe");
+
+        if (!string.IsNullOrWhiteSpace(customExtensionId))
+        {
+            AllowedExtensionOrigins.Add($"chrome-extension://{customExtensionId}/");
+            AllowedExtensionOrigins.Add($"extension://{customExtensionId}/");
+        }
+
+        var manifestObj = new
+        {
+            name = hostName,
+            description = "Sahaay Native Messaging Host for Chrome and Edge",
+            path = exePath,
+            type = "stdio",
+            allowed_origins = AllowedExtensionOrigins.ToList()
+        };
+
+        string manifestJson = JsonSerializer.Serialize(manifestObj, new JsonSerializerOptions { WriteIndented = true });
+
+        // Primary manifest path in executable directory
+        string localManifestPath = Path.Combine(AppContext.BaseDirectory, $"{hostName}.json");
+        File.WriteAllText(localManifestPath, manifestJson);
+
+        // Also deploy to %LOCALAPPDATA%\Sahaay\native-host if possible
+        string appDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Sahaay", "native-host");
+        string appDataManifestPath = Path.Combine(appDataDir, $"{hostName}.json");
+        try
+        {
+            Directory.CreateDirectory(appDataDir);
+            File.WriteAllText(appDataManifestPath, manifestJson);
+        }
+        catch { }
+
+        string targetManifestPath = File.Exists(appDataManifestPath) ? appDataManifestPath : localManifestPath;
+
+        // Register in HKCU for Chrome and Edge
+        string[] keyPaths = new[]
+        {
+            $@"Software\Google\Chrome\NativeMessagingHosts\{hostName}",
+            $@"Software\Microsoft\Edge\NativeMessagingHosts\{hostName}"
+        };
+
+        foreach (var keyPath in keyPaths)
+        {
+            try
+            {
+                using var key = Registry.CurrentUser.CreateSubKey(keyPath, writable: true);
+                key.SetValue("", targetManifestPath, RegistryValueKind.String);
+                key.SetValue("(Default)", targetManifestPath, RegistryValueKind.String);
+                key.SetValue("(default)", targetManifestPath, RegistryValueKind.String);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[NativeHost] Warning: failed to write to registry key {keyPath}: {ex.Message}");
+            }
+        }
+
+        Console.WriteLine($"[NativeHost] Successfully registered {hostName} -> {targetManifestPath}");
+        RunDiagnostics();
     }
 
     private static void RunDiagnostics()

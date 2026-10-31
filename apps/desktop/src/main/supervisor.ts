@@ -15,7 +15,7 @@
  */
 
 import { ChildProcess, spawn } from "child_process";
-import { existsSync } from "fs";
+import { appendFileSync, existsSync, mkdirSync } from "fs";
 import * as http from "http";
 import * as net from "net";
 import { join, resolve } from "path";
@@ -40,6 +40,7 @@ export interface RuntimeHealthReport {
 
 export class RuntimeSupervisor {
   private repoRoot: string;
+  private logDir: string;
   private backendProcess: ChildProcess | null = null;
   private controllerProcess: ChildProcess | null = null;
   private backendRestartCount = 0;
@@ -49,7 +50,15 @@ export class RuntimeSupervisor {
 
   constructor(appPath: string) {
     this.repoRoot = this.detectRepoRoot(appPath);
+    this.logDir = join(process.env.LOCALAPPDATA || "C:\\temp", "Sahaay", "logs");
+    try { mkdirSync(this.logDir, { recursive: true }); } catch {}
     console.log(`[Supervisor] Initialized with repository root: ${this.repoRoot}`);
+  }
+
+  private appendLog(file: string, msg: string): void {
+    try {
+      appendFileSync(join(this.logDir, file), `[${new Date().toISOString()}] ${msg}\n`);
+    } catch {}
   }
 
   private detectRepoRoot(startPath: string): string {
@@ -106,12 +115,18 @@ export class RuntimeSupervisor {
 
       this.backendProcess.stdout?.on("data", (data) => {
         const line = data.toString().trim();
-        if (line) console.log(`[Backend] ${line}`);
+        if (line) {
+          console.log(`[Backend] ${line}`);
+          this.appendLog("backend.log", line);
+        }
       });
 
       this.backendProcess.stderr?.on("data", (data) => {
         const line = data.toString().trim();
-        if (line) console.error(`[Backend] ${line}`);
+        if (line) {
+          console.error(`[Backend] ${line}`);
+          this.appendLog("backend.log", `[STDERR] ${line}`);
+        }
       });
 
       this.backendProcess.on("exit", (code, signal) => {
@@ -124,7 +139,7 @@ export class RuntimeSupervisor {
         }
       });
 
-      return await this.waitForBackendReady(12000);
+      return await this.waitForBackendReady(25000);
     } catch (err: any) {
       console.error(`[Supervisor] Failed to spawn backend: ${err.message}`);
       return false;
@@ -133,7 +148,7 @@ export class RuntimeSupervisor {
 
   private probeBackendHealth(): Promise<boolean> {
     return new Promise((res) => {
-      const req = http.get("http://127.0.0.1:8000/api/v1/health", { timeout: 1500 }, (r) => {
+      const req = http.get("http://127.0.0.1:8000/api/v1/health", { timeout: 3000 }, (r) => {
         res(r.statusCode === 200);
       });
       req.on("error", () => res(false));
@@ -170,7 +185,8 @@ export class RuntimeSupervisor {
     const candidateBinaries = [
       join(this.repoRoot, "apps", "windows-companion", "Sahaay.Controller", "bin", "Release", "net10.0-windows", "Sahaay.Controller.exe"),
       join(this.repoRoot, "apps", "windows-companion", "Sahaay.Controller", "bin", "Debug", "net10.0-windows", "Sahaay.Controller.exe"),
-      join(this.repoRoot, "bin", "dist", "Sahaay.Controller.exe"),
+      join(this.repoRoot, "bin", "dist", "controller-standalone", "Sahaay.Controller.exe"),
+      join(this.repoRoot, "bin", "dist", "controller", "Sahaay.Controller.exe"),
     ];
 
     const controllerExe = candidateBinaries.find((p) => existsSync(p));
@@ -197,12 +213,18 @@ export class RuntimeSupervisor {
 
       this.controllerProcess.stdout?.on("data", (data) => {
         const line = data.toString().trim();
-        if (line) console.log(`[Controller] ${line}`);
+        if (line) {
+          console.log(`[Controller] ${line}`);
+          this.appendLog("controller.log", line);
+        }
       });
 
       this.controllerProcess.stderr?.on("data", (data) => {
         const line = data.toString().trim();
-        if (line) console.error(`[Controller] ${line}`);
+        if (line) {
+          console.error(`[Controller] ${line}`);
+          this.appendLog("controller.log", `[STDERR] ${line}`);
+        }
       });
 
       this.controllerProcess.on("exit", (code, signal) => {

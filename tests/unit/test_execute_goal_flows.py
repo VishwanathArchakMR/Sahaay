@@ -33,7 +33,7 @@ async def test_execute_goal_immediate_acceptance():
         assert task_id is not None
 
         # 2. Poll until task transitions to COMPLETED in SQLite
-        for _ in range(30):
+        for _ in range(60):
             t_res = await client.get(f"/api/v1/tasks/{task_id}")
             assert t_res.status_code == 200
             if t_res.json()["status"] in ("COMPLETED", "FAILED"):

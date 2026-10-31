@@ -57,6 +57,7 @@ class TaskPassportResponse(BaseModel):
     milestones: List[MilestoneCard]
     summary_notice: str
     visual_storytelling_enabled: bool = True
+    summary: Optional[str] = None
 
 
 class StepIllustrateRequest(BaseModel):
@@ -82,6 +83,7 @@ def register_or_update_passport(
     evidence_id: str,
     target_app_or_url: str,
     source_ref: str,
+    summary: Optional[str] = None,
 ) -> TaskPassportResponse:
     """Helper called by workflows to construct an authoritative, trustworthy Task Passport."""
     import datetime
@@ -183,6 +185,7 @@ def register_or_update_passport(
         milestones=[m1, m2, m3, m4, m5],
         summary_notice="Illustrations are generated as visual metaphors. Exact labels, statuses, and evidence IDs are rendered independently from verified SQLite records.",
         visual_storytelling_enabled=settings.enable_visual_storytelling,
+        summary=summary,
     )
 
     task_passports[task_id] = passport

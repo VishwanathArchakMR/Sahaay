@@ -40,6 +40,23 @@ Write-Host "==========================================================" -Foregro
 Write-Host "         Launching Sahaay Windows AI Agent Runtime         " -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
 
+# Active Named Pipe Ping Handshake
+function Test-NamedPipePing([string]$pipeName, [int]$timeoutMs = 400) {
+    try {
+        $client = [System.IO.Pipes.NamedPipeClientStream]::new(".", $pipeName, [System.IO.Pipes.PipeDirection]::InOut)
+        $client.Connect($timeoutMs)
+        $writer = [System.IO.StreamWriter]::new($client)
+        $writer.AutoFlush = $true
+        $reader = [System.IO.StreamReader]::new($client)
+        $writer.WriteLine('{"id":"probe","command":"ping","sessionId":"diagnostics-probe"}')
+        $resp = $reader.ReadLine()
+        $client.Dispose()
+        return ($resp -and $resp.Contains('"success":true'))
+    } catch {
+        return $false
+    }
+}
+
 # -----------------------------------------------------------------------------
 # 1. PREREQUISITE CHECKS WITH ACTIONABLE ERROR GUIDANCE
 # -----------------------------------------------------------------------------
@@ -79,15 +96,27 @@ $EdgeRegPath = "HKCU:\Software\Microsoft\Edge\NativeMessagingHosts\com.sahaay.na
 $ChromeRegistered = Test-Path $ChromeRegPath
 $EdgeRegistered = Test-Path $EdgeRegPath
 
-if (-not $ChromeRegistered -and -not $EdgeRegistered) {
-    Write-Host "[INSTALL] Browser native messaging host not registered. Installing..." -ForegroundColor Yellow
-    & "$PSScriptRoot\install-browser-native-host.ps1"
+$NeedsHostInstall = -not $ChromeRegistered -or -not $EdgeRegistered
+if (-not $NeedsHostInstall) {
+    # Verify that the registered manifest file actually exists
+    $chromeItem = Get-Item -Path $ChromeRegPath -ErrorAction SilentlyContinue
+    $regVal = if ($chromeItem) { $chromeItem.GetValue("") } else { $null }
+    if (-not $regVal) {
+        $regVal = (Get-ItemProperty -Path $ChromeRegPath -ErrorAction SilentlyContinue)."(default)"
+    }
+    if (-not $regVal) {
+        $regVal = (Get-ItemProperty -Path $ChromeRegPath -ErrorAction SilentlyContinue)."(Default)"
+    }
+    if (-not $regVal -or -not (Test-Path $regVal)) {
+        $NeedsHostInstall = $true
+    }
+}
+
+if ($NeedsHostInstall) {
+    Write-Host "[INSTALL] Browser native messaging host not fully registered. Installing and configuring origins..." -ForegroundColor Yellow
+    & "$PSScriptRoot\install-browser-native-host.ps1" -ExtensionId "filgbgddapmjcddcoadfpimdicmkhpolc"
     $ChromeRegistered = Test-Path $ChromeRegPath
     $EdgeRegistered = Test-Path $EdgeRegPath
-    if (-not $ChromeRegistered -and -not $EdgeRegistered) {
-        Write-Host "[WARN] Native messaging host registration incomplete. To fix manually run:" -ForegroundColor Yellow
-        Write-Host "  powershell -ExecutionPolicy Bypass -File .\scripts\install-browser-native-host.ps1" -ForegroundColor Yellow
-    }
 }
 
 # 1d. Desktop UI Build Artifacts
@@ -119,22 +148,6 @@ if ($DiagnosticsOnly) {
     } catch {}
 
     # Controller pipe probe (Active Handshake)
-    function Test-NamedPipePing([string]$pipeName, [int]$timeoutMs = 400) {
-        try {
-            $client = [System.IO.Pipes.NamedPipeClientStream]::new(".", $pipeName, [System.IO.Pipes.PipeDirection]::InOut)
-            $client.Connect($timeoutMs)
-            $writer = [System.IO.StreamWriter]::new($client)
-            $writer.AutoFlush = $true
-            $reader = [System.IO.StreamReader]::new($client)
-            $writer.WriteLine('{"id":"probe","command":"ping","sessionId":"diagnostics-probe"}')
-            $resp = $reader.ReadLine()
-            $client.Dispose()
-            return ($resp -and $resp.Contains('"success":true'))
-        } catch {
-            return $false
-        }
-    }
-
     $ControllerPipeUp = Test-NamedPipePing -pipeName "SahaayControllerPipe"
     $NativeHostPipeUp = Test-NamedPipePing -pipeName "SahaayBrowserBridgePipe"
 
@@ -154,8 +167,34 @@ if ($DiagnosticsOnly) {
 # -----------------------------------------------------------------------------
 # 3. RUNTIME EXECUTION MODES
 # -----------------------------------------------------------------------------
+
+function Ensure-Port8000Available {
+    try {
+        $existingConns = Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue
+        if ($existingConns) {
+            $healthOk = $false
+            try {
+                $h = Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/health" -TimeoutSec 1 -ErrorAction Stop
+                if ($h.status -eq "healthy") { $healthOk = $true }
+            } catch {}
+
+            if (-not $healthOk) {
+                Write-Host "[CLEANUP] Port 8000 occupied by unresponsive process. Freeing port..." -ForegroundColor Yellow
+                foreach ($conn in $existingConns) {
+                    if ($conn.OwningProcess -gt 0) {
+                        Stop-Process -Id $conn.OwningProcess -Force -ErrorAction SilentlyContinue
+                    }
+                }
+                Start-Sleep -Milliseconds 800
+            }
+        }
+    } catch {}
+}
+
 if ($Mode -eq "Headless") {
     Write-Host "`n[START] Starting Sahaay in Headless Service Mode..." -ForegroundColor Green
+
+    Ensure-Port8000Available
 
     # Check if backend already running
     $BackendRunning = $false
@@ -178,7 +217,7 @@ if ($Mode -eq "Headless") {
     }
 
     # Check if controller already running
-    $PipeRunning = [System.IO.File]::Exists("\\.\pipe\SahaayControllerPipe")
+    $PipeRunning = Test-NamedPipePing -pipeName "SahaayControllerPipe"
     if (-not $PipeRunning -and $ControllerExe) {
         Write-Host "Spawning interactive Windows Controller in user session..." -ForegroundColor Cyan
         $controllerProcess = Start-Process -FilePath $ControllerExe `
@@ -234,7 +273,74 @@ elseif ($Mode -eq "Dev") {
 else {
     # Default Desktop mode: Supervised Electron Application
     Write-Host "`n[START] Starting Supervised Sahaay Desktop Application..." -ForegroundColor Green
-    # Clear ELECTRON_RUN_AS_NODE if inherited from IDE terminal so Electron runs as GUI app, not Node CLI
+
+    # Ensure persistent log directory exists under AppData
+    $LogDir = Join-Path $env:LOCALAPPDATA "Sahaay\logs"
+    if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Path $LogDir -Force | Out-Null }
+
+    # Ensure port 8000 is clean
+    Ensure-Port8000Available
+
+    # 1. Ensure backend is running and healthy on 127.0.0.1:8000
+    $BackendRunning = $false
+    try {
+        $res = Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/health" -TimeoutSec 2 -ErrorAction Stop
+        if ($res.status -eq "healthy") { $BackendRunning = $true }
+    } catch {}
+
+    $spawnedBackend = $null
+    if (-not $BackendRunning) {
+        Write-Host "Spawning FastAPI backend on 127.0.0.1:8000..." -ForegroundColor Cyan
+        $env:PYTHONPATH = Join-Path $RepoRoot "core\src"
+        $backendLog = Join-Path $LogDir "backend.log"
+        $backendErr = Join-Path $LogDir "backend-err.log"
+        $spawnedBackend = Start-Process -FilePath $PythonExe `
+            -ArgumentList "-m", "uvicorn", "sahaay_core.main:app", "--host", "127.0.0.1", "--port", "8000" `
+            -WorkingDirectory (Join-Path $RepoRoot "core") `
+            -RedirectStandardOutput $backendLog `
+            -RedirectStandardError $backendErr `
+            -WindowStyle Hidden `
+            -PassThru
+        Write-Host "Backend process spawned (PID: $($spawnedBackend.Id))." -ForegroundColor Green
+
+        # Wait up to 15 seconds for backend to become healthy
+        $retries = 25
+        while ($retries -gt 0 -and -not $BackendRunning) {
+            Start-Sleep -Milliseconds 600
+            try {
+                $h = Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/health" -TimeoutSec 1 -ErrorAction Stop
+                if ($h.status -eq "healthy") { $BackendRunning = $true }
+            } catch {}
+            $retries--
+        }
+        if ($BackendRunning) {
+            Write-Host "[READY] FastAPI Backend verified healthy at http://127.0.0.1:8000" -ForegroundColor Green
+        } else {
+            Write-Host "[WARN] Backend health probe did not respond within 15s; Electron supervisor will continue monitoring." -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "[ONLINE] FastAPI backend already active on 127.0.0.1:8000 (reusing instance)." -ForegroundColor Green
+    }
+
+    # 2. Ensure Windows Controller daemon is running
+    $PipeRunning = Test-NamedPipePing -pipeName "SahaayControllerPipe"
+    $spawnedController = $null
+    if (-not $PipeRunning -and $ControllerExe) {
+        Write-Host "Spawning interactive Windows Controller..." -ForegroundColor Cyan
+        $ctrlLog = Join-Path $LogDir "controller.log"
+        $ctrlErr = Join-Path $LogDir "controller-err.log"
+        $spawnedController = Start-Process -FilePath $ControllerExe `
+            -WorkingDirectory (Split-Path $ControllerExe) `
+            -RedirectStandardOutput $ctrlLog `
+            -RedirectStandardError $ctrlErr `
+            -WindowStyle Hidden `
+            -PassThru
+        Write-Host "Controller process spawned (PID: $($spawnedController.Id))." -ForegroundColor Green
+    } elseif ($PipeRunning) {
+        Write-Host "[ONLINE] Windows Controller pipe already active (reusing instance)." -ForegroundColor Green
+    }
+
+    # 3. Clear ELECTRON_RUN_AS_NODE and launch Electron
     Remove-Item Env:\ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
     Push-Location $DesktopRoot
     try {
@@ -243,5 +349,13 @@ else {
         npx electron .
     } finally {
         Pop-Location
+        if ($spawnedBackend -and -not $spawnedBackend.HasExited) {
+            Write-Host "Stopping spawned backend (PID: $($spawnedBackend.Id))..." -ForegroundColor Gray
+            Stop-Process -Id $spawnedBackend.Id -Force -ErrorAction SilentlyContinue
+        }
+        if ($spawnedController -and -not $spawnedController.HasExited) {
+            Write-Host "Stopping spawned controller (PID: $($spawnedController.Id))..." -ForegroundColor Gray
+            Stop-Process -Id $spawnedController.Id -Force -ErrorAction SilentlyContinue
+        }
     }
 }

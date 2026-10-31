@@ -134,6 +134,17 @@ async def execute_browser_to_desktop(req: BrowserToDesktopRequest) -> Dict[str, 
     )
     task_id = task.taskId
 
+    if not is_fixture and (req.targetHwnd is not None and req.targetHwnd <= 0):
+        orchestrator.transition_state(task_id, TaskStatusEnum.PLANNING)
+        orchestrator.transition_state(task_id, TaskStatusEnum.FAILED)
+        return {
+            "workflow": "browser-to-desktop",
+            "taskId": str(task_id),
+            "status": "FAILED",
+            "isVerified": False,
+            "error": "Invalid or missing target window handle (targetHwnd <= 0). Real execution requires an active window.",
+        }
+
     orchestrator.transition_state(task_id, TaskStatusEnum.PLANNING)
     orchestrator.transition_state(task_id, TaskStatusEnum.OBSERVING)
 
@@ -377,6 +388,7 @@ async def execute_browser_to_desktop(req: BrowserToDesktopRequest) -> Dict[str, 
         evidence_id=str(evidence.evidenceId),
         target_app_or_url=target_identifier,
         source_ref=source_ref.uri,
+        summary=f"Extracted key points from {source_ref.uri} and verified written text in {target_identifier} with readback confirmation.",
     )
 
     return {
@@ -875,6 +887,7 @@ async def _execute_goal_pipeline(
             evidence_id=str(evidence.evidenceId),
             target_app_or_url="Sahaay Runtime Registry",
             source_ref="Local Capability Registry & Diagnostics",
+            summary=summary_text,
         )
 
         return {
@@ -995,6 +1008,7 @@ async def _execute_goal_pipeline(
             evidence_id=str(evidence.evidenceId),
             target_app_or_url=doc_path.name,
             source_ref=f"Source ID: {source_id_str}",
+            summary=f"Extracted verified billing facts from {doc_path.name}: " + ", ".join(f"{k}: {v}" for k, v in extracted_facts.items()),
         )
 
         return {
@@ -1093,6 +1107,7 @@ async def _execute_goal_pipeline(
         evidence_id=report.evidence_ids[-1] if report.evidence_ids else None,
         target_app_or_url="Windows Desktop & Browser",
         source_ref="Sahaay Native Shared Runtime",
+        summary=summary_text,
     )
 
     return {

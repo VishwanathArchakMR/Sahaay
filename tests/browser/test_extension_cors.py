@@ -36,3 +36,4 @@ async def test_extension_cors_health_get():
         data = res.json()
         assert data["status"] == "healthy"
         assert data["databaseReady"] is True
+

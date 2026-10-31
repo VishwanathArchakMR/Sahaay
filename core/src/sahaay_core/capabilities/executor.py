@@ -112,7 +112,7 @@ class CapabilityExecutor:
 
             elif capability_id == "windows_get_control_text":
                 hwnd = int(parameters.get("hwnd", 0))
-                if hwnd <= 0:
+                if hwnd <= 0 and not getattr(self.windows_adapter, "allow_simulation", False):
                     try:
                         for win in self.windows_adapter.list_open_windows():
                             if (
@@ -128,7 +128,7 @@ class CapabilityExecutor:
 
             elif capability_id == "windows_set_control_text":
                 hwnd = int(parameters.get("hwnd", 0))
-                if hwnd <= 0:
+                if hwnd <= 0 and not getattr(self.windows_adapter, "allow_simulation", False):
                     try:
                         for win in self.windows_adapter.list_open_windows():
                             if (
@@ -323,7 +323,7 @@ class CapabilityExecutor:
 
                 elif target in ("windows", "desktop", "notepad"):
                     hwnd = int(parameters.get("hwnd", 0))
-                    if hwnd <= 0:
+                    if hwnd <= 0 and not getattr(self.windows_adapter, "allow_simulation", False):
                         try:
                             for win in self.windows_adapter.list_open_windows():
                                 if (

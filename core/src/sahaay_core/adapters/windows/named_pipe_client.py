@@ -88,7 +88,7 @@ class NamedPipeClient:
     ) -> Dict[str, Any]:
         """Send a typed command to the Sahaay Windows Controller via Named Pipe with strict bounded timeout."""
         # Fast non-blocking pre-check: verify pipe exists before creating handle
-        pipe_wait_timeout = min(timeout_ms, 200)
+        pipe_wait_timeout = min(timeout_ms, 50)
         has_pipe = WaitNamedPipeW(self.pipe_path, pipe_wait_timeout)
         if not has_pipe:
             err = kernel32.GetLastError()
@@ -152,13 +152,14 @@ class NamedPipeClient:
                 )
 
             # Read response line now that bytes are guaranteed available
-            buffer = ctypes.create_string_buffer(65536)
+            bytes_to_read = min(65536, max(1, bytes_avail.value))
+            buffer = ctypes.create_string_buffer(bytes_to_read + 1)
             bytes_read = wintypes.DWORD(0)
-            success = ReadFile(handle, buffer, 65536, ctypes.byref(bytes_read), None)
+            success = ReadFile(handle, buffer, bytes_to_read, ctypes.byref(bytes_read), None)
             if not success and kernel32.GetLastError() != 0:
                 raise OSError(f"ReadFile failed with error {kernel32.GetLastError()}")
 
-            resp_raw = buffer.raw[: bytes_read.value].decode("utf-8").strip()
+            resp_raw = buffer.raw[: bytes_read.value].decode("utf-8").lstrip("\ufeff").strip()
             return json.loads(resp_raw)
         finally:
             CloseHandle(handle)

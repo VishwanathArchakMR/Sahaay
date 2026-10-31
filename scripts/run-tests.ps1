@@ -36,7 +36,7 @@ if (Test-Path "$localDotnet\dotnet.exe") {
 }
 if (Get-Command dotnet -ErrorAction SilentlyContinue) {
     Write-Host "`n2b. Running .NET Companion Test Suite..." -ForegroundColor Yellow
-    dotnet test "$RepoRoot\apps\windows-companion\Sahaay.sln"
+    dotnet test "$RepoRoot\apps\windows-companion\Sahaay.sln" -p:UseSharedCompilation=false
     if ($LASTEXITCODE -ne 0) {
         Write-Host "[FAIL] .NET companion tests failed." -ForegroundColor Red
         exit 1

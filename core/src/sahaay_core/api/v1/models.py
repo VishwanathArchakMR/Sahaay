@@ -4,6 +4,7 @@ Exposes endpoints for Meta hosted models (Muse Spark, Muse Wonder, Muse Voice Tr
 and on-device Local Llama 3.2 3B Instruct runtime lifecycle.
 """
 
+import asyncio
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, File, Form, UploadFile
@@ -92,10 +93,14 @@ async def get_models_status() -> Dict[str, Any]:
     meta_status = _resolve_provider_readiness(meta_client.is_configured, "meta")
     muse_image_status = _resolve_provider_readiness(muse_image.is_configured, "muse_image")
 
-    # Live probe of system bridge and pipe connections
-    is_native_host_up = browser_adapter.is_connected()
-    is_ext_attached = browser_adapter.is_browser_attached() if is_native_host_up else False
-    is_companion_up = windows_adapter.is_connected()
+    # Live probe of system bridge and pipe connections (offloaded to thread to preserve event loop responsiveness)
+    is_native_host_up = await asyncio.to_thread(browser_adapter.is_connected)
+    is_ext_attached = (
+        await asyncio.to_thread(browser_adapter.is_browser_attached)
+        if is_native_host_up
+        else False
+    )
+    is_companion_up = await asyncio.to_thread(windows_adapter.is_connected)
 
     return {
         "metaHosted": {

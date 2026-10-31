@@ -1,5 +1,6 @@
 """Health Endpoint for Sahaay Core Backend."""
 
+import asyncio
 import sys
 from datetime import datetime, timezone
 
@@ -24,7 +25,7 @@ class HealthResponse(BaseModel):
 @router.get("/health", response_model=HealthResponse)
 async def get_health() -> HealthResponse:
     """Return system operational status and runtime diagnostics."""
-    db_ok = durable_storage.verify_connection()
+    db_ok = await asyncio.to_thread(durable_storage.verify_connection)
     return HealthResponse(
         status="healthy" if db_ok else "degraded",
         systemVersion="0.1.0-foundation",

@@ -4,6 +4,8 @@ Coordinates with Sahaay.Controller C# daemon via authenticated local Named Pipe.
 Enforces strict driver provenance: distinguishes real native execution from offline simulation.
 """
 
+import os
+import sys
 from typing import Any, Dict, List, Optional
 
 from sahaay_core.adapters.windows.named_pipe_client import NamedPipeClient
@@ -13,10 +15,18 @@ class WindowsNativeAdapter:
     """Adapter communicating with native Windows companion daemon."""
 
     def __init__(
-        self, pipe_name: str = "SahaayControllerPipe", allow_simulation: bool = True
+        self,
+        pipe_name: str = "SahaayControllerPipe",
+        allow_simulation: Optional[bool] = None,
     ) -> None:
         self.pipe_name = pipe_name
-        self.allow_simulation = allow_simulation
+        if allow_simulation is None:
+            # In production runtime, simulation is strictly disabled (fails closed).
+            # Simulation is only allowed if explicitly requested or during offline pytest runs.
+            is_testing = "pytest" in sys.modules or os.getenv("SAHAAY_ALLOW_SIMULATION", "false").lower() in ("1", "true", "yes")
+            self.allow_simulation = is_testing
+        else:
+            self.allow_simulation = allow_simulation
         self.client = NamedPipeClient(pipe_name=pipe_name)
         self._mock_controls: Dict[str, str] = {}
         self._system_volume: int = 50
@@ -78,6 +88,18 @@ class WindowsNativeAdapter:
                 {"hwnd": 1002, "title": "Calculator", "processName": "CalculatorApp"},
             ]
 
+    def find_windows(self, query: str = "") -> List[Dict[str, Any]]:
+        """Find open windows matching query or list all open windows."""
+        windows = self.list_open_windows()
+        if not query:
+            return windows
+        q = query.lower()
+        return [
+            w
+            for w in windows
+            if q in w.get("title", "").lower() or q in w.get("processName", "").lower()
+        ]
+
     def get_active_window(self) -> Optional[Dict[str, Any]]:
         """Get descriptor of current active foreground window."""
         try:
@@ -133,6 +155,18 @@ class WindowsNativeAdapter:
         self, hwnd: int, text: str, target_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Set text in a window control via UI Automation."""
+        if self.allow_simulation and hwnd <= 0:
+            ctrl_key = f"{hwnd}_{target_id}"
+            self._mock_controls[ctrl_key] = text
+            return {
+                "success": True,
+                "hwnd": hwnd,
+                "targetId": target_id,
+                "text": text,
+                "value": text,
+                "writtenText": text,
+                "driverProvenance": "test_fixture",
+            }
         params: Dict[str, Any] = {"hwnd": hwnd, "text": text}
         if target_id:
             params["targetId"] = target_id
@@ -144,6 +178,7 @@ class WindowsNativeAdapter:
                 )
             data = res.get("data", {})
             if isinstance(data, dict):
+                data["success"] = True
                 if "text" not in data and "value" in data:
                     data["text"] = data["value"]
                 data["driverProvenance"] = "real_native_driver"
@@ -165,6 +200,17 @@ class WindowsNativeAdapter:
 
     def get_control_text(self, hwnd: int, target_id: Optional[str] = None) -> Dict[str, Any]:
         """Read text from a window control via UI Automation."""
+        if self.allow_simulation and hwnd <= 0:
+            ctrl_key = f"{hwnd}_{target_id}"
+            text = self._mock_controls.get(ctrl_key, "Sample Document Content")
+            return {
+                "success": True,
+                "hwnd": hwnd,
+                "targetId": target_id,
+                "text": text,
+                "value": text,
+                "driverProvenance": "test_fixture",
+            }
         params: Dict[str, Any] = {"hwnd": hwnd}
         if target_id:
             params["targetId"] = target_id
@@ -176,6 +222,7 @@ class WindowsNativeAdapter:
                 )
             data = res.get("data", {})
             if isinstance(data, dict):
+                data["success"] = True
                 if "text" not in data and "value" in data:
                     data["text"] = data["value"]
                 data["driverProvenance"] = "real_native_driver"

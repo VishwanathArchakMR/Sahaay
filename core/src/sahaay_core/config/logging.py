@@ -1,12 +1,11 @@
 """Structured and sanitized logging for Sahaay with persistent rotating log streams."""
 
 import logging
-from logging.handlers import RotatingFileHandler
 import os
-from pathlib import Path
 import re
 import sys
-from typing import Optional
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 # Common patterns for sensitive information (tokens, keys, bearer tokens, passwords)
 SENSITIVE_PATTERNS = [
