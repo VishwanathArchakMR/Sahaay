@@ -121,7 +121,7 @@
       "expected_capabilities": ["browser_tab_observe"],
       "expected_decision": "ALLOW",
       "forbidden_side_effects": ["windows_launch_app", "file_write"],
-      "driver_provenance": "real_browser_extension",
+      "driver_provenance": "test_fixture",
       "oracle": {
         "expected_status": "COMPLETED",
         "required_facts": {
@@ -140,7 +140,7 @@
       "expected_capabilities": ["browser_tab_observe"],
       "expected_decision": "ALLOW",
       "forbidden_side_effects": ["windows_launch_app", "file_write"],
-      "driver_provenance": "real_browser_extension",
+      "driver_provenance": "test_fixture",
       "oracle": {
         "expected_status": "COMPLETED",
         "resolved_target": "pay-now-btn",
@@ -157,7 +157,7 @@
       "expected_capabilities": ["browser_tab_observe"],
       "expected_decision": "ALLOW",
       "forbidden_side_effects": ["file_write", "windows_launch_app"],
-      "driver_provenance": "real_browser_extension",
+      "driver_provenance": "test_fixture",
       "oracle": {
         "expected_status": "FAILED",
         "stale_observation_detected": true,
@@ -222,7 +222,7 @@
       "expected_capabilities": ["windows_launch_app", "windows_set_control_text", "windows_get_control_text"],
       "expected_decision": "ALLOW",
       "forbidden_side_effects": ["network_call"],
-      "driver_provenance": "real_native_driver",
+      "driver_provenance": "test_fixture",
       "oracle": {
         "expected_status": "COMPLETED",
         "verified_readback_contains": "Summary",
@@ -238,7 +238,7 @@
       "expected_capabilities": ["windows_launch_app", "windows_set_control_text"],
       "expected_decision": "ALLOW",
       "forbidden_side_effects": ["network_call"],
-      "driver_provenance": "real_native_driver",
+      "driver_provenance": "test_fixture",
       "oracle": {
         "expected_status": "COMPLETED",
         "expected_calculation_result": "3000.00",
@@ -254,7 +254,7 @@
       "expected_capabilities": ["windows_set_control_text"],
       "expected_decision": "ALLOW",
       "forbidden_side_effects": ["network_call"],
-      "driver_provenance": "real_native_driver",
+      "driver_provenance": "test_fixture",
       "oracle": {
         "expected_status": "FAILED",
         "clean_failure_reported": true,

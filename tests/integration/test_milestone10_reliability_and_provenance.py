@@ -15,13 +15,13 @@ Validates:
      reads back state, independently verifies, and records in SQLite evidence ledger.
 """
 
-from pathlib import Path
 from uuid import uuid4
 
 import pytest
 from sahaay_core.adapters.browser.adapter import BrowserAdapter
 from sahaay_core.adapters.windows.adapter import WindowsNativeAdapter
 from sahaay_core.capabilities.executor import CapabilityExecutor
+from sahaay_core.config.settings import get_fixture_path
 from sahaay_core.context.store import ContextStore
 from sahaay_core.contracts.models import (
     ActionContract,
@@ -209,7 +209,7 @@ async def test_compound_browser_to_desktop_deadline_extraction_and_readback(m10_
     5. Persist cryptographic evidence record to SQLite ledger.
     """
     env = m10_env
-    fixture_path = Path("c:/Sahaay/data/fixtures/deadline_notice.html")
+    fixture_path = get_fixture_path("deadline_notice.html")
     assert fixture_path.exists(), "deadline_notice.html fixture must exist"
 
     page_html = fixture_path.read_text(encoding="utf-8")

@@ -7,6 +7,10 @@ export const MAX_MESSAGE_BYTES = 1024 * 1024; // 1MB maximum message size limit
 
 export const ALLOWED_EXTENSION_COMMANDS = [
   "ping",
+  "get_status",
+  "get_native_status",
+  "reconnect_native",
+  "inspect_tab",
   "get_tab_metadata",
   "get_sanitized_dom",
   "get_tab_observation",

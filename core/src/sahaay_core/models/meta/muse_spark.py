@@ -10,14 +10,13 @@ import json
 import logging
 import re
 import time
-from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator
 
 from sahaay_core.capabilities import capability_registry
-from sahaay_core.config.settings import settings
+from sahaay_core.config.settings import get_fixture_path, settings
 from sahaay_core.contracts.models import (
     ActionTypeEnum,
     ConsentGrant,
@@ -873,7 +872,7 @@ class MuseSparkClient:
                     target_surface="local_store",
                     target_scope="local_notes.txt",
                     dependencies=["step-res-1"],
-                    parameters={"filePath": "data/fixtures/local_notes.txt"},
+                    parameters={"filePath": str(get_fixture_path("local_notes.txt"))},
                     preconditions=["Local notes file exists"],
                     expected_postconditions=["Local notes content loaded with SHA-256 fingerprint"],
                     requires_human_approval=False,
@@ -920,7 +919,7 @@ class MuseSparkClient:
                     action_type=ActionTypeEnum.READ_FILE.value,
                     target_surface="local_store",
                     target_scope="project_report.txt",
-                    parameters={"filePath": "data/fixtures/project_report.txt"},
+                    parameters={"filePath": str(get_fixture_path("project_report.txt"))},
                     preconditions=["Report file exists in permitted directory"],
                     expected_postconditions=[
                         "Report chunks and SHA-256 registered in source manager"
@@ -960,10 +959,9 @@ class MuseSparkClient:
                 ),
             ]
         elif is_bill_to_notepad:
-            bill_file_path = (
-                "data/fixtures/electricity_bill.txt"
-                if Path("data/fixtures/electricity_bill.txt").exists()
-                else "data/fixtures/utility_bill.html"
+            elec_file = get_fixture_path("electricity_bill.txt")
+            bill_file_path = str(
+                elec_file if elec_file.exists() else get_fixture_path("utility_bill.html")
             )
             steps = [
                 PlanStepProposal(
@@ -1114,7 +1112,7 @@ class MuseSparkClient:
                     action_type=ActionTypeEnum.READ_FILE.value,
                     target_surface="local_store",
                     target_scope="invoice_data.json",
-                    parameters={"filePath": "data/fixtures/invoice_data.json"},
+                    parameters={"filePath": str(get_fixture_path("invoice_data.json"))},
                     preconditions=["File exists and user selected"],
                     expected_postconditions=["Invoice fields loaded with SHA-256 checksum"],
                     requires_human_approval=False,

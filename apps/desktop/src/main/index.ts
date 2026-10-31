@@ -27,8 +27,8 @@ function createWindow(): void {
     autoHideMenuBar: true,
     titleBarStyle: "hidden",
     titleBarOverlay: {
-      color: "#0f172a",
-      symbolColor: "#94a3b8",
+      color: "#06131D",
+      symbolColor: "#8AF5CF",
       height: 38,
     },
     webPreferences: {
@@ -124,6 +124,14 @@ ipcMain.handle("sahaay:restart-component", async (event, component: "backend" | 
   }
   return false;
 });
+
+// Isolate userData to dedicated directory to prevent Chromium simple cache sharing conflicts
+try {
+  const dedicatedUserData = join(app.getPath("appData"), "SahaayDesktop");
+  app.setPath("userData", dedicatedUserData);
+} catch (e) {
+  console.warn("[Main] Dedicated userData initialization notice:", e);
+}
 
 app.whenReady().then(async () => {
   supervisor = new RuntimeSupervisor(app.getAppPath());

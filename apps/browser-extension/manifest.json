@@ -5,10 +5,16 @@
   "description": "Secure, authorized browser integration bridge for Sahaay Windows AI Agent",
   "permissions": [
     "activeTab",
+    "tabs",
+    "scripting",
     "storage",
-    "nativeMessaging"
+    "nativeMessaging",
+    "sidePanel"
   ],
   "host_permissions": [],
+  "side_panel": {
+    "default_path": "src/sidepanel/index.html"
+  },
   "background": {
     "service_worker": "dist/service-worker/index.js",
     "type": "module"
@@ -21,8 +27,7 @@
     }
   ],
   "action": {
-    "default_popup": "src/popup/index.html",
-    "default_title": "Sahaay Status"
+    "default_title": "Sahaay Browser Sidebar"
   },
   "options_ui": {
     "page": "src/options/index.html",

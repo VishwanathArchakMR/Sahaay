@@ -24,6 +24,14 @@ class TransitionStateRequest(BaseModel):
     targetStatus: TaskStatusEnum
 
 
+@router.get("", response_model=list[TaskContract])
+async def list_tasks(limit: int = 20) -> list[TaskContract]:
+    """Fetch recent tasks from durable storage."""
+    from sahaay_core.storage.persistence import durable_storage
+
+    return durable_storage.list_tasks(limit=limit)
+
+
 @router.post("", response_model=TaskContract, status_code=status.HTTP_201_CREATED)
 async def create_task(req: CreateTaskRequest) -> TaskContract:
     """Create a new task."""

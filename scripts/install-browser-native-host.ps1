@@ -12,7 +12,7 @@ Target browser extension ID (default: "knldjmfmopnpolahpmmgbagdohdnhkik").
 #>
 
 param(
-    [string]$ExtensionId = "knldjmfmopnpolahpmmgbagdohdnhkik",
+    [string]$ExtensionId = "filgbgddapmjcddcoadfpimdicmkhpolc",
     [switch]$SkipBuild
 )
 
@@ -50,8 +50,8 @@ Write-Host "Target Directory:     $InstallDir"
 Write-Host "Configured Ext ID:    $ExtensionId"
 Write-Host "Unpacked Repo Ext ID: $UnpackedId"
 
-# 1. Build if not already built or requested
-if (-not (Test-Path $SourceExe) -and -not $SkipBuild) {
+# 1. Build unless explicitly skipped
+if (-not $SkipBuild) {
     Write-Host "`nBuilding standalone NativeHost..." -ForegroundColor Yellow
     $localDotnet = Join-Path $env:LOCALAPPDATA "Microsoft\dotnet\dotnet.exe"
     $dotnetCmd = if (Test-Path $localDotnet) { $localDotnet } else { "dotnet" }
@@ -80,12 +80,22 @@ Write-Host "[OK] Binary deployed to: $TargetExe" -ForegroundColor Green
 
 # 3. Generate Native Messaging Manifest with dual Chrome & Edge origin support
 $allowedOrigins = [System.Collections.Generic.List[string]]::new()
-$allowedOrigins.Add("chrome-extension://$ExtensionId/")
-$allowedOrigins.Add("extension://$ExtensionId/")
+$knownIds = @(
+    "filgbgddapmjcddcoadfpimdicmkhpolc", # Active browser installed extension ID
+    $ExtensionId,
+    $UnpackedId,
+    "nokchmadkhaghgooijgkgpheoieaibdp", # Canonical uppercase C:\Sahaay
+    "ddbdffinhcfibhclfaiaemgnnajphgbf", # Canonical lowercase c:\Sahaay
+    "paeilcdpihcpnlkgjbemiigbefbhbgdo", # Canonical dist path (uppercase C:)
+    "incpiefenjejkjfholbomkhcflfbecnc", # Canonical dist path (lowercase c:)
+    "knldjmfmopnpolahpmmgbagdohdnhkik"  # Standard test / dev unpacked ID
+) | Select-Object -Unique
 
-if ($UnpackedId -ne $ExtensionId) {
-    $allowedOrigins.Add("chrome-extension://$UnpackedId/")
-    $allowedOrigins.Add("extension://$UnpackedId/")
+foreach ($id in $knownIds) {
+    $cOrigin = "chrome-extension://$id/"
+    $eOrigin = "extension://$id/"
+    if (-not $allowedOrigins.Contains($cOrigin)) { $allowedOrigins.Add($cOrigin) }
+    if (-not $allowedOrigins.Contains($eOrigin)) { $allowedOrigins.Add($eOrigin) }
 }
 
 $manifest = [ordered]@{

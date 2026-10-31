@@ -252,9 +252,17 @@ class DesktopEvaluator:
             "systemRamGb": system_ram_gb,
         }
 
-    def assess_hardware_and_model_feasibility(self) -> Dict[str, Any]:
+    def assess_hardware_and_model_feasibility(
+        self, measured_vram_override: Optional[float] = None
+    ) -> Dict[str, Any]:
         """Assess GPU VRAM constraints dynamically and compare local VLM vs Hybrid UI Automation architecture."""
         hardware = self.detect_real_hardware()
+        if measured_vram_override is not None:
+            hardware = dict(hardware)
+            hardware["vramGb"] = float(measured_vram_override)
+            hardware["name"] = (
+                f"{hardware.get('name', 'GPU')} (Evaluator VRAM Override: {measured_vram_override} GB)"
+            )
         measured_vram = hardware.get("vramGb", 0.0)
 
         candidate_models = [

@@ -114,5 +114,64 @@ public class PipeServerTests
         Assert.False(res.Success);
         Assert.Contains("Missing required parameter 'hwnd'", res.Error);
     }
+
+    [Fact]
+    public void IsBrokenPipe_IdentifiesStandardDisconnectionErrors()
+    {
+        var ex1 = new System.IO.IOException("Pipe is broken.");
+        var ex2 = new System.IO.IOException("The pipe has been ended.", unchecked((int)0x8007006D));
+        var ex3 = new System.IO.IOException("Another disk failure");
+
+        Assert.True(PipeServer.IsBrokenPipe(ex1));
+        Assert.True(PipeServer.IsBrokenPipe(ex2));
+        Assert.False(PipeServer.IsBrokenPipe(ex3));
+    }
+
+    [Fact]
+    public void HandleRequest_MalformedJson_ReturnsErrorGracefully()
+    {
+        string malformed = "{ this is not json }";
+        var res = PipeServer.HandleRequest(malformed);
+
+        Assert.False(res.Success);
+        Assert.Contains("Malformed JSON request", res.Error);
+    }
+
+    [Fact]
+    public void HandleRequest_EmptyOrWhitespaceJson_ReturnsError()
+    {
+        var res = PipeServer.HandleRequest("");
+        Assert.False(res.Success);
+    }
+
+    [Fact]
+    public void HandleRequest_RepeatedPings_ReturnSuccess()
+    {
+        for (int i = 0; i < 10; i++)
+        {
+            var req = new IpcMessageRequest($"ping-{i}", "ping", "sess-1", null, null, null);
+            var res = PipeServer.HandleRequest(JsonSerializer.Serialize(req));
+            Assert.True(res.Success);
+            Assert.Equal("ping", res.Command);
+            Assert.Equal($"ping-{i}", res.Id);
+        }
+    }
+
+    [Fact]
+    public void HandleRequest_SequentialVariedCommands_MaintainIndependentContext()
+    {
+        var pingReq = new IpcMessageRequest("req-ping", "ping", "sess-1", null, null, null);
+        var pingRes = PipeServer.HandleRequest(JsonSerializer.Serialize(pingReq));
+        Assert.True(pingRes.Success);
+
+        var capsReq = new IpcMessageRequest("req-caps", "get_capabilities", "sess-1", null, null, null);
+        var capsRes = PipeServer.HandleRequest(JsonSerializer.Serialize(capsReq));
+        Assert.True(capsRes.Success);
+
+        var badReq = new IpcMessageRequest("req-bad", "unauthorized_command", "sess-1", null, null, null);
+        var badRes = PipeServer.HandleRequest(JsonSerializer.Serialize(badReq));
+        Assert.False(badRes.Success);
+        Assert.Contains("forbidden", badRes.Error);
+    }
 }
 

@@ -25,6 +25,11 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Set up .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
       - name: Install uv
         run: |
           pip install uv
@@ -43,6 +48,10 @@ jobs:
       - name: Run Automated Pytest Suite (Unit, Privacy, Security, Contracts)
         run: |
           .\core\.venv\Scripts\pytest.exe tests
+
+      - name: Run .NET Windows Companion Test Suite
+        run: |
+          dotnet test apps/windows-companion/Sahaay.sln
 
       - name: Install & Build Browser Extension
         run: |

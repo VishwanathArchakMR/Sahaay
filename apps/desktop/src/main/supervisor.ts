@@ -181,11 +181,18 @@ export class RuntimeSupervisor {
 
     console.log(`[Supervisor] Spawning interactive Windows Controller: ${controllerExe}...`);
 
+    const localDotnet = join(process.env.LOCALAPPDATA || "", "Microsoft", "dotnet");
+    const controllerEnv: NodeJS.ProcessEnv = { ...process.env };
+    if (existsSync(join(localDotnet, "dotnet.exe"))) {
+      controllerEnv.DOTNET_ROOT = localDotnet;
+      controllerEnv.PATH = `${localDotnet};${controllerEnv.PATH || ""}`;
+    }
+
     try {
       this.controllerProcess = spawn(controllerExe, [], {
         cwd: join(this.repoRoot, "apps", "windows-companion", "Sahaay.Controller"),
         windowsHide: true,
-        env: process.env,
+        env: controllerEnv,
       });
 
       this.controllerProcess.stdout?.on("data", (data) => {
@@ -221,7 +228,7 @@ export class RuntimeSupervisor {
         client.write(JSON.stringify({ id: "probe-1", command: "ping" }) + "\n");
       });
       client.on("data", () => {
-        client.destroy();
+        client.end();
         res(true);
       });
       client.on("error", () => {
@@ -252,7 +259,7 @@ export class RuntimeSupervisor {
         client.write(JSON.stringify({ id: "probe-br", command: "ping" }) + "\n");
       });
       client.on("data", () => {
-        client.destroy();
+        client.end();
         res(true);
       });
       client.on("error", () => {
@@ -354,3 +361,4 @@ export class RuntimeSupervisor {
     }
   }
 }
+

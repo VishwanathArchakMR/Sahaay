@@ -6,10 +6,52 @@ from pathlib import Path
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Determine repository root reliably across any working directory
-REPO_ROOT = Path(__file__).resolve().parents[4]
-if not (REPO_ROOT / "core").exists():
-    REPO_ROOT = Path.cwd()
+
+# Determine repository root reliably across any working directory or runner checkout
+def find_repo_root() -> Path:
+    """Find the repository root by locating marker files/directories."""
+    current = Path(__file__).resolve().parent
+    for parent in [current] + list(current.parents):
+        if (parent / "core" / "src" / "sahaay_core").exists() and (parent / "data").exists():
+            return parent
+    cwd = Path.cwd()
+    if (cwd / "core" / "src" / "sahaay_core").exists() and (cwd / "data").exists():
+        return cwd
+    if (cwd / "data" / "fixtures").exists():
+        return cwd
+    return Path(__file__).resolve().parents[4]
+
+
+REPO_ROOT = find_repo_root()
+
+
+def get_repo_root() -> Path:
+    """Return the authoritative repository root Path."""
+    return REPO_ROOT
+
+
+def get_fixtures_dir() -> Path:
+    """Return the authoritative fixtures directory Path."""
+    primary = REPO_ROOT / "data" / "fixtures"
+    if primary.exists():
+        return primary
+    cwd_path = Path.cwd() / "data" / "fixtures"
+    if cwd_path.exists():
+        return cwd_path
+    return primary
+
+
+def get_fixture_path(relative_name: str) -> Path:
+    """Return the resolved Path for a named fixture file."""
+    clean_name = relative_name.replace("\\", "/")
+    if clean_name.startswith("data/fixtures/"):
+        clean_name = clean_name[len("data/fixtures/") :]
+    elif clean_name.startswith("/data/fixtures/"):
+        clean_name = clean_name[len("/data/fixtures/") :]
+    elif clean_name.startswith("data/"):
+        clean_name = clean_name[len("data/") :]
+
+    return get_fixtures_dir() / clean_name
 
 
 class Settings(BaseSettings):

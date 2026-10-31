@@ -241,14 +241,56 @@ async def plan_with_muse_spark(req: ModelPlanningRequest) -> MuseSparkPlan:
 async def transcribe_audio(
     file: UploadFile = File(...),  # noqa: B008
     languageHints: str = Form("kn,hi,en"),  # noqa: B008
+    sessionId: Optional[str] = Form(None),  # noqa: B008
 ) -> VoiceTranscriptionResult:
     """Submit recorded audio chunk or file to Muse Voice Transcribe pipeline."""
     audio_bytes = await file.read()
     hints = [h.strip() for h in languageHints.split(",") if h.strip()]
+
+    # Outbound checks must obey Privacy Gateway and local-only mode
+    if settings.local_only_mode:
+        return VoiceTranscriptionResult(
+            transcript="",
+            confidence=0.0,
+            language_detected="unknown",
+            is_final=True,
+            duration_seconds=0.0,
+            is_live_call=False,
+            editable=True,
+            status="BLOCKED_BY_PRIVACY",
+            error="Hosted speech transcription is blocked because Local-Only Mode is active. Outbound transmission of microphone audio to Meta AI is disabled.",
+        )
+
+    if not meta_client.is_configured:
+        return VoiceTranscriptionResult(
+            transcript="",
+            confidence=0.0,
+            language_detected="unknown",
+            is_final=True,
+            duration_seconds=0.0,
+            is_live_call=False,
+            editable=True,
+            status="NOT_CONFIGURED",
+            error="Meta API credentials are not configured for hosted voice transcription.",
+        )
+
+    grants = []
+    if sessionId:
+        try:
+            from uuid import UUID
+
+            from sahaay_core.api.v1.sessions import active_grants
+
+            grants = active_grants.get(UUID(sessionId), [])
+        except Exception:
+            pass
+
     return await muse_voice.transcribe_audio_chunk(
         audio_bytes=audio_bytes,
         content_type=file.content_type or "audio/wav",
         language_hints=hints,
+        active_grants=grants,
+        allow_offline_fixture=False,
     )
 
 

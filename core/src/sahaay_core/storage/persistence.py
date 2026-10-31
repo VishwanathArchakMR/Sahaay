@@ -562,6 +562,31 @@ class DurableStorage:
             )
         return steps
 
+    def list_tasks(self, limit: int = 50) -> List[TaskContract]:
+        conn = get_sqlite_conn()
+        rows = conn.execute(
+            "SELECT * FROM tasks ORDER BY created_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+        conn.close()
+        tasks = []
+        for row in rows:
+            steps = self.get_task_steps(UUID(row["task_id"]))
+            tasks.append(
+                TaskContract(
+                    taskId=UUID(row["task_id"]),
+                    sessionId=UUID(row["session_id"]),
+                    goal=row["goal"],
+                    taskType=row["task_type"],
+                    status=TaskStatusEnum(row["status"]),
+                    createdAt=datetime.fromisoformat(row["created_at"]),
+                    completedAt=datetime.fromisoformat(row["completed_at"])
+                    if row["completed_at"]
+                    else None,
+                    steps=steps,
+                )
+            )
+        return tasks
+
     # --- Task Passports & Milestones ---
     def save_task_passport(self, passport_data: Dict[str, Any]) -> None:
         conn = get_sqlite_conn()

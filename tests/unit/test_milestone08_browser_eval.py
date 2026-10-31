@@ -214,9 +214,16 @@ class TestMilestone08DesktopEvaluation:
         )
 
     def test_desktop_hardware_feasibility(self):
-        """Test that hardware feasibility verifies RTX 3050 4GB VRAM and hybrid architecture."""
+        """Test hardware detection structure and feasibility logic across VRAM constraints."""
         evaluator = DesktopEvaluator()
-        hw = evaluator.assess_hardware_and_model_feasibility()
+        detected = evaluator.detect_real_hardware()
+        assert "name" in detected
+        assert "vramGb" in detected
+        assert detected["vramGb"] >= 0.0
+        assert detected["systemRamGb"] > 0
+
+        # Assess feasibility under simulated 4.0 GB VRAM constraint (e.g., RTX 3050 Laptop / baseline target)
+        hw = evaluator.assess_hardware_and_model_feasibility(measured_vram_override=4.0)
         assert hw["verifiedHardware"]["vramGb"] == 4.0
         # Local 7B models must be marked as not feasible on 4GB VRAM
         for model in hw["candidateModelsAnalysis"]:
@@ -225,6 +232,15 @@ class TestMilestone08DesktopEvaluation:
             elif "Hybrid" in model["model"]:
                 assert model["feasibleOnLocalRtx3050"] is True
         assert "Do NOT download heavy local 7B+ vision models" in hw["architecturalDecision"]
+
+        # Assess feasibility when run in zero-VRAM / headless CI environment
+        hw_ci = evaluator.assess_hardware_and_model_feasibility(measured_vram_override=0.0)
+        assert hw_ci["verifiedHardware"]["vramGb"] == 0.0
+        for model in hw_ci["candidateModelsAnalysis"]:
+            if "7B" in model["model"] or "DeskForge" in model["model"]:
+                assert model["feasibleOnLocalRtx3050"] is False
+            elif "Hybrid" in model["model"]:
+                assert model["feasibleOnLocalRtx3050"] is True
 
 
 class TestMilestone08EvidenceLedgerPersistence:

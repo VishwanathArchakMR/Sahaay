@@ -36,28 +36,65 @@ public class PipeServer
                 await pipe.WaitForConnectionAsync(_cts.Token);
                 Console.WriteLine("[PipeServer] Client connected.");
 
-                using var reader = new StreamReader(pipe);
-                using var writer = new StreamWriter(pipe) { AutoFlush = true };
+                using var reader = new StreamReader(pipe, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 4096, leaveOpen: true);
+                using var writer = new StreamWriter(pipe, System.Text.Encoding.UTF8, bufferSize: 4096, leaveOpen: true) { AutoFlush = true };
 
                 while (pipe.IsConnected && !_cts.IsCancellationRequested)
                 {
-                    string? line = await reader.ReadLineAsync(_cts.Token);
+                    string? line;
+                    try
+                    {
+                        line = await reader.ReadLineAsync(_cts.Token);
+                    }
+                    catch (IOException ex) when (IsBrokenPipe(ex))
+                    {
+                        // Expected client disconnection when client closes its handle after receiving response
+                        break;
+                    }
+                    catch (InvalidOperationException ex) when (ex.Message.Contains("disconnected", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Client closed pipe while reading
+                        break;
+                    }
+
                     if (line == null) break;
 
                     var response = HandleRequest(line);
                     string jsonResponse = JsonSerializer.Serialize(response);
                     await writer.WriteLineAsync(jsonResponse.AsMemory(), _cts.Token);
+                    await writer.FlushAsync(_cts.Token);
                 }
+
+                if (pipe.IsConnected)
+                {
+                    try { pipe.Disconnect(); } catch { }
+                }
+                Console.WriteLine("[PipeServer] Client disconnected.");
             }
             catch (OperationCanceledException)
             {
                 break;
             }
+            catch (IOException ex) when (IsBrokenPipe(ex))
+            {
+                Console.WriteLine("[PipeServer] Client disconnected (pipe closed).");
+            }
+            catch (InvalidOperationException ex) when (ex.Message.Contains("disconnected", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("[PipeServer] Client disconnected (pipe disconnected).");
+            }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[PipeServer] Connection error: {ex.Message}");
+                Console.Error.WriteLine($"[PipeServer] Unexpected connection error: {ex.GetType().Name}: {ex.Message}");
             }
         }
+    }
+
+    public static bool IsBrokenPipe(IOException ex)
+    {
+        return ex.HResult == unchecked((int)0x8007006D) ||
+               ex.Message.Contains("Pipe is broken", StringComparison.OrdinalIgnoreCase) ||
+               ex.Message.Contains("broken pipe", StringComparison.OrdinalIgnoreCase);
     }
 
     public static IpcMessageResponse HandleRequest(string jsonRequest)

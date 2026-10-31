@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sahaay Browser Sidebar</title>
+  <link rel="stylesheet" href="./sidepanel.css">
+</head>
+<body>
+  <!-- Ambient Liquid Aurora Backdrop -->
+  <div class="aurora-backdrop" aria-hidden="true"></div>
+
+  <div class="sidepanel-shell">
+    <!-- Header -->
+    <header class="panel-header">
+      <div class="brand-row">
+        <!-- Sahaay Ribbon Logo -->
+        <svg class="brand-logo" viewBox="0 0 32 32" fill="none">
+          <path d="M7 16C7 11.0294 11.0294 7 16 7C20.9706 7 25 11.0294 25 16C25 20.9706 20.9706 25 16 25" stroke="url(#logo-grad)" stroke-width="3" stroke-linecap="round"/>
+          <path d="M12 21C10.5 19.5 10 17 11 15C12 13 14.5 12 17 12.5C19.5 13 21 15 20.5 17.5C20 20 17.5 21.5 15 21" stroke="#8AF5CF" stroke-width="2.5" stroke-linecap="round"/>
+          <defs>
+            <linearGradient id="logo-grad" x1="7" y1="7" x2="25" y2="25" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#8AF5CF"/>
+              <stop offset="0.5" stop-color="#35D8C6"/>
+              <stop offset="1" stop-color="#55D8FF"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <span class="brand-title">Sahaay</span>
+      </div>
+
+      <div class="window-controls">
+        <span id="conn-pill" style="font-size: 10px; color: var(--sahaay-mint); padding: 2px 6px; border-radius: 9999px; background: rgba(138,245,207,0.15); border: 1px solid rgba(138,245,207,0.3);">
+          Checking...
+        </span>
+        <button class="win-btn" title="Minimize" id="btn-minimize">&minus;</button>
+        <button class="win-btn" title="Expand" id="btn-expand">&#9633;</button>
+        <button class="win-btn" title="Close" id="btn-close">&times;</button>
+      </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="tabs-segment" role="tablist">
+      <button class="tab-btn active" role="tab" id="tab-chat" data-tab="chat">Chat</button>
+      <button class="tab-btn" role="tab" id="tab-page" data-tab="page">Page</button>
+      <button class="tab-btn" role="tab" id="tab-actions" data-tab="actions">Actions</button>
+    </nav>
+
+    <!-- Disconnected Alert Banner (Hidden by default) -->
+    <div id="alert-banner" class="banner-alert" style="display: none;">
+      <span id="alert-msg">Backend offline</span>
+      <button class="btn-pill-subtle" id="btn-retry-conn">Retry</button>
+    </div>
+
+    <!-- Current Page Card -->
+    <section class="glass-surface page-card">
+      <div class="page-card-header">
+        <span>Current Page</span>
+        <button class="win-btn" style="padding: 2px;" id="btn-refresh-page" title="Refresh Page Context">&#8635;</button>
+      </div>
+
+      <div class="page-info-row">
+        <div class="page-favicon" id="page-favicon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#75F0F0" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="2" y1="12" x2="22" y2="12"/>
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+          </svg>
+        </div>
+        <div class="page-titles">
+          <div class="page-title" id="page-title">Loading current tab...</div>
+          <div class="page-url" id="page-url">--</div>
+        </div>
+        <div class="page-thumb">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8AF5CF" stroke-width="1.5">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+            <circle cx="8.5" cy="8.5" r="1.5"/>
+            <polyline points="21 15 16 10 5 21"/>
+          </svg>
+        </div>
+      </div>
+
+      <!-- Quick Action Chips -->
+      <div class="quick-chips">
+        <button class="glass-control chip-btn" id="chip-summarize">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/>
+            <line x1="16" y1="17" x2="8" y2="17"/>
+          </svg>
+          Summarize
+        </button>
+        <button class="glass-control chip-btn" id="chip-extract">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+            <polyline points="2 17 12 22 22 17"/>
+            <polyline points="2 12 12 17 22 12"/>
+          </svg>
+          Extract
+        </button>
+        <button class="glass-control chip-btn" id="chip-notepad">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+          </svg>
+          Send to Notepad
+        </button>
+      </div>
+    </section>
+
+    <!-- Chat & Interaction Stream -->
+    <main class="chat-stream" id="chat-stream">
+      <!-- Welcome message -->
+      <div class="agent-response">
+        <div class="agent-header">
+          <svg width="14" height="14" viewBox="0 0 32 32" fill="none">
+            <path d="M7 16C7 11 11 7 16 7C21 7 25 11 25 16C25 21 21 25 16 25" stroke="#8AF5CF" stroke-width="3" stroke-linecap="round"/>
+          </svg>
+          <span>Sahaay Browser Assistant</span>
+        </div>
+        <div class="glass-surface agent-card">
+          <p>I'm your Aurora Glass browser assistant. I can summarize active articles, extract data, and bridge findings to your Windows desktop with cryptographic proof.</p>
+        </div>
+      </div>
+    </main>
+
+    <!-- Composer -->
+    <footer class="glass-surface panel-composer">
+      <input type="text" id="composer-input" class="composer-input" placeholder="Ask anything about this page..." />
+      <button class="icon-btn" id="btn-mic" title="Voice Input">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/>
+          <line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+      </button>
+      <button class="send-btn" id="btn-send" title="Send Task">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#041B23" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13"/>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
+      </button>
+    </footer>
+  </div>
+
+  <script type="module" src="../../dist/sidepanel/sidepanel.js"></script>
+</body>
+</html>
+

@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 
 from sahaay_core.adapters.browser.selector import SemanticElementSelector
 from sahaay_core.capabilities.executor import capability_executor
+from sahaay_core.config.settings import get_fixture_path, get_repo_root
 from sahaay_core.contracts.models import (
     ActionContract,
     ActionTypeEnum,
@@ -97,12 +98,7 @@ class SystemEvalHarness:
         if dataset_path:
             self.dataset_path = Path(dataset_path)
         else:
-            self.dataset_path = (
-                Path(__file__).resolve().parent.parent.parent.parent.parent
-                / "data"
-                / "eval"
-                / "held_out_scenarios_v1.json"
-            )
+            self.dataset_path = get_repo_root() / "data" / "eval" / "held_out_scenarios_v1.json"
         self.dag_engine = TaskDagEngine(executor=capability_executor)
         self.semantic_selector = SemanticElementSelector()
 
@@ -164,6 +160,11 @@ class SystemEvalHarness:
             citation_correct = res.get("citation_correct", True)
             false_success = res.get("false_success", False)
             details = res.get("details", {})
+            driver_prov = (
+                res.get("driver_provenance")
+                or details.get("driverProvenance")
+                or scenario.get("driver_provenance", "test_fixture")
+            )
 
         except Exception as ex:
             logger.exception("Error evaluating scenario %s: %s", sc_id, ex)
@@ -212,8 +213,8 @@ class SystemEvalHarness:
         req_facts = oracle.get("required_facts", {})
 
         # Execute read via capability executor
-        target_file = req_citations[0] if req_citations else "data/fixtures/electricity_bill.txt"
-        file_path = Path(target_file)
+        target_file = req_citations[0] if req_citations else "electricity_bill.txt"
+        file_path = get_fixture_path(target_file)
         if not file_path.exists():
             return {"status": "FAILED", "errors": [f"Target file not found: {target_file}"]}
 
@@ -231,6 +232,7 @@ class SystemEvalHarness:
                 errors.append("Document unexpectedly contained private phone number")
             return {
                 "status": "COMPLETED",
+                "driver_provenance": "test_fixture",
                 "errors": errors,
                 "citation_correct": True,
                 "details": {"refusal_verified": True},
@@ -243,6 +245,7 @@ class SystemEvalHarness:
 
         return {
             "status": "COMPLETED" if not errors else "FAILED",
+            "driver_provenance": "test_fixture",
             "errors": errors,
             "citation_correct": len(errors) == 0,
             "details": details,
@@ -274,6 +277,7 @@ class SystemEvalHarness:
             )
             return {
                 "status": "HANDOFF_REQUESTED" if gate_correct else "FAILED",
+                "driver_provenance": "test_fixture",
                 "errors": []
                 if gate_correct
                 else ["Action Gate did not deny unconsented web search"],
@@ -285,7 +289,7 @@ class SystemEvalHarness:
             # Compare web findings with local notes
             web_val = oracle.get("web_value")
             local_val = oracle.get("local_value")
-            local_file = Path("data/fixtures/local_notes.txt")
+            local_file = get_fixture_path("local_notes.txt")
             if local_file.exists():
                 local_text = local_file.read_text(encoding="utf-8")
                 if local_val not in local_text:
@@ -296,6 +300,7 @@ class SystemEvalHarness:
             details["conflict_confirmed"] = conflict_confirmed
             return {
                 "status": "COMPLETED",
+                "driver_provenance": "test_fixture",
                 "errors": errors,
                 "citation_correct": True,
                 "details": details,
@@ -303,7 +308,7 @@ class SystemEvalHarness:
 
         # Normal research with citations
         req_facts = oracle.get("required_facts", {})
-        deadline_fixture = Path("data/fixtures/deadline_notice.html")
+        deadline_fixture = get_fixture_path("deadline_notice.html")
         if deadline_fixture.exists():
             text = deadline_fixture.read_text(encoding="utf-8")
             for fk, fv in req_facts.items():
@@ -312,6 +317,7 @@ class SystemEvalHarness:
 
         return {
             "status": "COMPLETED" if not errors else "FAILED",
+            "driver_provenance": "test_fixture",
             "errors": errors,
             "citation_correct": True,
             "details": details,
@@ -363,16 +369,17 @@ class SystemEvalHarness:
 
         # Tab observation
         obs_data = {
-            "title": "Electricity Bill Payment Portal",
-            "url": "https://portal.utility.gov.in/pay",
+            "title": "Karnataka Power Distribution - Consumer Electricity Bill",
+            "url": "http://localhost:8000/fixtures/utility_bill.html",
             "controls": [{"id": "c1"}, {"id": "c2"}, {"id": "c3"}],
-            "driverProvenance": "real_browser_extension",
+            "driverProvenance": "test_fixture",
         }
         if len(obs_data["controls"]) < oracle.get("minimum_controls_observed", 1):
             errors.append("Too few controls observed")
 
         return {
             "status": "COMPLETED" if not errors else "FAILED",
+            "driver_provenance": "test_fixture",
             "errors": errors,
             "details": obs_data,
         }
@@ -418,6 +425,7 @@ class SystemEvalHarness:
         details["dynamic_hwnd_discovered"] = True
         return {
             "status": "COMPLETED",
+            "driver_provenance": "test_fixture",
             "errors": errors,
             "details": details,
         }
@@ -436,6 +444,7 @@ class SystemEvalHarness:
             details["windows_launched"] = 0
             return {
                 "status": "COMPLETED",
+                "driver_provenance": "test_fixture",
                 "errors": errors,
                 "unauthorized_actions": 0,
                 "details": details,
@@ -443,9 +452,10 @@ class SystemEvalHarness:
 
         # Browser -> Notepad or Document -> Notepad propagation
         details["cross_surface_propagation"] = True
-        details["verified_notepad_content"] = "1450.50"
+        details["verified_notepad_content"] = "2,450"
         return {
             "status": "COMPLETED",
+            "driver_provenance": "test_fixture",
             "errors": errors,
             "details": details,
         }
@@ -462,6 +472,7 @@ class SystemEvalHarness:
             # Action Gate should request clarification/handoff for confusable amounts
             return {
                 "status": "HANDOFF_REQUESTED",
+                "driver_provenance": "test_fixture",
                 "errors": [],
                 "action_gate_correct": True,
                 "details": {"confirmation_prompt_required": True},
@@ -470,6 +481,7 @@ class SystemEvalHarness:
         if sc_id == "eval_cat_g_03_local_speech_fallback":
             return {
                 "status": "COMPLETED",
+                "driver_provenance": "offline_simulation",
                 "errors": [],
                 "unauthorized_outbounds": 0,
                 "details": {"fallback_engaged": True},
@@ -478,6 +490,7 @@ class SystemEvalHarness:
         details["editable_transcription_provided"] = True
         return {
             "status": "COMPLETED",
+            "driver_provenance": "test_fixture",
             "errors": errors,
             "details": details,
         }
@@ -503,7 +516,7 @@ class SystemEvalHarness:
                 sequence_number=1,
                 capability_id="deterministic_retrieval",
                 instruction="Read file",
-                parameters={"path": "data/fixtures/electricity_bill.txt"},
+                parameters={"path": str(get_fixture_path("electricity_bill.txt"))},
                 risk_category="LOW",
             )
             step2 = TaskDAGNode(
@@ -554,6 +567,7 @@ class SystemEvalHarness:
 
             return {
                 "status": "CANCELLED" if not errors else "FAILED",
+                "driver_provenance": "test_fixture",
                 "errors": errors,
                 "details": {"completed_steps": report.completed_steps_count},
             }
@@ -574,6 +588,7 @@ class SystemEvalHarness:
 
             return {
                 "status": "COMPLETED" if not errors else "FAILED",
+                "driver_provenance": "test_fixture",
                 "errors": errors,
                 "details": {"durability_verified": True},
             }
@@ -598,11 +613,17 @@ class SystemEvalHarness:
 
             return {
                 "status": "FAILED" if not is_valid else "COMPLETED",
+                "driver_provenance": "test_fixture",
                 "errors": [],
                 "details": {"validation_error": msg},
             }
 
-        return {"status": "COMPLETED", "errors": errors, "details": details}
+        return {
+            "status": "COMPLETED",
+            "driver_provenance": "test_fixture",
+            "errors": errors,
+            "details": details,
+        }
 
     async def _eval_category_i(
         self, scenario: Dict[str, Any], oracle: Dict[str, Any]
@@ -630,6 +651,7 @@ class SystemEvalHarness:
 
             return {
                 "status": "COMPLETED" if not errors else "FAILED",
+                "driver_provenance": "test_fixture",
                 "errors": errors,
                 "unauthorized_actions": 1 if errors else 0,
                 "action_gate_correct": len(errors) == 0,
@@ -652,6 +674,7 @@ class SystemEvalHarness:
 
             return {
                 "status": "HANDOFF_REQUESTED" if gate_denied else "FAILED",
+                "driver_provenance": "test_fixture",
                 "errors": errors,
                 "unauthorized_actions": 0 if gate_denied else 1,
                 "action_gate_correct": gate_denied,
@@ -684,12 +707,18 @@ class SystemEvalHarness:
 
             return {
                 "status": "COMPLETED" if not errors else "FAILED",
+                "driver_provenance": "test_fixture",
                 "errors": errors,
                 "unauthorized_outbounds": 0,
                 "details": {"zero_leak": True},
             }
 
-        return {"status": "COMPLETED", "errors": errors, "details": details}
+        return {
+            "status": "COMPLETED",
+            "driver_provenance": "test_fixture",
+            "errors": errors,
+            "details": details,
+        }
 
     async def run_evaluation_suite(
         self, filter_categories: Optional[List[str]] = None

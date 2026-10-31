@@ -4,6 +4,17 @@
   "path": "Sahaay.NativeHost.exe",
   "type": "stdio",
   "allowed_origins": [
-    "chrome-extension://allowed_extension_id_here/"
+    "chrome-extension://filgbgddapmjcddcoadfpimdicmkhpolc/",
+    "extension://filgbgddapmjcddcoadfpimdicmkhpolc/",
+    "chrome-extension://knldjmfmopnpolahpmmgbagdohdnhkik/",
+    "extension://knldjmfmopnpolahpmmgbagdohdnhkik/",
+    "chrome-extension://nokchmadkhaghgooijgkgpheoieaibdp/",
+    "extension://nokchmadkhaghgooijgkgpheoieaibdp/",
+    "chrome-extension://ddbdffinhcfibhclfaiaemgnnajphgbf/",
+    "extension://ddbdffinhcfibhclfaiaemgnnajphgbf/",
+    "chrome-extension://paeilcdpihcpnlkgjbemiigbefbhbgdo/",
+    "extension://paeilcdpihcpnlkgjbemiigbefbhbgdo/",
+    "chrome-extension://incpiefenjejkjfholbomkhcflfbecnc/",
+    "extension://incpiefenjejkjfholbomkhcflfbecnc/"
   ]
 }

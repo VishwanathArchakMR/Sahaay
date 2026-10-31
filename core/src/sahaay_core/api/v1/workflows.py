@@ -25,7 +25,7 @@ from sahaay_core.api.v1.sessions import active_grants, active_sessions
 from sahaay_core.api.v1.sources import context_store, source_manager
 from sahaay_core.api.v1.storytelling import register_or_update_passport
 from sahaay_core.api.v1.tasks import orchestrator
-from sahaay_core.config.settings import settings
+from sahaay_core.config.settings import get_fixtures_dir
 from sahaay_core.contracts.models import (
     ActionContract,
     ActionTypeEnum,
@@ -42,9 +42,24 @@ from sahaay_core.verification.verifier import IndependentVerifier
 
 router = APIRouter(prefix="/workflows", tags=["Workflows"])
 
-FIXTURES_DIR = settings.repo_root / "data" / "fixtures"
-if not FIXTURES_DIR.exists():
-    FIXTURES_DIR = Path("c:/Sahaay/data/fixtures")
+FIXTURES_DIR = get_fixtures_dir()
+
+
+def _ensure_session_and_grants(session_id: UUID):
+    session = active_sessions.get(session_id)
+    if not session:
+        from sahaay_core.storage.persistence import durable_storage
+
+        session = durable_storage.get_session(session_id)
+        if session:
+            active_sessions[session_id] = session
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    if session_id not in active_grants:
+        from sahaay_core.storage.persistence import durable_storage
+
+        active_grants[session_id] = durable_storage.get_consent_grants_for_session(session_id)
+    return session
 
 
 class BrowserToDesktopRequest(BaseModel):
@@ -95,9 +110,7 @@ async def execute_browser_to_desktop(req: BrowserToDesktopRequest) -> Dict[str, 
     6. VERIFY: Reads back control text; independently verifies expected fields match.
     7. RECORD: Records cryptographic evidence in ledger.
     """
-    session = active_sessions.get(req.sessionId)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found.")
+    _ensure_session_and_grants(req.sessionId)
 
     # Determine execution mode:
     # Explicit False = strictly real execution
@@ -401,9 +414,7 @@ async def execute_desktop_to_browser(req: DesktopToBrowserRequest) -> Dict[str, 
     6. VERIFY: Issues get_field_values from page; verifies values match source facts.
     7. RECORD: Records cryptographic evidence in ledger.
     """
-    session = active_sessions.get(req.sessionId)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found.")
+    _ensure_session_and_grants(req.sessionId)
 
     is_fixture = (
         req.isFixtureMode if req.isFixtureMode is not None else (req.sourceDocumentPath is None)
@@ -510,23 +521,32 @@ async def execute_desktop_to_browser(req: DesktopToBrowserRequest) -> Dict[str, 
     # 5. EXECUTE (Real Driver Dispatch to Browser Extension)
     orchestrator.transition_state(task_id, TaskStatusEnum.EXECUTING)
     filled_fields: Dict[str, Any] = {}
+    readback_values: Dict[str, Any] = {}
     exec_success = False
 
     browser_adapter = BrowserAdapter()
     if not is_fixture:
-        # Live mode: verify real connected browser extension and active observations
-        if browser_adapter.active_observations:
-            try:
-                filled_fields = dict(field_mapping)
-                exec_success = True
-            except Exception:
-                exec_success = False
-        else:
-            # Extension not connected in live mode: truthful unverified result
+        # Live mode: dispatch fill_form_fields to real browser extension
+        try:
+            fill_resp = browser_adapter.fill_form_fields(
+                fields=field_mapping, session_id=str(req.sessionId)
+            )
+            filled_fields = fill_resp.get("filled", {})
+            exec_success = bool(filled_fields)
+            if exec_success:
+                # Fresh readback directly from actual web page DOM
+                rb_resp = browser_adapter.get_field_values(
+                    field_names=list(field_mapping.keys()), session_id=str(req.sessionId)
+                )
+                readback_values = rb_resp.get("values", filled_fields)
+        except Exception:
             exec_success = False
+            filled_fields = {}
+            readback_values = {}
     else:
         # Controlled fixture test harness
         filled_fields = dict(field_mapping)
+        readback_values = dict(field_mapping)
         exec_success = True
 
     driver_prov = "test_fixture" if is_fixture else "real_browser_extension"
@@ -535,15 +555,15 @@ async def execute_desktop_to_browser(req: DesktopToBrowserRequest) -> Dict[str, 
         actionId=action.actionId,
         isSuccess=exec_success,
         durationMs=28.0,
-        outputData={"filled": filled_fields, "targetUrl": action.target},
+        outputData={"filled": filled_fields, "readback": readback_values, "targetUrl": action.target},
         driverProvenance=driver_prov,
     )
 
-    # 6. VERIFY (Independent Verification)
+    # 6. VERIFY (Independent Verification against fresh DOM readback)
     orchestrator.transition_state(task_id, TaskStatusEnum.VERIFYING)
 
     all_matched = exec_success and all(
-        filled_fields.get(k) == extracted_fields.get(k)
+        readback_values.get(k) == extracted_fields.get(k)
         for k in ("customerName", "accountNumber", "amountDue")
         if k in extracted_fields
     )
@@ -558,7 +578,7 @@ async def execute_desktop_to_browser(req: DesktopToBrowserRequest) -> Dict[str, 
         execution_result=exec_result,
         observed_postcondition_data={
             "state": "verified" if is_verified else "failed",
-            "readbackValues": filled_fields,
+            "readbackValues": readback_values,
             "verified": is_verified,
             "driverProvenance": driver_prov,
         },
@@ -641,9 +661,7 @@ async def execute_goal(req: ExecuteGoalRequest) -> Dict[str, Any]:
     5. VERIFY & RECORD: Performs independent verification and persists cryptographic evidence in SQLite.
     6. EXPLAIN: Updates the Task Passport and evidence ledger.
     """
-    session = active_sessions.get(req.sessionId)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found.")
+    _ensure_session_and_grants(req.sessionId)
 
     # Map workflow mode to TaskContract taskType
     mode = req.workflowMode.lower().strip()

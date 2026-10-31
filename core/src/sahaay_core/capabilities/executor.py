@@ -17,6 +17,7 @@ from sahaay_core.adapters.browser.adapter import BrowserAdapter
 from sahaay_core.adapters.windows.adapter import WindowsNativeAdapter
 from sahaay_core.capabilities.models import CapabilityDescriptor, CapabilityReadiness
 from sahaay_core.capabilities.registry import capability_registry
+from sahaay_core.config.settings import get_fixture_path
 from sahaay_core.context.store import ContextStore
 from sahaay_core.research.search_adapter import internet_research_manager
 from sahaay_core.sources.document_ingestion import DocumentIngestionService
@@ -182,7 +183,7 @@ class CapabilityExecutor:
                 )
                 if not page_text and allow_fixture:
                     for fix_name in ("deadline_notice.html", "utility_bill.html"):
-                        fix_path = Path("c:/Sahaay/data/fixtures") / fix_name
+                        fix_path = get_fixture_path(fix_name)
                         if fix_path.exists():
                             page_text = fix_path.read_text(encoding="utf-8")
                             if not title:

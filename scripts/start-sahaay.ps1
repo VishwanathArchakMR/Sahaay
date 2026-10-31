@@ -220,6 +220,8 @@ elseif ($Mode -eq "Dev") {
 else {
     # Default Desktop mode: Supervised Electron Application
     Write-Host "`n[START] Starting Supervised Sahaay Desktop Application..." -ForegroundColor Green
+    # Clear ELECTRON_RUN_AS_NODE if inherited from IDE terminal so Electron runs as GUI app, not Node CLI
+    Remove-Item Env:\ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
     Push-Location $DesktopRoot
     try {
         # Ensure electron main is freshly built

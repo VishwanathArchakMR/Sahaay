@@ -26,10 +26,18 @@ public class Program
     private static readonly HashSet<string> AllowedExtensionOrigins = new()
     {
         "chrome-extension://sahaay-dev-extension-id/",
+        "chrome-extension://filgbgddapmjcddcoadfpimdicmkhpolc/", // Active installed browser extension ID
+        "extension://filgbgddapmjcddcoadfpimdicmkhpolc/",        // Active installed Edge scheme ID
         "chrome-extension://knldjmfmopnpolahpmmgbagdohdnhkik/", // Common unpacked dev ID pattern
         "extension://knldjmfmopnpolahpmmgbagdohdnhkik/",        // Microsoft Edge native scheme
-        "chrome-extension://nokchmadkhaghgooijgkgpheoieaibdp/", // Unpacked repo path ID
-        "extension://nokchmadkhaghgooijgkgpheoieaibdp/",        // Unpacked repo path Edge scheme
+        "chrome-extension://nokchmadkhaghgooijgkgpheoieaibdp/", // Unpacked repo path ID (uppercase C:)
+        "extension://nokchmadkhaghgooijgkgpheoieaibdp/",        // Unpacked repo path Edge scheme (uppercase C:)
+        "chrome-extension://ddbdffinhcfibhclfaiaemgnnajphgbf/", // Unpacked repo path ID (lowercase c:)
+        "extension://ddbdffinhcfibhclfaiaemgnnajphgbf/",        // Unpacked repo path Edge scheme (lowercase c:)
+        "chrome-extension://paeilcdpihcpnlkgjbemiigbefbhbgdo/", // Canonical dist path ID (uppercase C:)
+        "extension://paeilcdpihcpnlkgjbemiigbefbhbgdo/",        // Canonical dist path Edge scheme (uppercase C:)
+        "chrome-extension://incpiefenjejkjfholbomkhcflfbecnc/", // Canonical dist path ID (lowercase c:)
+        "extension://incpiefenjejkjfholbomkhcflfbecnc/",        // Canonical dist path Edge scheme (lowercase c:)
     };
 
     public static async Task Main(string[] args)
@@ -309,16 +317,19 @@ public class Program
             return new NativeHostMessageResponse(false, "unknown", null, "Command cannot be empty.");
         }
 
-        if (string.IsNullOrWhiteSpace(request.SessionId))
-        {
-            return new NativeHostMessageResponse(false, request.Command, null, "SessionId is required.");
-        }
-
+        string sessionId = string.IsNullOrWhiteSpace(request.SessionId) ? "browser-extension" : request.SessionId;
         string cmd = request.Command.ToLowerInvariant();
 
         return cmd switch
         {
             "ping" => new NativeHostMessageResponse(true, "ping", new { status = "pong", timestamp = DateTime.UtcNow }, null),
+
+            "hello" or "handshake" => new NativeHostMessageResponse(
+                true,
+                request.Command,
+                new { status = "connected", hostName = "com.sahaay.nativehost", pid = Environment.ProcessId, timestamp = DateTime.UtcNow },
+                null
+            ),
 
             "get_capabilities" => new NativeHostMessageResponse(
                 true,
@@ -327,7 +338,14 @@ public class Program
                 null
             ),
 
-            "get_active_window" or "list_open_windows" or "inspect_window_elements" or "capture_window_screenshot" or "set_control_text" or "get_control_text" => ForwardToController(request),
+            "get_status" => new NativeHostMessageResponse(
+                true,
+                "get_status",
+                new { status = "running", hostName = "com.sahaay.nativehost", pid = Environment.ProcessId, timestamp = DateTime.UtcNow },
+                null
+            ),
+
+            "get_active_window" or "list_open_windows" or "inspect_window_elements" or "capture_window_screenshot" or "set_control_text" or "get_control_text" => ForwardToController(request with { SessionId = sessionId }),
 
             _ => new NativeHostMessageResponse(
                 false,

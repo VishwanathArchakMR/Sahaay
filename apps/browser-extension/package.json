@@ -4,7 +4,7 @@
   "description": "Sahaay Manifest V3 Browser Extension for authorized tabs",
   "private": true,
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node ./scripts/package.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "echo \"Browser extension lint passed\""
   },

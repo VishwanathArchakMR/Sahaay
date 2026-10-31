@@ -30,6 +30,8 @@ class VoiceTranscriptionResult(BaseModel):
     duration_seconds: float = 0.0
     is_live_call: bool = False
     editable: bool = True  # User may edit transcript before task execution
+    status: str = "SUCCESS"  # SUCCESS, BLOCKED_BY_PRIVACY, NOT_CONFIGURED, FAILED
+    error: Optional[str] = None
 
 
 class MuseVoiceClient:
@@ -50,6 +52,7 @@ class MuseVoiceClient:
         content_type: str = "audio/wav",
         language_hints: Optional[List[str]] = None,
         active_grants: Optional[List[ConsentGrant]] = None,
+        allow_offline_fixture: bool = True,
     ) -> VoiceTranscriptionResult:
         """Transcribe audio chunk or file through Muse Voice Transcribe API.
 
@@ -67,8 +70,36 @@ class MuseVoiceClient:
             active_grants=active_grants,
         )
 
-        if not privacy_eval.allowTransmission or not self.client.is_configured:
+        if not privacy_eval.allowTransmission:
+            if not allow_offline_fixture:
+                return VoiceTranscriptionResult(
+                    transcript="",
+                    confidence=0.0,
+                    language_detected="unknown",
+                    is_final=True,
+                    duration_seconds=round(len(audio_bytes) / 32000.0, 2),
+                    is_live_call=False,
+                    editable=True,
+                    status="BLOCKED_BY_PRIVACY",
+                    error=f"Voice transcription blocked by Privacy Gateway: {privacy_eval.reason}",
+                )
             logger.info("Muse Voice Transcribe in local fallback: %s", privacy_eval.reason)
+            return self._build_deterministic_transcript(audio_bytes, language_hints)
+
+        if not self.client.is_configured:
+            if not allow_offline_fixture:
+                return VoiceTranscriptionResult(
+                    transcript="",
+                    confidence=0.0,
+                    language_detected="unknown",
+                    is_final=True,
+                    duration_seconds=round(len(audio_bytes) / 32000.0, 2),
+                    is_live_call=False,
+                    editable=True,
+                    status="NOT_CONFIGURED",
+                    error="Meta API credentials are not configured for hosted voice transcription.",
+                )
+            logger.info("Muse Voice Transcribe in local fallback: unconfigured client.")
             return self._build_deterministic_transcript(audio_bytes, language_hints)
 
         # Hosted call via multipart audio endpoint

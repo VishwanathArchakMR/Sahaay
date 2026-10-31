@@ -12,13 +12,13 @@ Validates the complete execution loop across all 7 acceptance workflows:
 
 import io
 import wave
-from pathlib import Path
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 from sahaay_core.api.v1.sessions import active_sessions
 from sahaay_core.api.v1.workflows import active_grants
+from sahaay_core.config.settings import get_fixture_path
 from sahaay_core.context.store import ContextStore
 from sahaay_core.contracts.models import (
     ConsentGrant,
@@ -63,7 +63,7 @@ def m11_session():
 async def test_workflow_a_local_report_research(m11_session):
     """Workflow A: Find latest report, extract important findings, cite source, persist evidence."""
     sess = m11_session["session"]
-    report_file = Path("c:/Sahaay/data/fixtures/project_report.txt")
+    report_file = get_fixture_path("project_report.txt")
     assert report_file.exists(), "Project report fixture must exist"
 
     res = client.post(
@@ -88,7 +88,7 @@ async def test_workflow_a_local_report_research(m11_session):
     # Negative test: missing document produces truthful failure
     doc_ingestion = DocumentIngestionService(SourceManager(), ContextStore())
     with pytest.raises(DocumentIngestionError) as exc_info:
-        doc_ingestion.ingest_file("c:/Sahaay/data/fixtures/non_existent_report_999.txt")
+        doc_ingestion.ingest_file(str(get_fixture_path("non_existent_report_999.txt")))
     assert "File not found or inaccessible" in str(exc_info.value)
 
 

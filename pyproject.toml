@@ -2,6 +2,10 @@
 asyncio_mode = "strict"
 testpaths = ["tests"]
 pythonpath = ["core/src"]
+markers = [
+    "live_browser: Tests requiring live interactive browser with extension bridge",
+    "live_windows: Tests requiring live interactive Windows desktop controller",
+]
 
 [tool.ruff]
 line-length = 100
