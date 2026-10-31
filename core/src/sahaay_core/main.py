@@ -25,6 +25,7 @@ from sahaay_core.api.v1.workflows import router as workflows_router
 from sahaay_core.config.logging import logger
 from sahaay_core.config.settings import settings
 from sahaay_core.storage.database import init_db
+from sahaay_core.storage.persistence import durable_storage
 
 
 @asynccontextmanager
@@ -34,6 +35,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info(f"Local-only mode: {settings.local_only_mode}")
     logger.info(f"Listening address: {settings.host}:{settings.port}")
     await init_db()
+    reconciled = durable_storage.reconcile_stale_tasks()
+    if reconciled:
+        logger.info(f"Reconciled {reconciled} orphaned in-progress task(s) to FAILED/UNVERIFIED.")
     logger.info("Database initialized successfully.")
     yield
     logger.info("Shutting down Sahaay Core Backend.")
@@ -46,7 +50,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS: strictly allow loopback desktop & extension origins
+# CORS: strictly allow loopback desktop & installed Sahaay extension origins
+EXPLICIT_EXTENSION_ORIGINS = [
+    "chrome-extension://filgbgddapmjcddcoadfpimdicmkhpolc",
+    "extension://filgbgddapmjcddcoadfpimdicmkhpolc",
+    "chrome-extension://nokchmadkhaghgooijgkgpheoieaibdp",
+    "extension://nokchmadkhaghgooijgkgpheoieaibdp",
+]
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -54,8 +65,9 @@ app.add_middleware(
         "http://127.0.0.1",
         "http://localhost:5173",
         "http://localhost:3000",
-        "chrome-extension://*",
+        *EXPLICIT_EXTENSION_ORIGINS,
     ],
+    allow_origin_regex=r"^(chrome-extension|extension)://[a-p]{32}$",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -66,25 +78,37 @@ app.add_middleware(
 async def security_token_middleware(request: Request, call_next):
     """Enforce token authentication on internal API routes.
 
-    Health endpoint is public for startup probing; all others require valid X-Sahaay-Token.
+    CORS OPTIONS preflight and Health endpoint are public for startup probing;
+    all others require valid X-Sahaay-Token.
     """
     path = request.url.path
     if (
-        path in ("/api/v1/health", "/docs", "/openapi.json")
+        request.method == "OPTIONS"
+        or path in ("/api/v1/health", "/docs", "/openapi.json")
         or path.startswith("/fixtures")
         or path.startswith("/artifacts")
     ):
         return await call_next(request)
 
     token = request.headers.get("X-Sahaay-Token")
+    client_host = request.client.host if request.client else ""
+    origin = request.headers.get("Origin", "")
+    is_loopback_or_extension = (
+        client_host in ("127.0.0.1", "localhost", "testclient")
+        or any(
+            origin.startswith(prefix)
+            for prefix in (
+                "chrome-extension://",
+                "extension://",
+                "http://localhost",
+                "http://127.0.0.1",
+            )
+        )
+    )
+
     if settings.api_token and token != settings.api_token:
-        # In development/test mode without a token header, allow loopback localhost calls if configured
-        client_host = request.client.host if request.client else ""
-        if settings.environment == "development" and client_host in (
-            "127.0.0.1",
-            "localhost",
-            "testclient",
-        ):
+        # In development mode, allow loopback calls from local desktop / extension
+        if settings.environment == "development" and is_loopback_or_extension:
             return await call_next(request)
 
         return JSONResponse(

@@ -7,6 +7,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from sahaay_core.config.settings import settings
+from sahaay_core.storage.persistence import durable_storage
 
 router = APIRouter(tags=["Health"])
 
@@ -23,11 +24,12 @@ class HealthResponse(BaseModel):
 @router.get("/health", response_model=HealthResponse)
 async def get_health() -> HealthResponse:
     """Return system operational status and runtime diagnostics."""
+    db_ok = durable_storage.verify_connection()
     return HealthResponse(
-        status="healthy",
+        status="healthy" if db_ok else "degraded",
         systemVersion="0.1.0-foundation",
         pythonVersion=sys.version.split(" ")[0],
         localOnlyMode=settings.local_only_mode,
         timestamp=datetime.now(timezone.utc),
-        databaseReady=True,
+        databaseReady=db_ok,
     )

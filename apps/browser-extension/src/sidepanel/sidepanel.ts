@@ -132,9 +132,11 @@ async function checkBackendHealth(): Promise<boolean> {
 }
 
 async function ensureSession(): Promise<string> {
-  if (currentSessionId) return currentSessionId;
+  if (currentSessionId && currentSessionId !== "00000000-0000-0000-0000-000000000001") {
+    return currentSessionId;
+  }
 
-  // Try creating session or fetching existing
+  // Create session on canonical backend
   try {
     const res = await safeFetch(`${API_BASE}/sessions`, {
       method: "POST",
@@ -156,8 +158,7 @@ async function ensureSession(): Promise<string> {
   } catch (err) {
     console.warn("Failed to create session on backend:", err);
   }
-  currentSessionId = "00000000-0000-0000-0000-000000000001";
-  return currentSessionId;
+  throw new Error("Unable to connect to Sahaay core backend. Please start the backend at 127.0.0.1:8000.");
 }
 
 async function refreshActiveTab(): Promise<void> {
@@ -257,12 +258,12 @@ async function handleSummarizeAndSendToNotepad(): Promise<void> {
   try {
     const sessionId = await ensureSession();
 
-    // Call browser-to-desktop workflow
+    // Call browser-to-desktop workflow with real tab excerpt
     const payload = {
       sessionId,
       instruction: "Summarize this page and save key points to my Notepad",
-      sourceTabUrl: currentTabContext.url,
-      browserObservationExcerpt: currentTabContext.visibleTextExcerpt || currentTabContext.title,
+      sourceTabUrl: currentTabContext.url || "about:blank",
+      browserObservationExcerpt: currentTabContext.visibleTextExcerpt || currentTabContext.title || "Active Web Page",
     };
 
     const res = await safeFetch(`${API_BASE}/workflows/browser-to-desktop`, {
@@ -272,8 +273,9 @@ async function handleSummarizeAndSendToNotepad(): Promise<void> {
         "X-Sahaay-Token": "dev-local-sahaay-token",
       },
       body: JSON.stringify(payload),
-    }, 10000);
+    }, 12000);
 
+    const cardBody = agentCard.querySelector(".agent-card");
     if (res.ok) {
       const data = await res.json();
       const extracted = data.sourceProvenance?.extractedFields || {};
@@ -281,27 +283,28 @@ async function handleSummarizeAndSendToNotepad(): Promise<void> {
         ([k, v]) => `<li><strong>${k.replace(/_/g, " ")}:</strong> ${v}</li>`
       );
 
-      const itemsHtml = items.length > 0
-        ? `<ul>${items.join("")}</ul>`
-        : `<ul>
-            <li>OpenAI focuses on safe and beneficial AI.</li>
-            <li>They build AI for individuals, teams, and communities.</li>
-            <li>Key areas: research, products, and safety.</li>
-            <li>Their goal is to help people create, solve, and grow.</li>
-          </ul>`;
+      // Build truthful summary - never fabricate synthetic bullets
+      let itemsHtml = "";
+      if (items.length > 0) {
+        itemsHtml = `<ul>${items.join("")}</ul>`;
+      } else if (currentTabContext.title) {
+        itemsHtml = `<p style="font-size: 12px; color: var(--sahaay-text-muted);">Extracted from: <strong>${currentTabContext.title}</strong> (${currentTabContext.url})</p>`;
+      } else {
+        itemsHtml = `<p style="font-size: 12px; color: var(--sahaay-text-muted);">Active tab contents read and summarized to Windows Notepad.</p>`;
+      }
 
-      const cardBody = agentCard.querySelector(".agent-card");
       if (cardBody) {
+        const isVerified = data.isVerified;
         cardBody.innerHTML = `
-          <p>Here is a summary of the page:</p>
+          <p>Here is a summary of the active page:</p>
           ${itemsHtml}
-          <p style="margin-top: 6px;">I will now open Notepad and save this summary for you.</p>
+          <p style="margin-top: 6px;">${isVerified ? "Notepad populated and verified independently via UI Automation." : "Dispatched to Windows Notepad."}</p>
           <div class="status-badge-card">
             <div class="status-indicator-text">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                 <polyline points="20 6 9 17 4 12"/>
               </svg>
-              <span>Opening Notepad... (Verified)</span>
+              <span>${isVerified ? "Verified in Notepad" : "Completed"}</span>
             </div>
             <button class="btn-pill-subtle" onclick="alert('Task verified in SQLite evidence ledger with ID: ${data.taskId}')">
               View Result
@@ -310,12 +313,12 @@ async function handleSummarizeAndSendToNotepad(): Promise<void> {
         `;
       }
     } else {
-      const err = await res.json().catch(() => ({ detail: "Workflow error" }));
+      const err = await res.json().catch(() => ({ detail: "Workflow execution failed" }));
       const cardBody = agentCard.querySelector(".agent-card");
       if (cardBody) {
         cardBody.innerHTML = `
-          <p style="color: var(--sahaay-warning);">Action execution status: <strong>${err.detail || "Action Gate Handoff"}</strong></p>
-          <p style="font-size: 11px; color: var(--sahaay-text-muted);">Ensure Windows companion is running or approve in desktop workspace.</p>
+          <p style="color: var(--sahaay-warning);">Action status: <strong>${err.detail || "Action Gate Handoff"}</strong></p>
+          <p style="font-size: 11px; color: var(--sahaay-text-muted);">Ensure Windows companion is running or check authorization in desktop workspace.</p>
         `;
       }
     }
@@ -323,7 +326,7 @@ async function handleSummarizeAndSendToNotepad(): Promise<void> {
     const cardBody = agentCard.querySelector(".agent-card");
     if (cardBody) {
       cardBody.innerHTML = `
-        <p style="color: var(--sahaay-danger);">Failed to connect to Sahaay core service (${err.message}).</p>
+        <p style="color: var(--sahaay-danger);">Failed to execute: ${err.message}</p>
       `;
     }
   }
@@ -335,7 +338,7 @@ async function handleGeneralPrompt(promptText: string): Promise<void> {
   composerInput.value = "";
 
   const agentCard = appendAgentCard(`
-    <p>Processing with Meta Muse Spark planner...</p>
+    <p>Executing request across authorized Sahaay capabilities...</p>
     <div style="font-size: 11px; color: var(--sahaay-text-muted); font-family: 'JetBrains Mono', monospace;">
       Page: ${currentTabContext.title.slice(0, 32)}...
     </div>
@@ -362,21 +365,85 @@ async function handleGeneralPrompt(promptText: string): Promise<void> {
     const cardBody = agentCard.querySelector(".agent-card");
     if (res.ok) {
       const data = await res.json();
-      if (cardBody) {
+      const taskId = data.taskId;
+
+      // If accepted asynchronously, poll for completion
+      if (data.status === "ACCEPTED" && taskId) {
+        if (cardBody) {
+          cardBody.innerHTML = `
+            <p>Task accepted (<strong>${taskId.slice(0, 8)}...</strong>). Orchestrating execution...</p>
+            <div style="font-size: 11px; color: var(--sahaay-cyan); margin-top: 4px;">Observing → Proposing → Authorizing → Executing → Verifying</div>
+          `;
+        }
+
+        let isCompleted = false;
+        let attempts = 0;
+        const maxAttempts = 40;
+
+        while (!isCompleted && attempts < maxAttempts) {
+          await new Promise((r) => setTimeout(r, 600));
+          attempts++;
+
+          try {
+            const pollRes = await safeFetch(`${API_BASE}/tasks/${taskId}`, {
+              headers: { "X-Sahaay-Token": "dev-local-sahaay-token" },
+            }, 2500);
+
+            if (pollRes.ok) {
+              const tData = await pollRes.json();
+              const bStatus = (tData.status || "").toUpperCase();
+
+              if (bStatus === "COMPLETED") {
+                isCompleted = true;
+                if (cardBody) {
+                  let summary = tData.summary;
+                  try {
+                    const pRes = await safeFetch(`${API_BASE}/tasks/${taskId}/passport`, {
+                      headers: { "X-Sahaay-Token": "dev-local-sahaay-token" },
+                    }, 2000);
+                    if (pRes.ok) {
+                      const pData = await pRes.json();
+                      summary = pData.summary || summary;
+                    }
+                  } catch {}
+
+                  cardBody.innerHTML = `
+                    <p><strong>Result (COMPLETED):</strong></p>
+                    <p style="color: var(--sahaay-text); font-size: 12px; margin-top: 4px;">${summary || "Task executed and verified successfully."}</p>
+                    <div class="status-badge-card" style="margin-top: 8px;">
+                      <div class="status-indicator-text">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                          <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                        <span>Verified in Ledger</span>
+                      </div>
+                      <button class="btn-pill-subtle" onclick="alert('Task ID: ${taskId}\\nRecorded with cryptographic proof.')">
+                        Details
+                      </button>
+                    </div>
+                  `;
+                }
+                break;
+              } else if (bStatus === "FAILED" || bStatus === "CANCELLED") {
+                isCompleted = true;
+                if (cardBody) {
+                  cardBody.innerHTML = `
+                    <p style="color: var(--sahaay-danger);">Task failed verification (${tData.error || bStatus}).</p>
+                  `;
+                }
+                break;
+              }
+            }
+          } catch {}
+        }
+
+        if (!isCompleted && attempts >= maxAttempts && cardBody) {
+          cardBody.innerHTML = `<p style="color: var(--sahaay-warning);">Task execution timed out awaiting verification.</p>`;
+        }
+      } else if (cardBody) {
         cardBody.innerHTML = `
           <p><strong>Result (${data.status}):</strong></p>
-          <p style="color: var(--sahaay-text-muted); font-size: 12px;">Completed ${data.completedSteps} of ${data.totalSteps} planned steps.</p>
-          <div class="status-badge-card" style="margin-top: 8px;">
-            <div class="status-indicator-text">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <polyline points="20 6 9 17 4 12"/>
-              </svg>
-              <span>Task ID: ${data.taskId.slice(0, 8)}...</span>
-            </div>
-            <button class="btn-pill-subtle" onclick="alert('Canonical Task ID: ${data.taskId}\\nInspect in Sahaay Desktop Workspace.')">
-              Details
-            </button>
-          </div>
+          <p style="color: var(--sahaay-text-muted); font-size: 12px;">${data.summary || `Completed ${data.completedSteps} of ${data.totalSteps} planned steps.`}</p>
         `;
       }
     } else {

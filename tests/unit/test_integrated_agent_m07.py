@@ -271,9 +271,10 @@ def test_ask_mode_does_not_mutate_system(test_session):
             "sessionId": str(test_session.sessionId),
             "goal": "Explain electricity tariff slabs",
             "workflowMode": "ask",
+            "sync": True,
         },
     )
-    assert res.status_code == 200
+    assert res.status_code in (200, 202)
     data = res.json()
     assert data["mode"] == "ask"
     # Status is valid

@@ -188,6 +188,51 @@ class DurableStorage:
     def __init__(self) -> None:
         init_persistence_schema()
 
+    def verify_connection(self) -> bool:
+        """Actively test database connection by executing a lightweight query."""
+        try:
+            conn = get_sqlite_conn()
+            with conn:
+                cur = conn.cursor()
+                cur.execute("SELECT 1;")
+                row = cur.fetchone()
+                return row is not None and row[0] == 1
+        except Exception:
+            return False
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    def reconcile_stale_tasks(self) -> int:
+        """Reconcile tasks left in transient running states upon backend boot/restart."""
+        active_states = (
+            "created",
+            "planning",
+            "observing",
+            "proposing",
+            "authorizing",
+            "executing",
+            "verifying",
+        )
+        count = 0
+        try:
+            conn = get_sqlite_conn()
+            with conn:
+                cur = conn.cursor()
+                placeholders = ",".join("?" for _ in active_states)
+                now_str = datetime.now(timezone.utc).isoformat()
+                cur.execute(
+                    f"UPDATE tasks SET status = 'failed', completed_at = ? WHERE status IN ({placeholders})",
+                    (now_str, *active_states),
+                )
+                count = cur.rowcount
+            conn.close()
+        except Exception:
+            pass
+        return count
+
     # --- Sessions & Grants ---
     def save_session(self, session: Session) -> None:
         conn = get_sqlite_conn()

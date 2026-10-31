@@ -69,6 +69,7 @@ type TaskFlowState =
   | "RETRIEVE"
   | "PROPOSE"
   | "AUTHORIZE"
+  | "EXECUTE"
   | "EXECUTE_B2D"
   | "EXECUTE_D2B"
   | "VERIFY"
@@ -198,6 +199,16 @@ export function App(): React.JSX.Element {
     }>
   >([]);
 
+  // Diagnostics Server Logs
+  const [serverLogs, setServerLogs] = useState<Array<{
+    timestamp: string;
+    level: string;
+    component: string;
+    message: string;
+  }>>([]);
+  const [errorOnlyLogs, setErrorOnlyLogs] = useState<boolean>(false);
+  const [diagActiveTab, setDiagActiveTab] = useState<"trace" | "logs">("trace");
+
   const recordingIntervalRef = useRef<any>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -295,7 +306,24 @@ export function App(): React.JSX.Element {
     } catch {
       // offline tasks probe
     }
+
+    await fetchServerLogs(errorOnlyLogs);
     setIsProbing(false);
+  };
+
+  const fetchServerLogs = async (errorOnly: boolean = errorOnlyLogs) => {
+    try {
+      const headers = await getApiHeaders();
+      const res = await safeFetch(`${API_BASE}/audit/logs?limit=50&error_only=${errorOnly}`, { headers }, 2000);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.logs)) {
+          setServerLogs(data.logs);
+        }
+      }
+    } catch {
+      // offline logs probe
+    }
   };
 
   const toggleLocalOnlyMode = async () => {
@@ -354,10 +382,12 @@ export function App(): React.JSX.Element {
       if (res.ok) {
         const data = await res.json();
         setTaskPassport(data);
+        return data;
       }
     } catch (err) {
       console.warn("Could not fetch Task Passport:", err);
     }
+    return null;
   };
 
   const toggleContext = (ctx: string) => {
@@ -452,21 +482,96 @@ export function App(): React.JSX.Element {
       }
 
       if (data.taskId) {
-        setActiveTaskId(data.taskId);
-        await fetchTaskPassport(data.taskId);
+        const taskId = data.taskId;
+        setActiveTaskId(taskId);
+        setTaskState("PROPOSE");
+        setStatusNarrative(`Task accepted (${taskId.slice(0, 8)}...). Orchestrating execution lifecycle.`);
+        addTimelineEntry("PROPOSE", `Task Accepted: ${taskId.slice(0, 8)}...`, `Scheduled asynchronously`);
 
-        // Confirm canonical persisted state from backend
-        try {
-          const tRes = await safeFetch(`${API_BASE}/tasks/${data.taskId}`, { headers }, 2000);
-          if (tRes.ok) {
-            const canonicalTask = await tRes.json();
-            if (canonicalTask.status === "COMPLETED" && data.isVerified) {
+        // If synchronously completed (e.g. test harness or instant capability introspection)
+        if ((data.status === "VERIFIED" || data.status === "COMPLETED") && data.isVerified) {
+          setTaskState("VERIFIED");
+          const summary =
+            data.summary ||
+            data.accumulatedFacts?.bill_summary ||
+            data.accumulatedFacts?.deadline_summary ||
+            data.accumulatedFacts?.key_findings ||
+            data.accumulatedFacts?.calculation_result ||
+            `Task completed successfully with ${data.completedSteps}/${data.totalSteps} steps verified.`;
+
+          setStatusNarrative(summary);
+          addTimelineEntry("VERIFIED", `Task Completed (${data.completedSteps}/${data.totalSteps} Steps)`, summary);
+          await fetchTaskPassport(taskId);
+          await fetchTasksList();
+          return;
+        }
+
+        // Asynchronous polling loop (every 600ms, up to 50 iterations = 30 seconds)
+        let isDone = false;
+        let attempts = 0;
+        const maxAttempts = 50;
+
+        while (!isDone && attempts < maxAttempts) {
+          await new Promise((resolve) => setTimeout(resolve, 600));
+          attempts++;
+
+          try {
+            const pollRes = await safeFetch(`${API_BASE}/tasks/${taskId}`, { headers }, 2500);
+            if (!pollRes.ok) continue;
+
+            const tData = await pollRes.json();
+            const bStatus = (tData.status || "").toUpperCase();
+
+            if (bStatus === "OBSERVING" || bStatus === "CREATED") {
+              setTaskState("OBSERVE");
+              setStatusNarrative("Observing system context and active windows...");
+            } else if (bStatus === "PLANNING" || bStatus === "PROPOSING") {
+              setTaskState("PROPOSE");
+              setStatusNarrative("Generating execution plan and dependency DAG...");
+            } else if (bStatus === "AUTHORIZING") {
+              setTaskState("HANDOFF");
+              setStatusNarrative("Checking policy grants and capability safety boundaries...");
+            } else if (bStatus === "EXECUTING") {
+              setTaskState("EXECUTE");
+              setStatusNarrative("Executing automation steps across authorized Windows/Browser controllers...");
+            } else if (bStatus === "VERIFYING") {
+              setTaskState("VERIFY");
+              setStatusNarrative("Verifying postconditions via independent UI automation readback...");
+            } else if (bStatus === "COMPLETED") {
+              isDone = true;
               setTaskState("VERIFIED");
-            } else if (canonicalTask.status === "FAILED") {
+              const pData = await fetchTaskPassport(taskId);
+              const completedMsg =
+                pData?.summary ||
+                tData.summary ||
+                `Task completed and independently verified with cryptographic SHA-256 evidence.`;
+              setStatusNarrative(completedMsg);
+              addTimelineEntry("VERIFIED", "Task Completed", completedMsg);
+              break;
+            } else if (bStatus === "FAILED" || bStatus === "CANCELLED") {
+              isDone = true;
               setTaskState("FAILED");
+              const err =
+                tData.error ||
+                (bStatus === "CANCELLED" ? "Task was cancelled." : "Task postcondition verification failed.");
+              setStatusNarrative(`TASK FAILED: ${err}`);
+              addTimelineEntry("FAILED", "Task Failed", err);
+              await fetchTaskPassport(taskId);
+              break;
             }
+          } catch (pollErr: any) {
+            console.warn("Polling task status error:", pollErr);
           }
-        } catch {}
+        }
+
+        if (!isDone && attempts >= maxAttempts) {
+          setTaskState("FAILED");
+          setStatusNarrative("Task execution timed out awaiting verification.");
+          addTimelineEntry("FAILED", "Timeout", "Task execution timed out after 30 seconds.");
+        }
+
+        await fetchTasksList();
+        return;
       }
 
       if ((data.status === "VERIFIED" || data.status === "COMPLETED") && data.isVerified) {
@@ -560,9 +665,11 @@ export function App(): React.JSX.Element {
             return;
           }
 
+          const isWebm = (mimeType || "").includes("webm");
+          const ext = isWebm ? "webm" : "wav";
           const audioBlob = new Blob(audioChunksRef.current, { type: mimeType || "audio/wav" });
           const formData = new FormData();
-          formData.append("file", audioBlob, "recording.wav");
+          formData.append("file", audioBlob, `recording.${ext}`);
           formData.append("languageHints", "kn,hi,en");
           if (sessionId) formData.append("sessionId", sessionId);
 
@@ -1117,34 +1224,102 @@ export function App(): React.JSX.Element {
                 </div>
               </div>
 
-              {/* Live Event & Telemetry Trace */}
+              {/* Live Event & Telemetry Trace / Server Logs */}
               <div style={{ marginTop: "4px" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
-                  <span style={{ fontSize: "12px", fontWeight: 600, color: "#fff" }}>Live Execution Trace & Subsystem Audit</span>
-                  <span style={{ fontSize: "11px", fontFamily: "var(--font-mono)", color: "var(--sahaay-text-muted)" }}>
-                    {timeline.length} Events Logged
-                  </span>
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: "6px", maxHeight: "320px", overflowY: "auto", background: "rgba(3,10,14,0.6)", padding: "10px", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.05)" }}>
-                  {timeline.length === 0 ? (
-                    <div style={{ fontSize: "11px", color: "var(--sahaay-text-subtle)", textAlign: "center", padding: "14px" }}>
-                      No diagnostic events logged yet. Execute an agent request or click Refresh Probes.
-                    </div>
-                  ) : (
-                    timeline.map((event) => (
-                      <div key={event.id} style={{ display: "flex", alignItems: "flex-start", gap: "8px", fontSize: "11px", padding: "6px 8px", borderRadius: "6px", background: "rgba(255,255,255,0.02)" }}>
-                        <span style={{ fontFamily: "var(--font-mono)", color: "var(--sahaay-text-subtle)", flexShrink: 0 }}>
-                          [{event.timestamp}]
-                        </span>
-                        <span className={`badge ${event.state === "FAILED" ? "badge-danger" : event.state === "VERIFIED" ? "badge-success" : "badge-neutral"}`} style={{ fontSize: "9px", padding: "2px 6px" }}>
-                          {event.step}
-                        </span>
-                        <span style={{ color: "#fff", fontWeight: 500 }}>{event.title}:</span>
-                        <span style={{ color: "var(--sahaay-text-muted)", flex: 1 }}>{event.details}</span>
-                      </div>
-                    ))
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                    <button
+                      onClick={() => setDiagActiveTab("trace")}
+                      className="btn-pill-subtle"
+                      style={{
+                        fontSize: "11px",
+                        fontWeight: 600,
+                        padding: "4px 10px",
+                        background: diagActiveTab === "trace" ? "rgba(138,245,207,0.15)" : "transparent",
+                        color: diagActiveTab === "trace" ? "var(--sahaay-mint)" : "var(--sahaay-text-muted)",
+                        border: "1px solid rgba(255,255,255,0.1)",
+                        borderRadius: "6px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Execution Trace ({timeline.length})
+                    </button>
+                    <button
+                      onClick={() => {
+                        setDiagActiveTab("logs");
+                        fetchServerLogs(errorOnlyLogs);
+                      }}
+                      className="btn-pill-subtle"
+                      style={{
+                        fontSize: "11px",
+                        fontWeight: 600,
+                        padding: "4px 10px",
+                        background: diagActiveTab === "logs" ? "rgba(138,245,207,0.15)" : "transparent",
+                        color: diagActiveTab === "logs" ? "var(--sahaay-mint)" : "var(--sahaay-text-muted)",
+                        border: "1px solid rgba(255,255,255,0.1)",
+                        borderRadius: "6px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Backend Server Logs ({serverLogs.length})
+                    </button>
+                  </div>
+                  {diagActiveTab === "logs" && (
+                    <label style={{ fontSize: "11px", color: "var(--sahaay-text-muted)", display: "flex", alignItems: "center", gap: "6px", cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        checked={errorOnlyLogs}
+                        onChange={(e) => {
+                          setErrorOnlyLogs(e.target.checked);
+                          fetchServerLogs(e.target.checked);
+                        }}
+                      />
+                      Errors only
+                    </label>
                   )}
                 </div>
+
+                {diagActiveTab === "trace" ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "6px", maxHeight: "320px", overflowY: "auto", background: "rgba(3,10,14,0.6)", padding: "10px", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.05)" }}>
+                    {timeline.length === 0 ? (
+                      <div style={{ fontSize: "11px", color: "var(--sahaay-text-subtle)", textAlign: "center", padding: "14px" }}>
+                        No diagnostic events logged yet. Execute an agent request or click Refresh Probes.
+                      </div>
+                    ) : (
+                      timeline.map((event) => (
+                        <div key={event.id} style={{ display: "flex", alignItems: "flex-start", gap: "8px", fontSize: "11px", padding: "6px 8px", borderRadius: "6px", background: "rgba(255,255,255,0.02)" }}>
+                          <span style={{ fontFamily: "var(--font-mono)", color: "var(--sahaay-text-subtle)", flexShrink: 0 }}>
+                            [{event.timestamp}]
+                          </span>
+                          <span className={`badge ${event.state === "FAILED" ? "badge-danger" : event.state === "VERIFIED" ? "badge-success" : "badge-neutral"}`} style={{ fontSize: "9px", padding: "2px 6px" }}>
+                            {event.step}
+                          </span>
+                          <span style={{ color: "#fff", fontWeight: 500 }}>{event.title}:</span>
+                          <span style={{ color: "var(--sahaay-text-muted)", flex: 1 }}>{event.details}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "4px", maxHeight: "320px", overflowY: "auto", background: "rgba(3,10,14,0.6)", padding: "10px", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.05)", fontFamily: "var(--font-mono)", fontSize: "10px" }}>
+                    {serverLogs.length === 0 ? (
+                      <div style={{ color: "var(--sahaay-text-subtle)", textAlign: "center", padding: "14px" }}>
+                        No server logs found. Ensure backend is running.
+                      </div>
+                    ) : (
+                      serverLogs.map((log, idx) => (
+                        <div key={idx} style={{ display: "flex", alignItems: "flex-start", gap: "6px", padding: "3px 6px", borderRadius: "4px", background: log.level === "ERROR" || log.level === "CRITICAL" ? "rgba(255,100,100,0.08)" : log.level === "WARNING" ? "rgba(255,200,50,0.06)" : "transparent" }}>
+                          <span style={{ color: "var(--sahaay-text-subtle)" }}>{log.timestamp}</span>
+                          <span style={{ color: log.level === "ERROR" || log.level === "CRITICAL" ? "var(--sahaay-danger)" : log.level === "WARNING" ? "var(--sahaay-warning)" : "var(--sahaay-mint)", fontWeight: 600 }}>
+                            [{log.level}]
+                          </span>
+                          <span style={{ color: "var(--sahaay-cyan)" }}>[{log.component}]</span>
+                          <span style={{ color: "var(--sahaay-text)", flex: 1, wordBreak: "break-all" }}>{log.message}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
               </div>
             </section>
           ) : activeNav === "history" ? (

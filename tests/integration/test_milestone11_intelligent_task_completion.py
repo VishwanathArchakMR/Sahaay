@@ -72,6 +72,7 @@ async def test_workflow_a_local_report_research(m11_session):
             "sessionId": str(sess.sessionId),
             "goal": "Find my latest project report and summarize the important findings",
             "workflowMode": "understand_and_act",
+            "sync": True,
         },
     )
     assert res.status_code == 200
@@ -106,6 +107,7 @@ async def test_workflow_b_browser_to_desktop_transfer(m11_session):
             "sessionId": str(sess.sessionId),
             "goal": "Find the deadline on my active test webpage and write it to Notepad with the source URL",
             "workflowMode": "understand_and_act",
+            "sync": True,
         },
     )
     assert res.status_code == 200
@@ -144,6 +146,7 @@ async def test_workflow_c_bill_extraction_and_notepad(m11_session):
             "sessionId": str(sess.sessionId),
             "goal": "Find my electricity bill, extract the amount and due date, and prepare a summary in Notepad",
             "workflowMode": "understand_and_act",
+            "sync": True,
         },
     )
     assert res.status_code == 200
@@ -171,6 +174,7 @@ async def test_workflow_d_research_and_comparison(m11_session):
             "sessionId": str(sess.sessionId),
             "goal": "Research the current application deadline, compare it with the date in my local notes, and explain whether they conflict",
             "workflowMode": "ask",
+            "sync": True,
         },
     )
     assert res.status_code == 200
@@ -197,6 +201,7 @@ async def test_workflow_e_calculator_calculation(m11_session):
             "sessionId": str(sess.sessionId),
             "goal": "Open Calculator and calculate 125 multiplied by 24",
             "workflowMode": "do",
+            "sync": True,
         },
     )
     assert res.status_code == 200
@@ -246,6 +251,7 @@ async def test_workflow_f_voice_to_task_pipeline(m11_session):
             "sessionId": str(sess.sessionId),
             "goal": trans_res.transcript,
             "workflowMode": "understand_and_act",
+            "sync": True,
         },
     )
     assert res.status_code == 200

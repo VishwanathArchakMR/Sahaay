@@ -145,32 +145,40 @@ Sahaay provides a unified endpoint for both the Aurora Glass desktop workspace a
   "workflowMode": "string (Optional: 'ask', 'do', or 'understand_and_act')",
   "sourceSurface": "string (Optional: 'desktop' or 'browser')",
   "contextReferences": ["string (Optional)"],
-  "userConstraints": { "key": "value (Optional)" }
+  "userConstraints": { "key": "value (Optional)" },
+  "sync": false
 }
 ```
 
-### Response Schema:
+### Immediate Task Acceptance (`202 Accepted`):
 ```json
 {
   "workflow": "execute-goal",
   "taskId": "UUID (Canonical task ID recorded in SQLite database)",
-  "status": "COMPLETED | HANDOFF | FAILED",
-  "isVerified": true,
-  "mode": "ask",
+  "status": "ACCEPTED",
+  "workflowMode": "combined_retrieval_and_action",
   "sourceSurface": "desktop",
-  "summary": "Truthful markdown breakdown of execution results",
-  "completedSteps": 1,
-  "totalSteps": 1,
-  "stepResults": { "step-id": { "success": true, "result": "..." } },
-  "accumulatedFacts": { "key_findings": "..." },
-  "evidenceIds": ["UUID"],
-  "evidenceRecordId": "UUID",
-  "error": null,
-  "passport": {
-    "task_id": "UUID",
-    "verification_status": "VERIFIED",
-    "milestones": [ ... ]
-  }
+  "message": "Task accepted and scheduled for execution.",
+  "isVerified": false
+}
+```
+
+### Deterministic Lifecycle Polling (`GET /api/v1/tasks/{taskId}`):
+Clients poll the canonical task status through the authoritative 6-stage lifecycle:
+$$\text{OBSERVE} \longrightarrow \text{PROPOSE} \longrightarrow \text{AUTHORIZE} \longrightarrow \text{EXECUTE} \longrightarrow \text{VERIFY} \longrightarrow \text{RECORD}$$
+
+When status reaches `COMPLETED`, clients fetch the verified Task Passport from `GET /api/v1/tasks/{taskId}/passport`:
+```json
+{
+  "task_id": "UUID",
+  "workflow_mode": "combined_retrieval_and_action",
+  "summary": "Truthful markdown breakdown of verified execution results",
+  "verification_status": "VERIFIED",
+  "provenance_sha256": "8f4a... (Cryptographic evidence hash)",
+  "milestones": [
+    { "stepId": "step-1", "title": "Observe active context", "status": "COMPLETED" },
+    { "stepId": "step-2", "title": "Dispatch verified action to Windows companion", "status": "COMPLETED" }
+  ]
 }
 ```
 

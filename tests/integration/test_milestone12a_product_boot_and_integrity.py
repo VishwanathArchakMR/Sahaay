@@ -271,6 +271,7 @@ async def test_condition_i_genuine_local_retrieval_e2e_with_restart_verification
             "sessionId": str(sid),
             "goal": "Find my latest project report and summarize the important findings",
             "workflowMode": "ask",
+            "sync": True,
         },
     )
     assert res.status_code == 200, res.text

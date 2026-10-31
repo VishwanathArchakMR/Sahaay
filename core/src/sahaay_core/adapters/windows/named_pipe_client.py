@@ -5,6 +5,7 @@ Connects to \\.\pipe\SahaayControllerPipe without third-party dependencies.
 
 import ctypes
 import json
+import time
 import uuid
 from ctypes import wintypes
 from typing import Any, Dict, Optional
@@ -59,6 +60,17 @@ WaitNamedPipeW = kernel32.WaitNamedPipeW
 WaitNamedPipeW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD]
 WaitNamedPipeW.restype = wintypes.BOOL
 
+PeekNamedPipe = kernel32.PeekNamedPipe
+PeekNamedPipe.argtypes = [
+    wintypes.HANDLE,
+    wintypes.LPVOID,
+    wintypes.DWORD,
+    ctypes.POINTER(wintypes.DWORD),
+    ctypes.POINTER(wintypes.DWORD),
+    ctypes.POINTER(wintypes.DWORD),
+]
+PeekNamedPipe.restype = wintypes.BOOL
+
 
 class NamedPipeClient:
     """Client for synchronous or async calls to \\\\.\\pipe\\SahaayControllerPipe."""
@@ -66,14 +78,15 @@ class NamedPipeClient:
     def __init__(self, pipe_name: str = "SahaayControllerPipe") -> None:
         self.pipe_path = f"\\\\.\\pipe\\{pipe_name}"
 
-    def _execute_pipe_transaction(
+    def send_command(
         self,
         command: str,
-        session_id: Optional[str],
-        task_id: Optional[str],
-        parameters: Optional[Dict[str, Any]],
-        timeout_ms: int,
+        session_id: Optional[str] = None,
+        task_id: Optional[str] = None,
+        parameters: Optional[Dict[str, Any]] = None,
+        timeout_ms: int = 3000,
     ) -> Dict[str, Any]:
+        """Send a typed command to the Sahaay Windows Controller via Named Pipe with strict bounded timeout."""
         # Fast non-blocking pre-check: verify pipe exists before creating handle
         pipe_wait_timeout = min(timeout_ms, 200)
         has_pipe = WaitNamedPipeW(self.pipe_path, pipe_wait_timeout)
@@ -119,7 +132,26 @@ class NamedPipeClient:
             if not success:
                 raise OSError(f"WriteFile failed with error {kernel32.GetLastError()}")
 
-            # Read response line
+            # Non-blocking polling for response bytes using PeekNamedPipe
+            start_time = time.time()
+            timeout_sec = max(0.2, timeout_ms / 1000.0)
+            bytes_avail = wintypes.DWORD(0)
+
+            while (time.time() - start_time) < timeout_sec:
+                peek_ok = PeekNamedPipe(handle, None, 0, None, ctypes.byref(bytes_avail), None)
+                if not peek_ok:
+                    err = kernel32.GetLastError()
+                    raise ConnectionError(f"Pipe broken during read (Win32 Error: {err})")
+                if bytes_avail.value > 0:
+                    break
+                time.sleep(0.01)
+
+            if bytes_avail.value == 0:
+                raise TimeoutError(
+                    f"Named Pipe '{self.pipe_path}' operation '{command}' timed out after {timeout_sec}s."
+                )
+
+            # Read response line now that bytes are guaranteed available
             buffer = ctypes.create_string_buffer(65536)
             bytes_read = wintypes.DWORD(0)
             success = ReadFile(handle, buffer, 65536, ctypes.byref(bytes_read), None)
@@ -130,31 +162,3 @@ class NamedPipeClient:
             return json.loads(resp_raw)
         finally:
             CloseHandle(handle)
-
-    def send_command(
-        self,
-        command: str,
-        session_id: Optional[str] = None,
-        task_id: Optional[str] = None,
-        parameters: Optional[Dict[str, Any]] = None,
-        timeout_ms: int = 3000,
-    ) -> Dict[str, Any]:
-        """Send a typed command to the Sahaay Windows Controller via Named Pipe with strict bounded timeout."""
-        import concurrent.futures
-
-        timeout_sec = max(0.5, timeout_ms / 1000.0)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(
-                self._execute_pipe_transaction,
-                command,
-                session_id,
-                task_id,
-                parameters,
-                timeout_ms,
-            )
-            try:
-                return future.result(timeout=timeout_sec)
-            except concurrent.futures.TimeoutError as exc:
-                raise TimeoutError(
-                    f"Named Pipe '{self.pipe_path}' operation '{command}' timed out after {timeout_sec}s."
-                ) from exc

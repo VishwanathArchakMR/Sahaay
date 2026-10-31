@@ -10,13 +10,15 @@ OBSERVE -> PROPOSE -> AUTHORIZE -> EXECUTE -> VERIFY -> RECORD.
 - Separates controlled fixture test harness from real computer execution.
 """
 
+import asyncio
 import hashlib
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from sahaay_core.adapters.browser.adapter import BrowserAdapter
@@ -32,6 +34,7 @@ from sahaay_core.contracts.models import (
     ExecutionResult,
     FactTypeEnum,
     PolicyDecisionEnum,
+    TaskContract,
     TaskStatusEnum,
     VerificationStatusEnum,
 )
@@ -43,6 +46,7 @@ from sahaay_core.verification.verifier import IndependentVerifier
 router = APIRouter(prefix="/workflows", tags=["Workflows"])
 
 FIXTURES_DIR = get_fixtures_dir()
+active_workflow_tasks: Dict[UUID, asyncio.Task] = {}
 
 
 def _ensure_session_and_grants(session_id: UUID):
@@ -651,28 +655,104 @@ class ExecuteGoalRequest(BaseModel):
     userConstraints: Optional[Dict[str, Any]] = None
     context: Optional[str] = ""
     isFixtureMode: Optional[bool] = None
+    sync: Optional[bool] = False
 
 
 @router.post("/execute-goal")
-async def execute_goal(req: ExecuteGoalRequest) -> Dict[str, Any]:
-    from sahaay_core.config.settings import settings
-    from sahaay_core.storage.persistence import durable_storage
-
+async def execute_goal(req: ExecuteGoalRequest):
     _ensure_session_and_grants(req.sessionId)
 
-    mode = (req.workflowMode or "understand_and_act").lower().strip()
-    if mode == "ask":
-        task_type = "retrieval_only"
-    elif mode == "do":
-        task_type = "action_only"
-    else:
-        task_type = "combined_retrieval_and_action"
+    # 1. Authoritative Backend Intent Classification (not keyword-only from frontend)
+    goal_lower = req.goal.lower().strip()
+    has_retrieval_intent = any(
+        w in goal_lower
+        for w in [
+            "summarize",
+            "find",
+            "search",
+            "what",
+            "read",
+            "extract",
+            "details",
+            "invoice",
+            "bill",
+            "status",
+            "explain",
+            "observe",
+            "active tab",
+        ]
+    )
+    has_action_intent = any(
+        w in goal_lower
+        for w in [
+            "save",
+            "write",
+            "notepad",
+            "fill",
+            "type",
+            "open",
+            "launch",
+            "calculate",
+            "scroll",
+            "haaki",
+            "daalo",
+            "likho",
+        ]
+    )
 
+    if has_retrieval_intent and has_action_intent:
+        task_type = "combined_retrieval_and_action"
+    elif has_action_intent:
+        task_type = "action_only"
+    elif has_retrieval_intent:
+        task_type = "retrieval_only"
+    else:
+        mode = (req.workflowMode or "understand_and_act").lower().strip()
+        task_type = (
+            "retrieval_only"
+            if mode == "ask"
+            else ("action_only" if mode == "do" else "combined_retrieval_and_action")
+        )
+
+    # 2. Immediate Task Creation & Durable Persistence
     task = orchestrator.create_task(
         session_id=req.sessionId,
         goal=req.goal,
         task_type=task_type,
     )
+    task_id = task.taskId
+
+    # If explicit synchronous execution requested (e.g. unit tests or fixtures)
+    if req.sync or req.isFixtureMode:
+        return await _execute_goal_pipeline(task, req, task_type)
+
+    # 3. Asynchronous execution in existing process
+    task_coro = _execute_goal_pipeline(task, req, task_type)
+    bg_task = asyncio.create_task(task_coro)
+    active_workflow_tasks[task_id] = bg_task
+    bg_task.add_done_callback(lambda _: active_workflow_tasks.pop(task_id, None))
+
+    # 4. Immediate 202 Accepted Response with canonical Task ID
+    return JSONResponse(
+        status_code=status.HTTP_202_ACCEPTED,
+        content={
+            "workflow": "execute-goal",
+            "taskId": str(task_id),
+            "status": "ACCEPTED",
+            "workflowMode": task_type,
+            "sourceSurface": req.sourceSurface or "desktop",
+            "message": f"Task accepted and scheduled for execution ({task_type}).",
+            "isVerified": False,
+        },
+    )
+
+
+async def _execute_goal_pipeline(
+    task: TaskContract, req: ExecuteGoalRequest, task_type: str
+) -> Dict[str, Any]:
+    from sahaay_core.config.settings import settings
+    from sahaay_core.storage.persistence import durable_storage
+
     task_id = task.taskId
     grants = active_grants.get(req.sessionId, [])
     goal_lower = req.goal.lower().strip()

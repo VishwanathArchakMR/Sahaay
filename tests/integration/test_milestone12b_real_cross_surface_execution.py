@@ -78,6 +78,7 @@ async def test_workflow_1_browser_tab_to_notepad(m12b_session):
             "sessionId": str(sess.sessionId),
             "goal": "Read the deadline from the webpage I currently have open, then write the deadline and source URL into Notepad.",
             "workflowMode": "understand_and_act",
+            "sync": True,
         },
     )
     assert res.status_code == 200
@@ -125,6 +126,7 @@ async def test_workflow_2_local_document_to_notepad(m12b_session):
             "sessionId": str(sess.sessionId),
             "goal": "Find the permitted synthetic electricity bill, extract the due date and amount, and prepare a summary in Notepad.",
             "workflowMode": "understand_and_act",
+            "sync": True,
         },
     )
     assert res.status_code == 200
@@ -170,6 +172,7 @@ async def test_workflow_3_calculator_execution_and_readback(m12b_session):
             "sessionId": str(sess.sessionId),
             "goal": "Open Calculator and calculate 125 multiplied by 24",
             "workflowMode": "do",
+            "sync": True,
         },
     )
     assert res.status_code == 200

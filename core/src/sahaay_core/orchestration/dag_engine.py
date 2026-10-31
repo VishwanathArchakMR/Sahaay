@@ -293,7 +293,45 @@ class TaskDagEngine:
             try:
                 act_type_enum = ActionTypeEnum(node.action_type)
             except Exception:
-                act_type_enum = ActionTypeEnum.SET_CONTROL_TEXT
+                cap_to_action = {
+                    "deterministic_retrieval": ActionTypeEnum.DETERMINISTIC_RETRIEVAL,
+                    "windows_launch_app": ActionTypeEnum.LAUNCH_APPLICATION,
+                    "windows_set_control_text": ActionTypeEnum.SET_CONTROL_TEXT,
+                    "windows_inspect_window": ActionTypeEnum.GET_ACTIVE_WINDOW,
+                    "browser_tab_observe": ActionTypeEnum.GET_TAB_CONTENT,
+                    "browser_scroll": ActionTypeEnum.SCROLL_BROWSER_TAB,
+                    "browser_form_fill": ActionTypeEnum.FILL_FORM_FIELDS,
+                    "windows_ui_tree_inspect": ActionTypeEnum.DETERMINISTIC_RETRIEVAL,
+                    "document_ingestion": ActionTypeEnum.DOCUMENT_INGEST_CHUNK,
+                    "document_ingest_chunk": ActionTypeEnum.DOCUMENT_INGEST_CHUNK,
+                    "research_search": ActionTypeEnum.RESEARCH_WEB_SEARCH,
+                    "research_fetch": ActionTypeEnum.RESEARCH_FETCH_PAGE,
+                    "system_volume_control": ActionTypeEnum.SET_SYSTEM_VOLUME,
+                    "calculate": ActionTypeEnum.DETERMINISTIC_RETRIEVAL,
+                    "verify_readback": ActionTypeEnum.VERIFY_READBACK,
+                }
+                if node.capability_id in cap_to_action:
+                    act_type_enum = cap_to_action[node.capability_id]
+                else:
+                    err_msg = f"Unsupported or unregistered action_type '{node.action_type}' for capability '{node.capability_id}' on step '{node.step_id}'."
+                    logger.error(err_msg)
+                    node.status = TaskStatusEnum.FAILED
+                    node.error = err_msg
+                    step_results[node.step_id] = {"success": False, "error": err_msg}
+                    task.status = TaskStatusEnum.FAILED
+                    durable_storage.save_task(task)
+                    return DAGExecutionReport(
+                        task_id=task_id_str,
+                        goal=task.goal,
+                        is_success=False,
+                        final_status=TaskStatusEnum.FAILED,
+                        completed_steps_count=completed_count,
+                        total_steps_count=len(nodes),
+                        step_results=step_results,
+                        accumulated_facts=accumulated_facts,
+                        evidence_ids=evidence_ids,
+                        error=err_msg,
+                    )
 
             action_contract = ActionContract(
                 actionId=uuid4(),
@@ -425,12 +463,20 @@ class TaskDagEngine:
                 driver_prov = (
                     exec_data.get("driverProvenance") if isinstance(exec_data, dict) else None
                 )
+                driver_success = (
+                    isinstance(exec_data, dict)
+                    and exec_data.get("success", True) is not False
+                    and not exec_data.get("error")
+                )
+                if isinstance(exec_data, dict) and "verified" in exec_data:
+                    driver_success = driver_success and bool(exec_data["verified"])
+
                 exec_result = ExecutionResult(
                     executionId=uuid4(),
                     actionId=action_contract.actionId,
-                    isSuccess=True,
+                    isSuccess=driver_success,
                     durationMs=25.0,
-                    outputData=exec_data,
+                    outputData=exec_data if isinstance(exec_data, dict) else {"data": exec_data},
                     driverProvenance=driver_prov,
                 )
 

@@ -66,6 +66,11 @@ async def transition_task(task_id: UUID, req: TransitionStateRequest) -> TaskCon
 async def cancel_task(task_id: UUID) -> TaskContract:
     """Cancel task immediately and block subsequent actions."""
     try:
+        from sahaay_core.api.v1.workflows import active_workflow_tasks
+
+        bg_task = active_workflow_tasks.get(task_id)
+        if bg_task and not bg_task.done():
+            bg_task.cancel()
         return orchestrator.cancel_task(task_id)
     except InvalidStateTransitionError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
