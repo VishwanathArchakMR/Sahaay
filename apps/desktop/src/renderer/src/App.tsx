@@ -32,19 +32,36 @@ if (typeof window !== "undefined" && (window as any).sahaay?.getApiToken) {
   });
 }
 
-const getApiHeaders = (): Record<string, string> => {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-  if (dynamicApiToken) {
-    headers["X-Sahaay-Token"] = dynamicApiToken;
-  } else {
-    headers["X-Sahaay-Token"] = "dev-local-sahaay-token";
+const getApiHeaders = async (): Promise<Record<string, string>> => {
+  let token = dynamicApiToken;
+  if (!token && typeof window !== "undefined" && (window as any).sahaay?.getApiToken) {
+    try {
+      token = await (window as any).sahaay.getApiToken();
+      if (token) dynamicApiToken = token;
+    } catch {}
   }
-  return headers;
+  return {
+    "Content-Type": "application/json",
+    "X-Sahaay-Token": token || "dev-local-sahaay-token",
+  };
 };
 
-const API_HEADERS = getApiHeaders();
+const safeFetch = async (
+  url: string,
+  options: RequestInit = {},
+  timeoutMs: number = 3000
+): Promise<Response> => {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(id);
+    return res;
+  } catch (err) {
+    clearTimeout(id);
+    throw err;
+  }
+};
 
 type TaskFlowState =
   | "IDLE"
@@ -119,7 +136,7 @@ interface ModelsStatusReport {
 export function App(): React.JSX.Element {
   // Navigation & View state
   const [activeNav, setActiveNav] = useState<
-    "home" | "tasks" | "computer" | "browser" | "files" | "apps" | "voice" | "history" | "settings"
+    "home" | "tasks" | "computer" | "browser" | "files" | "apps" | "voice" | "history" | "settings" | "diagnostics"
   >("home");
   const [selectedContexts, setSelectedContexts] = useState<Set<string>>(
     new Set(["Computer", "Browser", "Files", "Apps", "Voice"])
@@ -193,41 +210,69 @@ export function App(): React.JSX.Element {
     return () => clearInterval(interval);
   }, []);
 
-  const initSession = async () => {
+  const initSession = async (): Promise<string | null> => {
+    const storedId = localStorage.getItem("sahaay_active_session_id");
+    const headers = await getApiHeaders();
+    if (storedId) {
+      try {
+        const res = await safeFetch(`${API_BASE}/sessions/${storedId}`, { headers }, 2000);
+        if (res.ok) {
+          const data = await res.json();
+          setSessionId(data.sessionId);
+          setIsBackendReachable(true);
+          addTimelineEntry(
+            "IDLE",
+            "Session Resumed",
+            `Session: ${data.sessionId.slice(0, 8)}... (${data.localOnlyMode ? "Local-Only Mode" : "Hosted Allowed"})`
+          );
+          return data.sessionId;
+        }
+      } catch {}
+    }
+
     try {
-      const res = await fetch(`${API_BASE}/sessions`, {
-        method: "POST",
-        headers: getApiHeaders(),
-        body: JSON.stringify({ localOnlyMode }),
-      });
+      const res = await safeFetch(
+        `${API_BASE}/sessions`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ localOnlyMode }),
+        },
+        2500
+      );
       if (res.ok) {
         const data = await res.json();
         setSessionId(data.sessionId);
+        localStorage.setItem("sahaay_active_session_id", data.sessionId);
         setIsBackendReachable(true);
         addTimelineEntry(
           "IDLE",
           "Session Initialized",
           `Session: ${data.sessionId.slice(0, 8)}... (${data.localOnlyMode ? "Local-Only Mode" : "Hosted Allowed"})`
         );
+        return data.sessionId;
       } else {
         setIsBackendReachable(false);
+        return null;
       }
     } catch {
       setIsBackendReachable(false);
+      return null;
     }
   };
 
   const runDiagnosticsProbe = async () => {
     setIsProbing(true);
+    const headers = await getApiHeaders();
     try {
-      const res = await fetch(`${API_BASE}/health`, { headers: getApiHeaders() });
+      const res = await safeFetch(`${API_BASE}/health`, { headers }, 2000);
       setIsBackendReachable(res.ok);
     } catch {
       setIsBackendReachable(false);
     }
 
     try {
-      const res = await fetch(`${API_BASE}/models/status`, { headers: getApiHeaders() });
+      const res = await safeFetch(`${API_BASE}/models/status`, { headers }, 2000);
       if (res.ok) {
         const data = await res.json();
         setModelsStatus(data);
@@ -240,7 +285,7 @@ export function App(): React.JSX.Element {
     }
 
     try {
-      const res = await fetch(`${API_BASE}/tasks?limit=20`, { headers: getApiHeaders() });
+      const res = await safeFetch(`${API_BASE}/tasks?limit=20`, { headers }, 2000);
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) {
@@ -255,15 +300,21 @@ export function App(): React.JSX.Element {
 
   const toggleLocalOnlyMode = async () => {
     const newMode = !localOnlyMode;
+    const headers = await getApiHeaders();
     try {
-      const res = await fetch(`${API_BASE}/sessions`, {
-        method: "POST",
-        headers: getApiHeaders(),
-        body: JSON.stringify({ localOnlyMode: newMode }),
-      });
+      const res = await safeFetch(
+        `${API_BASE}/sessions`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ localOnlyMode: newMode }),
+        },
+        2500
+      );
       if (res.ok) {
         const data = await res.json();
         setSessionId(data.sessionId);
+        localStorage.setItem("sahaay_active_session_id", data.sessionId);
         setLocalOnlyMode(data.localOnlyMode);
         addTimelineEntry(
           "IDLE",
@@ -298,7 +349,8 @@ export function App(): React.JSX.Element {
 
   const fetchTaskPassport = async (taskId: string) => {
     try {
-      const res = await fetch(`${API_BASE}/tasks/${taskId}/passport`, { headers: API_HEADERS });
+      const headers = await getApiHeaders();
+      const res = await safeFetch(`${API_BASE}/tasks/${taskId}/passport`, { headers }, 2500);
       if (res.ok) {
         const data = await res.json();
         setTaskPassport(data);
@@ -320,7 +372,8 @@ export function App(): React.JSX.Element {
   // Execution Handlers
   const fetchTasksList = async () => {
     try {
-      const res = await fetch(`${API_BASE}/tasks?limit=20`, { headers: getApiHeaders() });
+      const headers = await getApiHeaders();
+      const res = await safeFetch(`${API_BASE}/tasks?limit=20`, { headers }, 2500);
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) {
@@ -349,7 +402,9 @@ export function App(): React.JSX.Element {
       lower.startsWith("what") ||
       lower.startsWith("summarize") ||
       lower.startsWith("read") ||
-      lower.startsWith("extract");
+      lower.startsWith("extract") ||
+      lower.startsWith("hello") ||
+      lower.startsWith("explain");
     const isDoMode =
       lower.startsWith("open") ||
       lower.startsWith("calculate") ||
@@ -358,51 +413,81 @@ export function App(): React.JSX.Element {
       lower.startsWith("fill");
     const workflowMode = isAskMode ? "ask" : isDoMode ? "do" : "combined_retrieval_and_action";
 
+    // Validate or establish session first
+    let activeSessionId: string | null = sessionId;
+    if (!activeSessionId) {
+      activeSessionId = await initSession();
+    }
+    if (!activeSessionId) {
+      setTaskState("FAILED");
+      setStatusNarrative("Backend connection unavailable. Please ensure Sahaay FastAPI backend is online at 127.0.0.1:8000.");
+      addTimelineEntry("FAILED", "Session Error", "Could not establish valid session with backend.");
+      return;
+    }
+
     setTaskState("PROPOSE");
-    setStatusNarrative(`Formulating plan for: "${promptText}" (${workflowMode.toUpperCase()})...`);
-    addTimelineEntry("PROPOSE", `Goal: "${promptText.slice(0, 48)}..."`, "Decomposing task with Muse Spark");
+    setStatusNarrative(`Submitting task: "${promptText}" (${workflowMode.toUpperCase()})...`);
+    addTimelineEntry("PROPOSE", `Goal: "${promptText.slice(0, 48)}..."`, "Dispatching goal to Sahaay orchestrator");
 
     try {
-      setTaskState("EXECUTE_B2D");
-      setStatusNarrative("Executing task across authorized Windows & Browser capabilities...");
-
-      const res = await fetch(`${API_BASE}/workflows/execute-goal`, {
-        method: "POST",
-        headers: getApiHeaders(),
-        body: JSON.stringify({
-          sessionId: sessionId || "00000000-0000-0000-0000-000000000001",
-          goal: promptText,
-          workflowMode,
-        }),
-      });
+      const headers = await getApiHeaders();
+      const res = await safeFetch(
+        `${API_BASE}/workflows/execute-goal`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            sessionId: activeSessionId,
+            goal: promptText,
+            workflowMode,
+            sourceSurface: "desktop",
+          }),
+        },
+        20000
+      );
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || `Server returned ${res.status}`);
+      if (!res.ok) {
+        throw new Error(data.detail || `Server returned HTTP ${res.status}`);
+      }
 
       if (data.taskId) {
         setActiveTaskId(data.taskId);
         await fetchTaskPassport(data.taskId);
+
+        // Confirm canonical persisted state from backend
+        try {
+          const tRes = await safeFetch(`${API_BASE}/tasks/${data.taskId}`, { headers }, 2000);
+          if (tRes.ok) {
+            const canonicalTask = await tRes.json();
+            if (canonicalTask.status === "COMPLETED" && data.isVerified) {
+              setTaskState("VERIFIED");
+            } else if (canonicalTask.status === "FAILED") {
+              setTaskState("FAILED");
+            }
+          }
+        } catch {}
       }
 
       if ((data.status === "VERIFIED" || data.status === "COMPLETED") && data.isVerified) {
         setTaskState("VERIFIED");
-        const facts = data.accumulatedFacts || {};
         const summary =
-          facts.bill_summary ||
-          facts.deadline_summary ||
-          facts.key_findings ||
-          facts.calculation_result ||
+          data.summary ||
+          data.accumulatedFacts?.bill_summary ||
+          data.accumulatedFacts?.deadline_summary ||
+          data.accumulatedFacts?.key_findings ||
+          data.accumulatedFacts?.calculation_result ||
           `Task completed successfully with ${data.completedSteps}/${data.totalSteps} steps verified.`;
 
-        setStatusNarrative(`VERIFIED: ${summary}`);
-        addTimelineEntry("VERIFIED", `Task Verified (${data.completedSteps}/${data.totalSteps} Steps)`, summary);
+        setStatusNarrative(summary);
+        addTimelineEntry("VERIFIED", `Task Completed (${data.completedSteps}/${data.totalSteps} Steps)`, summary);
       } else if (data.status === "FAILED") {
         setTaskState("FAILED");
         setStatusNarrative(`TASK FAILED: ${data.error || "Verification failed."}`);
         addTimelineEntry("FAILED", "Task Failed", data.error || "Postcondition check failed");
       } else {
         setTaskState("HANDOFF");
-        setStatusNarrative(`STATUS: ${data.status} — Awaiting human authorization.`);
+        setStatusNarrative(`STATUS: ${data.status} — Awaiting authorization.`);
         addTimelineEntry("HANDOFF", `Status: ${data.status}`, "Action Gate requested approval");
       }
       await fetchTasksList();
@@ -416,10 +501,11 @@ export function App(): React.JSX.Element {
 
   const handleStopExecution = async () => {
     if (activeTaskId) {
-      await fetch(`${API_BASE}/tasks/${activeTaskId}/cancel`, {
+      const headers = await getApiHeaders();
+      await safeFetch(`${API_BASE}/tasks/${activeTaskId}/cancel`, {
         method: "POST",
-        headers: getApiHeaders(),
-      }).catch(() => {});
+        headers,
+      }, 3000).catch(() => {});
     }
     setTaskState("IDLE");
     setStatusNarrative("Task execution stopped by user.");
@@ -642,6 +728,14 @@ export function App(): React.JSX.Element {
             >
               <Clock size={16} />
               <span>History</span>
+            </button>
+
+            <button
+              onClick={() => setActiveNav("diagnostics")}
+              className={`nav-rail-item ${activeNav === "diagnostics" ? "active" : ""}`}
+            >
+              <Activity size={16} color="var(--sahaay-mint)" />
+              <span>Diagnostics</span>
             </button>
 
             <button
@@ -915,8 +1009,145 @@ export function App(): React.JSX.Element {
             </section>
           )}
 
-          {/* D. Lower 3 Frosted Glass Cards or History View */}
-          {activeNav === "history" ? (
+          {/* D. Lower 3 Frosted Glass Cards, Diagnostics, or History View */}
+          {activeNav === "diagnostics" ? (
+            <section className="glass-surface" style={{ padding: "20px", borderRadius: "18px", display: "flex", flexDirection: "column", gap: "16px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div>
+                  <h3 style={{ fontSize: "16px", fontWeight: 600, color: "#fff", display: "flex", alignItems: "center", gap: "8px" }}>
+                    <Activity size={18} color="var(--sahaay-mint)" /> Connections & Diagnostics
+                  </h3>
+                  <p style={{ fontSize: "11px", color: "var(--sahaay-text-muted)", marginTop: "2px" }}>
+                    Authoritative runtime telemetry, live component health, and sanitized audit trace
+                  </p>
+                </div>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <button
+                    onClick={runDiagnosticsProbe}
+                    className="btn btn-secondary"
+                    style={{ fontSize: "11px", padding: "6px 12px", display: "flex", alignItems: "center", gap: "6px" }}
+                  >
+                    <RefreshCw size={12} className={isProbing ? "anim-spin" : ""} /> Refresh Probes
+                  </button>
+                  <button
+                    onClick={() => {
+                      const report = {
+                        timestamp: new Date().toISOString(),
+                        backendOnline: isBackendReachable,
+                        sessionId,
+                        activeTaskId,
+                        privacyMode: localOnlyMode ? "LOCAL_ONLY" : "HOSTED_ALLOWED",
+                        models: modelsStatus,
+                        recentTasksCount: tasksList.length,
+                        recordedTimelineEvents: timeline.length,
+                      };
+                      navigator.clipboard.writeText(JSON.stringify(report, null, 2));
+                      alert("Diagnostics JSON copied to clipboard!");
+                    }}
+                    className="btn btn-primary"
+                    style={{ fontSize: "11px", padding: "6px 12px" }}
+                  >
+                    Copy Diagnostics
+                  </button>
+                  <button
+                    onClick={() => {
+                      const report = {
+                        timestamp: new Date().toISOString(),
+                        backendOnline: isBackendReachable,
+                        sessionId,
+                        activeTaskId,
+                        privacyMode: localOnlyMode ? "LOCAL_ONLY" : "HOSTED_ALLOWED",
+                        models: modelsStatus,
+                        recentTasks: tasksList,
+                        timeline,
+                      };
+                      const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `sahaay-diagnostics-${Date.now()}.json`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    }}
+                    className="btn btn-subtle"
+                    style={{ fontSize: "11px", padding: "6px 12px" }}
+                  >
+                    Export Report
+                  </button>
+                </div>
+              </div>
+
+              {/* Status Metric Grid */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "10px" }}>
+                <div style={{ padding: "12px", background: "rgba(255,255,255,0.03)", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div style={{ fontSize: "11px", color: "var(--sahaay-text-muted)" }}>FastAPI Backend Authority</div>
+                  <div style={{ fontSize: "13px", fontWeight: 600, color: isBackendReachable ? "var(--sahaay-mint)" : "var(--sahaay-danger)", marginTop: "4px" }}>
+                    {isBackendReachable ? "ONLINE (127.0.0.1:8000)" : "OFFLINE (Port 8000)"}
+                  </div>
+                </div>
+                <div style={{ padding: "12px", background: "rgba(255,255,255,0.03)", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div style={{ fontSize: "11px", color: "var(--sahaay-text-muted)" }}>Current Session ID</div>
+                  <div style={{ fontSize: "12px", fontFamily: "var(--font-mono)", color: "var(--sahaay-cyan)", marginTop: "4px" }}>
+                    {sessionId ? `${sessionId.slice(0, 16)}...` : "Initializing..."}
+                  </div>
+                </div>
+                <div style={{ padding: "12px", background: "rgba(255,255,255,0.03)", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div style={{ fontSize: "11px", color: "var(--sahaay-text-muted)" }}>Windows Controller Pipe</div>
+                  <div style={{ fontSize: "12px", fontFamily: "var(--font-mono)", color: "var(--sahaay-text)", marginTop: "4px" }}>
+                    \\\\.\\pipe\\SahaayControllerPipe
+                  </div>
+                </div>
+                <div style={{ padding: "12px", background: "rgba(255,255,255,0.03)", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div style={{ fontSize: "11px", color: "var(--sahaay-text-muted)" }}>Chrome/Edge Native Host</div>
+                  <div style={{ fontSize: "12px", color: "var(--sahaay-mint)", marginTop: "4px" }}>
+                    Registered (com.sahaay.nativehost)
+                  </div>
+                </div>
+                <div style={{ padding: "12px", background: "rgba(255,255,255,0.03)", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div style={{ fontSize: "11px", color: "var(--sahaay-text-muted)" }}>Planning Model / Provider</div>
+                  <div style={{ fontSize: "12px", color: "var(--sahaay-text)", marginTop: "4px" }}>
+                    Meta Muse Spark 1.3
+                  </div>
+                </div>
+                <div style={{ padding: "12px", background: "rgba(255,255,255,0.03)", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div style={{ fontSize: "11px", color: "var(--sahaay-text-muted)" }}>Privacy Gateway Tier</div>
+                  <div style={{ fontSize: "12px", color: localOnlyMode ? "var(--sahaay-cyan)" : "var(--sahaay-warning)", marginTop: "4px" }}>
+                    {localOnlyMode ? "STRICT LOCAL-ONLY" : "HOSTED INFERENCE ALLOWED"}
+                  </div>
+                </div>
+              </div>
+
+              {/* Live Event & Telemetry Trace */}
+              <div style={{ marginTop: "4px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
+                  <span style={{ fontSize: "12px", fontWeight: 600, color: "#fff" }}>Live Execution Trace & Subsystem Audit</span>
+                  <span style={{ fontSize: "11px", fontFamily: "var(--font-mono)", color: "var(--sahaay-text-muted)" }}>
+                    {timeline.length} Events Logged
+                  </span>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px", maxHeight: "320px", overflowY: "auto", background: "rgba(3,10,14,0.6)", padding: "10px", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.05)" }}>
+                  {timeline.length === 0 ? (
+                    <div style={{ fontSize: "11px", color: "var(--sahaay-text-subtle)", textAlign: "center", padding: "14px" }}>
+                      No diagnostic events logged yet. Execute an agent request or click Refresh Probes.
+                    </div>
+                  ) : (
+                    timeline.map((event) => (
+                      <div key={event.id} style={{ display: "flex", alignItems: "flex-start", gap: "8px", fontSize: "11px", padding: "6px 8px", borderRadius: "6px", background: "rgba(255,255,255,0.02)" }}>
+                        <span style={{ fontFamily: "var(--font-mono)", color: "var(--sahaay-text-subtle)", flexShrink: 0 }}>
+                          [{event.timestamp}]
+                        </span>
+                        <span className={`badge ${event.state === "FAILED" ? "badge-danger" : event.state === "VERIFIED" ? "badge-success" : "badge-neutral"}`} style={{ fontSize: "9px", padding: "2px 6px" }}>
+                          {event.step}
+                        </span>
+                        <span style={{ color: "#fff", fontWeight: 500 }}>{event.title}:</span>
+                        <span style={{ color: "var(--sahaay-text-muted)", flex: 1 }}>{event.details}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </section>
+          ) : activeNav === "history" ? (
             <section className="glass-surface" style={{ padding: "20px", borderRadius: "18px", display: "flex", flexDirection: "column", gap: "14px" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <h3 style={{ fontSize: "14px", fontWeight: 600, color: "#fff" }}>Execution History & Provenance Ledger</h3>

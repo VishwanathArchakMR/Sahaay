@@ -118,11 +118,25 @@ if ($DiagnosticsOnly) {
         if ($healthReq.status -eq "healthy") { $BackendReachable = $true }
     } catch {}
 
-    # Controller pipe probe
-    $ControllerPipeUp = [System.IO.File]::Exists("\\.\pipe\SahaayControllerPipe")
+    # Controller pipe probe (Active Handshake)
+    function Test-NamedPipePing([string]$pipeName, [int]$timeoutMs = 400) {
+        try {
+            $client = [System.IO.Pipes.NamedPipeClientStream]::new(".", $pipeName, [System.IO.Pipes.PipeDirection]::InOut)
+            $client.Connect($timeoutMs)
+            $writer = [System.IO.StreamWriter]::new($client)
+            $writer.AutoFlush = $true
+            $reader = [System.IO.StreamReader]::new($client)
+            $writer.WriteLine('{"id":"probe","command":"ping","sessionId":"diagnostics-probe"}')
+            $resp = $reader.ReadLine()
+            $client.Dispose()
+            return ($resp -and $resp.Contains('"success":true'))
+        } catch {
+            return $false
+        }
+    }
 
-    # Native host pipe probe
-    $NativeHostPipeUp = [System.IO.File]::Exists("\\.\pipe\SahaayBrowserBridgePipe")
+    $ControllerPipeUp = Test-NamedPipePing -pipeName "SahaayControllerPipe"
+    $NativeHostPipeUp = Test-NamedPipePing -pipeName "SahaayBrowserBridgePipe"
 
     Write-Host ("- Python Environment:        " + $(if (Test-Path $PythonExe) { "[READY] ($PythonExe)" } else { "[MISSING]" }))
     Write-Host ("- FastAPI Core Backend:      " + $(if ($BackendReachable) { "[ONLINE] (http://127.0.0.1:8000/api/v1/health)" } else { "[STOPPED] (Loopback port 8000 inactive)" }))

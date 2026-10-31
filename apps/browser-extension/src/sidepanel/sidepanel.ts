@@ -88,12 +88,25 @@ async function checkBridgeStatus(): Promise<void> {
   }
 }
 
+async function safeFetch(url: string, options: RequestInit = {}, timeoutMs: number = 3000): Promise<Response> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(id);
+    return res;
+  } catch (err) {
+    clearTimeout(id);
+    throw err;
+  }
+}
+
 async function checkBackendHealth(): Promise<boolean> {
   try {
-    const res = await fetch(`${API_BASE}/health`, {
+    const res = await safeFetch(`${API_BASE}/health`, {
       method: "GET",
       headers: { "X-Sahaay-Token": "dev-local-sahaay-token" },
-    });
+    }, 2000);
     if (res.ok) {
       isBackendConnected = true;
       if (isNativeConnected) {
@@ -106,7 +119,7 @@ async function checkBackendHealth(): Promise<boolean> {
       return true;
     }
   } catch {
-    // Offline
+    // Offline or timed out
   }
   isBackendConnected = false;
   connPill.textContent = "Backend Offline";
@@ -123,7 +136,7 @@ async function ensureSession(): Promise<string> {
 
   // Try creating session or fetching existing
   try {
-    const res = await fetch(`${API_BASE}/sessions`, {
+    const res = await safeFetch(`${API_BASE}/sessions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -134,7 +147,7 @@ async function ensureSession(): Promise<string> {
         privacyTier: "LOCAL_ONLY",
         deviceFingerprint: "sahaay-browser-extension-mv3",
       }),
-    });
+    }, 2500);
     if (res.ok) {
       const data = await res.json();
       currentSessionId = data.sessionId;
@@ -252,14 +265,14 @@ async function handleSummarizeAndSendToNotepad(): Promise<void> {
       browserObservationExcerpt: currentTabContext.visibleTextExcerpt || currentTabContext.title,
     };
 
-    const res = await fetch(`${API_BASE}/workflows/browser-to-desktop`, {
+    const res = await safeFetch(`${API_BASE}/workflows/browser-to-desktop`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "X-Sahaay-Token": "dev-local-sahaay-token",
       },
       body: JSON.stringify(payload),
-    });
+    }, 10000);
 
     if (res.ok) {
       const data = await res.json();
@@ -337,14 +350,14 @@ async function handleGeneralPrompt(promptText: string): Promise<void> {
       context: `Current active browser tab title: "${currentTabContext.title}", URL: "${currentTabContext.url}". Excerpt: "${(currentTabContext.visibleTextExcerpt || "").slice(0, 300)}"`,
     };
 
-    const res = await fetch(`${API_BASE}/workflows/execute-goal`, {
+    const res = await safeFetch(`${API_BASE}/workflows/execute-goal`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "X-Sahaay-Token": "dev-local-sahaay-token",
       },
       body: JSON.stringify(payload),
-    });
+    }, 15000);
 
     const cardBody = agentCard.querySelector(".agent-card");
     if (res.ok) {

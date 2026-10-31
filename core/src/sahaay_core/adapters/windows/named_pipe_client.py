@@ -55,6 +55,10 @@ CloseHandle = kernel32.CloseHandle
 CloseHandle.argtypes = [wintypes.HANDLE]
 CloseHandle.restype = wintypes.BOOL
 
+WaitNamedPipeW = kernel32.WaitNamedPipeW
+WaitNamedPipeW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD]
+WaitNamedPipeW.restype = wintypes.BOOL
+
 
 class NamedPipeClient:
     """Client for synchronous or async calls to \\\\.\\pipe\\SahaayControllerPipe."""
@@ -62,15 +66,24 @@ class NamedPipeClient:
     def __init__(self, pipe_name: str = "SahaayControllerPipe") -> None:
         self.pipe_path = f"\\\\.\\pipe\\{pipe_name}"
 
-    def send_command(
+    def _execute_pipe_transaction(
         self,
         command: str,
-        session_id: Optional[str] = None,
-        task_id: Optional[str] = None,
-        parameters: Optional[Dict[str, Any]] = None,
-        timeout_ms: int = 3000,
+        session_id: Optional[str],
+        task_id: Optional[str],
+        parameters: Optional[Dict[str, Any]],
+        timeout_ms: int,
     ) -> Dict[str, Any]:
-        """Send a typed command to the Sahaay Windows Controller via Named Pipe."""
+        # Fast non-blocking pre-check: verify pipe exists before creating handle
+        pipe_wait_timeout = min(timeout_ms, 200)
+        has_pipe = WaitNamedPipeW(self.pipe_path, pipe_wait_timeout)
+        if not has_pipe:
+            err = kernel32.GetLastError()
+            raise ConnectionError(
+                f"Named Pipe '{self.pipe_path}' is not reachable (Win32 Error: {err}). "
+                "Ensure native daemon is running."
+            )
+
         handle = CreateFileW(
             self.pipe_path,
             GENERIC_READ | GENERIC_WRITE,
@@ -84,8 +97,8 @@ class NamedPipeClient:
         if handle in (INVALID_HANDLE_VALUE, -1, None, 0):
             error_code = kernel32.GetLastError()
             raise ConnectionError(
-                f"Could not connect to Sahaay Controller Named Pipe '{self.pipe_path}' (Win32 Error: {error_code}). "
-                "Ensure Sahaay.Controller daemon is running."
+                f"Could not connect to Named Pipe '{self.pipe_path}' (Win32 Error: {error_code}). "
+                "Ensure native daemon is running."
             )
 
         try:
@@ -117,3 +130,31 @@ class NamedPipeClient:
             return json.loads(resp_raw)
         finally:
             CloseHandle(handle)
+
+    def send_command(
+        self,
+        command: str,
+        session_id: Optional[str] = None,
+        task_id: Optional[str] = None,
+        parameters: Optional[Dict[str, Any]] = None,
+        timeout_ms: int = 3000,
+    ) -> Dict[str, Any]:
+        """Send a typed command to the Sahaay Windows Controller via Named Pipe with strict bounded timeout."""
+        import concurrent.futures
+
+        timeout_sec = max(0.5, timeout_ms / 1000.0)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(
+                self._execute_pipe_transaction,
+                command,
+                session_id,
+                task_id,
+                parameters,
+                timeout_ms,
+            )
+            try:
+                return future.result(timeout=timeout_sec)
+            except concurrent.futures.TimeoutError as exc:
+                raise TimeoutError(
+                    f"Named Pipe '{self.pipe_path}' operation '{command}' timed out after {timeout_sec}s."
+                ) from exc

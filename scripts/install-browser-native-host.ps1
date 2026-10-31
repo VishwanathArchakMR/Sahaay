@@ -78,32 +78,18 @@ if (-not (Test-Path $InstallDir)) {
 Copy-Item -Path (Join-Path (Split-Path $SourceExe) "*") -Destination $InstallDir -Recurse -Force
 Write-Host "[OK] Binary deployed to: $TargetExe" -ForegroundColor Green
 
-# 3. Generate Native Messaging Manifest with dual Chrome & Edge origin support
-$allowedOrigins = [System.Collections.Generic.List[string]]::new()
-$knownIds = @(
-    "filgbgddapmjcddcoadfpimdicmkhpolc", # Active browser installed extension ID
-    $ExtensionId,
-    $UnpackedId,
-    "nokchmadkhaghgooijgkgpheoieaibdp", # Canonical uppercase C:\Sahaay
-    "ddbdffinhcfibhclfaiaemgnnajphgbf", # Canonical lowercase c:\Sahaay
-    "paeilcdpihcpnlkgjbemiigbefbhbgdo", # Canonical dist path (uppercase C:)
-    "incpiefenjejkjfholbomkhcflfbecnc", # Canonical dist path (lowercase c:)
-    "knldjmfmopnpolahpmmgbagdohdnhkik"  # Standard test / dev unpacked ID
-) | Select-Object -Unique
-
-foreach ($id in $knownIds) {
-    $cOrigin = "chrome-extension://$id/"
-    $eOrigin = "extension://$id/"
-    if (-not $allowedOrigins.Contains($cOrigin)) { $allowedOrigins.Add($cOrigin) }
-    if (-not $allowedOrigins.Contains($eOrigin)) { $allowedOrigins.Add($eOrigin) }
-}
+# 3. Generate Native Messaging Manifest with exact verified extension ID
+$allowedOrigins = @(
+    "chrome-extension://$ExtensionId/",
+    "extension://$ExtensionId/"
+)
 
 $manifest = [ordered]@{
     name = $HostName
     description = "Sahaay Native Messaging Host for Chrome and Edge"
     path = $TargetExe
     type = "stdio"
-    allowed_origins = $allowedOrigins.ToArray()
+    allowed_origins = $allowedOrigins
 }
 
 $manifestJson = $manifest | ConvertTo-Json -Depth 4
