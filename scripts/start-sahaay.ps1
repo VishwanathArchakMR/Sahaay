@@ -187,10 +187,18 @@ function Ensure-Port8000Available {
             } catch {}
 
             if (-not $healthOk) {
-                Write-Host "[CLEANUP] Port 8000 occupied by unresponsive process. Freeing port..." -ForegroundColor Yellow
                 foreach ($conn in $existingConns) {
-                    if ($conn.OwningProcess -gt 0) {
-                        Stop-Process -Id $conn.OwningProcess -Force -ErrorAction SilentlyContinue
+                    $procId = $conn.OwningProcess
+                    if ($procId -gt 0) {
+                        $proc = Get-Process -Id $procId -ErrorAction SilentlyContinue
+                        if ($proc -and ($proc.ProcessName -like "*python*" -or $proc.ProcessName -like "*uvicorn*")) {
+                            Write-Host "[CLEANUP] Stopping unresponsive Sahaay backend process (PID: $procId)..." -ForegroundColor Yellow
+                            Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
+                        } else {
+                            Write-Host "[BLOCKED] Port 8000 is occupied by an external process: '$($proc.ProcessName)' (PID: $procId)." -ForegroundColor Red
+                            Write-Host "Sahaay will not terminate unrelated processes. Please free port 8000 and restart." -ForegroundColor Yellow
+                            exit 1
+                        }
                     }
                 }
                 Start-Sleep -Milliseconds 800
@@ -255,6 +263,22 @@ if ($Mode -eq "Headless") {
         Write-Host "  Health Probe:    http://127.0.0.1:8000/api/v1/health"
         Write-Host "  OpenAPI Docs:    http://127.0.0.1:8000/docs"
         Write-Host "Press Ctrl+C to exit launcher."
+        try {
+            while ($true) {
+                Start-Sleep -Seconds 1
+                if ($backendProcess -and $backendProcess.HasExited) {
+                    Write-Host "[WARN] Backend process terminated unexpectedly." -ForegroundColor Yellow
+                    break
+                }
+            }
+        } finally {
+            if ($backendProcess -and -not $backendProcess.HasExited) {
+                Stop-Process -Id $backendProcess.Id -Force -ErrorAction SilentlyContinue
+            }
+            if ($controllerProcess -and -not $controllerProcess.HasExited) {
+                Stop-Process -Id $controllerProcess.Id -Force -ErrorAction SilentlyContinue
+            }
+        }
     } else {
         Write-Host "`n[WARN] Backend did not respond within expected startup window." -ForegroundColor Yellow
     }

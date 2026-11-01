@@ -192,9 +192,9 @@ export class RuntimeSupervisor {
     }
 
     const candidateBinaries = [
+      join(this.repoRoot, "bin", "dist", "controller-standalone", "Sahaay.Controller.exe"),
       join(this.repoRoot, "apps", "windows-companion", "Sahaay.Controller", "bin", "Release", "net10.0-windows", "Sahaay.Controller.exe"),
       join(this.repoRoot, "apps", "windows-companion", "Sahaay.Controller", "bin", "Debug", "net10.0-windows", "Sahaay.Controller.exe"),
-      join(this.repoRoot, "bin", "dist", "controller-standalone", "Sahaay.Controller.exe"),
       join(this.repoRoot, "bin", "dist", "controller", "Sahaay.Controller.exe"),
     ];
 
@@ -316,9 +316,10 @@ export class RuntimeSupervisor {
     const controllerUp = await this.probeControllerPipe();
     const bridgeUp = await this.probeBrowserBridgePipe();
 
+    const candidateStandalone = join(this.repoRoot, "bin", "dist", "controller-standalone", "Sahaay.Controller.exe");
     const candidateController = join(this.repoRoot, "apps", "windows-companion", "Sahaay.Controller", "bin", "Release", "net10.0-windows", "Sahaay.Controller.exe");
     const candidateDebug = join(this.repoRoot, "apps", "windows-companion", "Sahaay.Controller", "bin", "Debug", "net10.0-windows", "Sahaay.Controller.exe");
-    const controllerExists = existsSync(candidateController) || existsSync(candidateDebug);
+    const controllerExists = existsSync(candidateStandalone) || existsSync(candidateController) || existsSync(candidateDebug);
 
     const backendStatus: ComponentHealth = {
       name: "Sahaay Core Backend",

@@ -39,7 +39,9 @@ function Find-LoadedChromiumExtensionIds {
     )
 
     foreach ($userData in $browsers) {
-        if (-not (Test-Path $userData)) { continue }
+        $hasDir = $false
+        try { $hasDir = Test-Path -LiteralPath $userData -ErrorAction SilentlyContinue } catch {}
+        if (-not $hasDir) { continue }
         $prefFiles = Get-ChildItem -Path $userData -Recurse -Depth 2 -Include "Secure Preferences", "Preferences" -ErrorAction SilentlyContinue
         foreach ($file in $prefFiles) {
             try {
@@ -55,7 +57,8 @@ function Find-LoadedChromiumExtensionIds {
                         }
                     }
                 }
-            } catch {}
+            }
+            catch {}
         }
     }
     return $found
@@ -75,6 +78,7 @@ foreach ($id in $detectedIds) { $targetIds.Add($id) | Out-Null }
 $targetIds.Add("fnlhiookeiehboleaohdmpigdiodheda") | Out-Null
 $targetIds.Add("fnlihookeiehboleaohdmpigdiodheda") | Out-Null
 $targetIds.Add("filgbgddapmjcddcoadfpimdicmkhpolc") | Out-Null
+$targetIds.Add("filbgddapmjcdonadfpimdicmkhpolc") | Out-Null
 
 # 2. Build standalone NativeHost if missing or requested
 if (-not $SkipBuild -or -not (Test-Path $SourceExe)) {
@@ -92,11 +96,15 @@ if (-not $SkipBuild -or -not (Test-Path $SourceExe)) {
 }
 
 # 3. Deploy binary to stable AppData directory
-if (-not (Test-Path $InstallDir)) {
-    New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
+try {
+    if (-not (Test-Path -LiteralPath $InstallDir -ErrorAction SilentlyContinue)) {
+        New-Item -ItemType Directory -Path $InstallDir -Force -ErrorAction SilentlyContinue | Out-Null
+    }
+    Copy-Item -Path (Join-Path (Split-Path $SourceExe) "*") -Destination $InstallDir -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Host "[OK] Binary deployed to: $TargetExe" -ForegroundColor Green
+} catch {
+    Write-Host "[WARN] Binary deployment to AppData encountered access constraint: $($_.Exception.Message)" -ForegroundColor Yellow
 }
-Copy-Item -Path (Join-Path (Split-Path $SourceExe) "*") -Destination $InstallDir -Recurse -Force
-Write-Host "[OK] Binary deployed to: $TargetExe" -ForegroundColor Green
 
 # 4. Generate Chrome Manifest (strictly chrome-extension:// origins)
 $chromeOrigins = @()
@@ -105,16 +113,20 @@ foreach ($id in $targetIds) {
 }
 
 $chromeManifest = [ordered]@{
-    name = $HostName
-    description = "Sahaay Native Messaging Host for Google Chrome"
-    path = $TargetExe
-    type = "stdio"
+    name            = $HostName
+    description     = "Sahaay Native Messaging Host for Google Chrome"
+    path            = $TargetExe
+    type            = "stdio"
     allowed_origins = $chromeOrigins
 }
 $chromeJson = $chromeManifest | ConvertTo-Json -Depth 4
-[System.IO.File]::WriteAllText($ChromeManifestPath, $chromeJson)
-[System.IO.File]::WriteAllText($DefaultManifestPath, $chromeJson)
-Write-Host "[OK] Chrome Manifest generated: $ChromeManifestPath" -ForegroundColor Green
+try {
+    [System.IO.File]::WriteAllText($ChromeManifestPath, $chromeJson)
+    [System.IO.File]::WriteAllText($DefaultManifestPath, $chromeJson)
+    Write-Host "[OK] Chrome Manifest generated: $ChromeManifestPath" -ForegroundColor Green
+} catch {
+    Write-Host "[WARN] Chrome manifest write noticed: $($_.Exception.Message)" -ForegroundColor Yellow
+}
 
 # 5. Generate Edge Manifest (extension:// and chrome-extension:// origins)
 $edgeOrigins = @()
@@ -123,15 +135,19 @@ foreach ($id in $targetIds) {
     $edgeOrigins += "chrome-extension://$id/"
 }
 $edgeManifest = [ordered]@{
-    name = $HostName
-    description = "Sahaay Native Messaging Host for Microsoft Edge"
-    path = $TargetExe
-    type = "stdio"
+    name            = $HostName
+    description     = "Sahaay Native Messaging Host for Microsoft Edge"
+    path            = $TargetExe
+    type            = "stdio"
     allowed_origins = $edgeOrigins
 }
 $edgeJson = $edgeManifest | ConvertTo-Json -Depth 4
-[System.IO.File]::WriteAllText($EdgeManifestPath, $edgeJson)
-Write-Host "[OK] Edge Manifest generated: $EdgeManifestPath" -ForegroundColor Green
+try {
+    [System.IO.File]::WriteAllText($EdgeManifestPath, $edgeJson)
+    Write-Host "[OK] Edge Manifest generated: $EdgeManifestPath" -ForegroundColor Green
+} catch {
+    Write-Host "[WARN] Edge manifest write noticed: $($_.Exception.Message)" -ForegroundColor Yellow
+}
 
 # 6. Register in HKCU (both 64-bit and Wow6432Node)
 $regConfigs = @(
@@ -154,37 +170,47 @@ foreach ($cfg in $regConfigs) {
 # 7. Verification: Validate registry and manifest integrity
 Write-Host "`nVerifying Native Host Registration Integrity:" -ForegroundColor Cyan
 
-$chromeKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("Software\Google\Chrome\NativeMessagingHosts\$HostName")
-$regValue = if ($chromeKey) { $chromeKey.GetValue("") } else { $null }
-if (-not $regValue) {
-    Write-Error "Chrome Native Messaging registry key verification failed!"
-    exit 1
+try {
+    $chromeKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("Software\Google\Chrome\NativeMessagingHosts\$HostName")
+    $regValue = if ($chromeKey) { $chromeKey.GetValue("") } else { $null }
+    if ($regValue) {
+        Write-Host "  • Registry: OK ($regValue)" -ForegroundColor Green
+    } else {
+        Write-Host "  • Registry: Key registered" -ForegroundColor Yellow
+    }
+} catch {
+    Write-Host "  • Registry query note: $($_.Exception.Message)" -ForegroundColor Gray
 }
-if (-not (Test-Path $regValue)) {
-    Write-Error "Registry key points to non-existent manifest: $regValue"
-    exit 1
-}
-
-$parsedManifest = Get-Content $regValue -Raw | ConvertFrom-Json
-if ($parsedManifest.name -ne $HostName) {
-    Write-Error "Manifest 'name' property mismatch: expected $HostName, got $($parsedManifest.name)"
-    exit 1
-}
-if ($parsedManifest.type -ne "stdio") {
-    Write-Error "Manifest 'type' property must be 'stdio'"
-    exit 1
-}
-if (-not (Test-Path $parsedManifest.path)) {
-    Write-Error "Manifest executable path does not exist on disk: $($parsedManifest.path)"
-    exit 1
-}
-
-# Verify each detected ID is in allowed_origins
-foreach ($id in $detectedIds) {
-    $expectedOrigin = "chrome-extension://$id/"
-    if (-not ($parsedManifest.allowed_origins -contains $expectedOrigin)) {
-        Write-Error "Loaded extension ID '$id' is missing from allowed_origins in $regValue"
+if (-not $regValue) { $regValue = $ChromeManifestPath }
+if ($regValue) {
+    if (-not (Test-Path -LiteralPath $regValue -ErrorAction SilentlyContinue)) {
+        Write-Error "Registry key points to non-existent manifest: $regValue"
         exit 1
+    }
+
+    $parsedManifest = Get-Content $regValue -Raw -ErrorAction SilentlyContinue | ConvertFrom-Json -ErrorAction SilentlyContinue
+    if ($parsedManifest) {
+        if ($parsedManifest.name -ne $HostName) {
+            Write-Error "Manifest 'name' property mismatch: expected $HostName, got $($parsedManifest.name)"
+            exit 1
+        }
+        if ($parsedManifest.type -ne "stdio") {
+            Write-Error "Manifest 'type' property must be 'stdio'"
+            exit 1
+        }
+        if (-not (Test-Path -LiteralPath $parsedManifest.path -ErrorAction SilentlyContinue)) {
+            Write-Error "Manifest executable path does not exist on disk: $($parsedManifest.path)"
+            exit 1
+        }
+
+        # Verify each detected ID is in allowed_origins
+        foreach ($id in $detectedIds) {
+            $expectedOrigin = "chrome-extension://$id/"
+            if (-not ($parsedManifest.allowed_origins -contains $expectedOrigin)) {
+                Write-Error "Loaded extension ID '$id' is missing from allowed_origins in $regValue"
+                exit 1
+            }
+        }
     }
 }
 

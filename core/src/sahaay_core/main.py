@@ -58,6 +58,8 @@ EXPLICIT_EXTENSION_ORIGINS = [
     "extension://fnlihookeiehboleaohdmpigdiodheda",
     "chrome-extension://filgbgddapmjcddcoadfpimdicmkhpolc",
     "extension://filgbgddapmjcddcoadfpimdicmkhpolc",
+    "chrome-extension://filbgddapmjcdonadfpimdicmkhpolc",
+    "extension://filbgddapmjcdonadfpimdicmkhpolc",
     "chrome-extension://nokchmadkhaghgooijgkgpheoieaibdp",
     "extension://nokchmadkhaghgooijgkgpheoieaibdp",
 ]
@@ -69,6 +71,7 @@ app.add_middleware(
         "http://127.0.0.1",
         "http://localhost:5173",
         "http://localhost:3000",
+        "null",
         *EXPLICIT_EXTENSION_ORIGINS,
     ],
     allow_origin_regex=r"^(chrome-extension|extension)://[a-p]{32}$",
@@ -99,6 +102,7 @@ async def security_token_middleware(request: Request, call_next):
     origin = request.headers.get("Origin", "")
     is_loopback_or_extension = (
         client_host in ("127.0.0.1", "localhost", "testclient")
+        or origin == "null"
         or any(
             origin.startswith(prefix)
             for prefix in (
@@ -110,7 +114,8 @@ async def security_token_middleware(request: Request, call_next):
         )
     )
 
-    if settings.api_token and token != settings.api_token:
+    valid_tokens = {t for t in (settings.api_token, settings.pairing_token) if t}
+    if valid_tokens and token not in valid_tokens:
         # In development mode, allow loopback calls from local desktop / extension
         if settings.environment == "development" and is_loopback_or_extension:
             return await call_next(request)

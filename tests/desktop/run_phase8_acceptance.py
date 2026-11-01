@@ -8,7 +8,8 @@ from pathlib import Path
 
 def test_1_native_host_framing():
     print("\n[TEST 1] Native-host framing test (isolated stdin/stdout protocol)")
-    exe = os.path.expandvars(r"%LOCALAPPDATA%\Sahaay\native-host\Sahaay.NativeHost.exe")
+    repo_exe = Path(__file__).resolve().parents[2] / "bin" / "dist" / "native-host-standalone" / "Sahaay.NativeHost.exe"
+    exe = str(repo_exe) if repo_exe.exists() else os.path.expandvars(r"%LOCALAPPDATA%\Sahaay\native-host\Sahaay.NativeHost.exe")
     req = {
         "id": "framing-test-01",
         "command": "hello",

@@ -319,23 +319,51 @@ async function handleSummarizeAndSendToNotepad(): Promise<void> {
       }
 
       if (cardBody) {
-        const isVerified = data.isVerified;
-        cardBody.innerHTML = `
-          <p>Here is a summary of the active page:</p>
-          ${itemsHtml}
-          <p style="margin-top: 6px;">${isVerified ? "Notepad populated and verified independently via UI Automation." : "Dispatched to Windows Notepad."}</p>
-          <div class="status-badge-card">
-            <div class="status-indicator-text">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <polyline points="20 6 9 17 4 12"/>
-              </svg>
-              <span>${isVerified ? "Verified in Notepad" : "Completed"}</span>
+        const isVerified = Boolean(data.isVerified);
+        const isFailed = data.status === "FAILED";
+
+        if (isFailed) {
+          cardBody.innerHTML = `
+            <p style="color: var(--sahaay-danger);"><strong>Execution failed:</strong> ${data.error || "Workflow step failed"}</p>
+            ${itemsHtml}
+            <div class="status-badge-card" style="border-color: rgba(239, 68, 68, 0.4);">
+              <div class="status-indicator-text" style="color: var(--sahaay-danger);">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="15" y1="9" x2="9" y2="15"></line>
+                  <line x1="9" y1="9" x2="15" y2="15"></line>
+                </svg>
+                <span>Task Failed</span>
+              </div>
+              <button class="btn-pill-subtle details-btn" data-info="Task ${data.taskId || ''} failed: ${data.error || 'Check backend logs'}">
+                Details
+              </button>
             </div>
-            <button class="btn-pill-subtle" onclick="alert('Task verified in SQLite evidence ledger with ID: ${data.taskId}')">
-              View Result
-            </button>
-          </div>
-        `;
+          `;
+        } else {
+          cardBody.innerHTML = `
+            <p>Here is a summary of the active page:</p>
+            ${itemsHtml}
+            <p style="margin-top: 6px;">${isVerified ? "Notepad populated and verified independently via UI Automation." : "Dispatched to Windows Notepad."}</p>
+            <div class="status-badge-card">
+              <div class="status-indicator-text">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+                <span>${isVerified ? "Verified in Notepad" : "Completed"}</span>
+              </div>
+              <button class="btn-pill-subtle details-btn" data-info="Task verified in SQLite evidence ledger with ID: ${data.taskId}">
+                View Result
+              </button>
+            </div>
+          `;
+        }
+        const btn = cardBody.querySelector<HTMLButtonElement>(".details-btn");
+        if (btn) {
+          btn.addEventListener("click", () => {
+            alert(btn.getAttribute("data-info") || `Task ID: ${data.taskId}`);
+          });
+        }
       }
     } else {
       const err = await res.json().catch(() => ({ detail: "Workflow execution failed" }));
@@ -443,11 +471,17 @@ async function handleGeneralPrompt(promptText: string): Promise<void> {
                         </svg>
                         <span>Verified in Ledger</span>
                       </div>
-                      <button class="btn-pill-subtle" onclick="alert('Task ID: ${taskId}\\nRecorded with cryptographic proof.')">
+                      <button class="btn-pill-subtle details-btn" data-info="Task ID: ${taskId}\nRecorded with cryptographic proof.">
                         Details
                       </button>
                     </div>
                   `;
+                  const btn = cardBody.querySelector<HTMLButtonElement>(".details-btn");
+                  if (btn) {
+                    btn.addEventListener("click", () => {
+                      alert(btn.getAttribute("data-info") || `Task ID: ${taskId}`);
+                    });
+                  }
                 }
                 break;
               } else if (bStatus === "FAILED" || bStatus === "CANCELLED") {

@@ -12,10 +12,12 @@ from sahaay_core.adapters.windows.named_pipe_client import NamedPipeClient
 class BrowserAdapter:
     """Adapter for browser tab inspection and permitted interactions via Native Messaging bridge."""
 
-    def __init__(self, pipe_name: str = "SahaayBrowserBridgePipe") -> None:
+    def __init__(self, pipe_name: str = "SahaayBrowserBridgePipe", allow_simulation: bool = False) -> None:
         self.pipe_name = pipe_name
         self.client = NamedPipeClient(pipe_name=pipe_name)
         self.active_observations: Dict[str, Dict[str, Any]] = {}
+        self.allow_simulation = allow_simulation
+        self.latest_observation_id: Optional[str] = None
 
     def is_connected(self) -> bool:
         """Check if Native Messaging Host is active and reachable via Named Pipe."""
@@ -55,6 +57,7 @@ class BrowserAdapter:
             "capturedAt": observation_payload.get("capturedAt"),
         }
         self.active_observations[obs_id] = record
+        self.latest_observation_id = obs_id
         return record
 
     def get_active_tab_observation(self, session_id: Optional[str] = None) -> Dict[str, Any]:
@@ -68,10 +71,9 @@ class BrowserAdapter:
             data = res.get("data", {})
             return self.ingest_tab_observation(data)
         except ConnectionError as ce:
-            # Fallback when extension / native host not actively running in test environment
-            if self.active_observations:
+            if self.allow_simulation and self.active_observations:
                 return list(self.active_observations.values())[-1]
-            raise RuntimeError(f"Browser bridge not reachable: {ce}") from ce
+            raise ConnectionError(f"Browser bridge not reachable: {ce}") from ce
 
     def scroll_tab(self, delta_y: int = 300, session_id: Optional[str] = None) -> Dict[str, Any]:
         """Execute bounded scroll on active browser tab and verify delta."""
@@ -85,13 +87,15 @@ class BrowserAdapter:
             if not res.get("success"):
                 raise RuntimeError(res.get("error", "Scroll action rejected by browser."))
             return res.get("data", {})
-        except ConnectionError:
-            # Controlled simulated verification for offline tests
+        except ConnectionError as ce:
+            if not self.allow_simulation:
+                raise ConnectionError("Browser bridge not connected.") from ce
             return {
                 "preScrollY": 0,
                 "postScrollY": delta_y,
                 "requestedDeltaY": delta_y,
                 "actualDeltaY": delta_y,
+                "driverProvenance": "offline_simulation",
                 "offlineSimulation": True,
             }
 
@@ -99,6 +103,12 @@ class BrowserAdapter:
         self, fields: Dict[str, Any], session_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Populate input fields in the active browser tab without form submission."""
+        # Validate observation binding if references are bound to snapshots
+        for k in fields.keys():
+            if str(k).startswith("@obs-"):
+                ref_obs_id = str(k).split(":")[0][5:]
+                if self.latest_observation_id and ref_obs_id != self.latest_observation_id:
+                    raise ValueError(f"Stale element reference '{k}': bound to observation '{ref_obs_id}' but active observation is '{self.latest_observation_id}'.")
         try:
             res = self.client.send_command(
                 "fill_form_fields",
@@ -109,11 +119,14 @@ class BrowserAdapter:
             if not res.get("success"):
                 raise RuntimeError(res.get("error", "Form fill action rejected by browser."))
             return res.get("data", {})
-        except ConnectionError:
+        except ConnectionError as ce:
+            if not self.allow_simulation:
+                raise ConnectionError("Browser bridge not connected.") from ce
             return {
                 "filled": fields,
                 "count": len(fields),
                 "requestedCount": len(fields),
+                "driverProvenance": "offline_simulation",
                 "offlineSimulation": True,
             }
 
@@ -132,13 +145,19 @@ class BrowserAdapter:
             if not res.get("success"):
                 raise RuntimeError(res.get("error", "Field readback rejected by browser."))
             return res.get("data", {})
-        except ConnectionError:
-            return {"values": {}, "offlineSimulation": True}
+        except ConnectionError as ce:
+            if not self.allow_simulation:
+                raise ConnectionError("Browser bridge not connected.") from ce
+            return {"values": {}, "driverProvenance": "offline_simulation", "offlineSimulation": True}
 
     def click_element(
         self, target_id_or_selector: str, session_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Click an accessible element on the active browser tab."""
+        if str(target_id_or_selector).startswith("@obs-"):
+            ref_obs_id = str(target_id_or_selector).split(":")[0][5:]
+            if self.latest_observation_id and ref_obs_id != self.latest_observation_id:
+                raise ValueError(f"Stale element reference '{target_id_or_selector}': bound to observation '{ref_obs_id}' but active observation is '{self.latest_observation_id}'.")
         try:
             res = self.client.send_command(
                 "click_element",
@@ -151,8 +170,10 @@ class BrowserAdapter:
                     res.get("error", f"Click rejected for target '{target_id_or_selector}'.")
                 )
             return res.get("data", {})
-        except ConnectionError:
-            return {"clicked": True, "target": target_id_or_selector, "offlineSimulation": True}
+        except ConnectionError as ce:
+            if not self.allow_simulation:
+                raise ConnectionError("Browser bridge not connected.") from ce
+            return {"clicked": True, "target": target_id_or_selector, "driverProvenance": "offline_simulation", "offlineSimulation": True}
 
     def verify_scroll_action(
         self,

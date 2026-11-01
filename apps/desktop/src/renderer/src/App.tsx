@@ -145,7 +145,7 @@ export function App(): React.JSX.Element {
 
   // Session & Privacy
   const [sessionId, setSessionId] = useState<string>("");
-  const [localOnlyMode, setLocalOnlyMode] = useState<boolean>(true);
+  const [localOnlyMode, setLocalOnlyMode] = useState<boolean>(false);
 
   // Active Task & Status
   const [taskState, setTaskState] = useState<TaskFlowState>("IDLE");
@@ -614,6 +614,55 @@ export function App(): React.JSX.Element {
     }
     setTaskState("IDLE");
     setStatusNarrative("Task execution stopped by user.");
+  };
+
+  const handleApproveAction = async () => {
+    if (!sessionId) return;
+    const headers = await getApiHeaders();
+    try {
+      // Grant authorization for notepad automation
+      await safeFetch(`${API_BASE}/sessions/${sessionId}/grants`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          capability: "notepad",
+          scope: "Notepad",
+          justification: "User approved in desktop interface",
+        }),
+      });
+      // Also grant browser action if needed
+      await safeFetch(`${API_BASE}/sessions/${sessionId}/grants`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          capability: "browser_action",
+          scope: "https://*",
+          justification: "User approved in desktop interface",
+        }),
+      });
+      setStatusNarrative("Action authorized. Resuming task execution...");
+      addTimelineEntry("AUTHORIZE", "Action Approved", "User granted execution permissions");
+      if (userPrompt.trim()) {
+        triggerPromptExecution(userPrompt);
+      }
+    } catch (err: any) {
+      setStatusNarrative(`Failed to grant approval: ${err.message}`);
+    }
+  };
+
+  const handleTakeOver = async () => {
+    if (activeTaskId) {
+      const headers = await getApiHeaders();
+      try {
+        await safeFetch(`${API_BASE}/tasks/${activeTaskId}/handoff`, {
+          method: "POST",
+          headers,
+        });
+      } catch {}
+    }
+    setTaskState("IDLE");
+    setStatusNarrative("User took manual control. Sahaay agent is standing by.");
+    addTimelineEntry("HANDOFF", "Manual Takeover", "User took manual control of laptop");
   };
 
   // Voice recording toggle
@@ -1087,6 +1136,36 @@ export function App(): React.JSX.Element {
                 <Activity size={16} color="var(--sahaay-mint)" style={{ flexShrink: 0, marginTop: "2px" }} />
                 <p style={{ flex: 1, color: "var(--sahaay-text)" }}>{statusNarrative}</p>
               </div>
+
+              {/* Contextual Action Gate Authorization: APPROVE / TAKE OVER */}
+              {taskState === "HANDOFF" && (
+                <div style={{ padding: "12px 14px", background: "rgba(251, 191, 36, 0.12)", borderRadius: "12px", border: "1px solid rgba(251, 191, 36, 0.35)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
+                  <div>
+                    <div style={{ fontWeight: 600, color: "#fbbf24", fontSize: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
+                      <Activity size={14} color="#fbbf24" /> Action Gate Authorization Required
+                    </div>
+                    <div style={{ fontSize: "11px", color: "var(--sahaay-text-muted)", marginTop: "2px" }}>
+                      Explicit consent is required to execute native desktop / browser modifications.
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
+                    <button
+                      onClick={handleApproveAction}
+                      className="btn btn-primary"
+                      style={{ fontSize: "11px", padding: "6px 14px", fontWeight: 600 }}
+                    >
+                      Approve Action
+                    </button>
+                    <button
+                      onClick={handleTakeOver}
+                      className="btn btn-secondary"
+                      style={{ fontSize: "11px", padding: "6px 14px" }}
+                    >
+                      Take Over
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Task Passport Details */}
               {taskPassport && (

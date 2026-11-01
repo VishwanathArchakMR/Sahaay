@@ -17,7 +17,7 @@ active_grants: dict[UUID, list[ConsentGrant]] = {}
 
 
 class CreateSessionRequest(BaseModel):
-    localOnlyMode: bool = True
+    localOnlyMode: bool = False
     metadata: Optional[dict] = None
 
 

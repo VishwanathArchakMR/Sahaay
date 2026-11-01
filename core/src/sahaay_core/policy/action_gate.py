@@ -135,15 +135,15 @@ class ActionGate:
                     reason=f"Target '{action.target}' contains forbidden execution subsystem.",
                 )
 
-        # 4. Consent and scope verification
+        # 4. Consent and scope verification: require exact structured scope or exact action type match
         required_scope = f"{action.actionType.value}:{action.target}"
         has_matching_grant = any(
             (
                 not grant.isRevoked
+                and grant.scope != "*"  # Universal wildcard grants are strictly prohibited
                 and (
-                    grant.scope == "*"
+                    grant.scope == required_scope
                     or grant.scope == action.actionType.value
-                    or grant.scope in required_scope
                 )
             )
             for grant in active_grants

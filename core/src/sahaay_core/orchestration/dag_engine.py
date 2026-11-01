@@ -465,7 +465,7 @@ class TaskDagEngine:
                 )
                 driver_success = (
                     isinstance(exec_data, dict)
-                    and exec_data.get("success", True) is not False
+                    and exec_data.get("success") is True
                     and not exec_data.get("error")
                 )
                 if isinstance(exec_data, dict) and "verified" in exec_data:

@@ -80,6 +80,10 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("SAHAAY_API_TOKEN", "API_TOKEN"),
     )
+    pairing_token: str = Field(
+        default="",
+        validation_alias=AliasChoices("SAHAAY_PAIRING_TOKEN", "PAIRING_TOKEN"),
+    )
 
     # Storage paths
     database_url: str = Field(
@@ -91,7 +95,7 @@ class Settings(BaseSettings):
 
     # Privacy Gateway Settings
     local_only_mode: bool = Field(
-        default=True,
+        default=False,
         validation_alias=AliasChoices("SAHAAY_PRIVACY_LOCAL_ONLY_MODE", "LOCAL_ONLY_MODE"),
     )
     strict_consent: bool = Field(
@@ -102,7 +106,7 @@ class Settings(BaseSettings):
         default=True,
         validation_alias=AliasChoices("SAHAAY_PRIVACY_LOG_REDACTION", "LOG_REDACTION"),
     )
-    hosted_models_permitted: bool = False
+    hosted_models_permitted: bool = True
 
     # Meta Hosted Model API Settings
     model_api_key: str = Field(
@@ -226,24 +230,27 @@ class Settings(BaseSettings):
         self.sync_database_path.parent.mkdir(parents=True, exist_ok=True)
 
         if not self.api_token:
+            self.api_token = secrets.token_hex(32)
+
+        if not self.pairing_token:
             try:
                 local_app = Path(os.environ.get("LOCALAPPDATA", "C:/temp")) / "Sahaay"
                 token_file = local_app / "auth.token"
                 if token_file.exists():
                     existing = token_file.read_text(encoding="utf-8").strip()
                     if existing:
-                        self.api_token = existing
+                        self.pairing_token = existing
             except Exception:
                 pass
-            if not self.api_token:
-                # Generate unguessable 32-byte hex token for this launch
-                self.api_token = secrets.token_hex(32)
+            if not self.pairing_token:
+                # Generate unguessable 32-byte hex pairing token for this launch
+                self.pairing_token = secrets.token_hex(32)
 
-        # Persist pairing token to local user AppData so NativeHost and desktop clients can securely pair
+        # Persist scoped pairing token to local user AppData so NativeHost and extension can securely pair
         try:
             local_app = Path(os.environ.get("LOCALAPPDATA", "C:/temp")) / "Sahaay"
             local_app.mkdir(parents=True, exist_ok=True)
-            (local_app / "auth.token").write_text(self.api_token, encoding="utf-8")
+            (local_app / "auth.token").write_text(self.pairing_token, encoding="utf-8")
         except Exception:
             pass
         if not self.model_api_key:

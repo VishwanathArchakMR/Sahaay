@@ -52,7 +52,7 @@ class MuseVoiceClient:
         content_type: str = "audio/wav",
         language_hints: Optional[List[str]] = None,
         active_grants: Optional[List[ConsentGrant]] = None,
-        allow_offline_fixture: bool = True,
+        allow_offline_fixture: bool = False,
     ) -> VoiceTranscriptionResult:
         """Transcribe audio chunk or file through Muse Voice Transcribe API.
 
@@ -141,9 +141,27 @@ class MuseVoiceClient:
                     logger.warning(
                         "Muse Voice API returned HTTP %s: %s", res.status_code, res.text[:200]
                     )
+                    if not allow_offline_fixture:
+                        return VoiceTranscriptionResult(
+                            transcript="",
+                            confidence=0.0,
+                            language_detected="unknown",
+                            is_final=True,
+                            status="FAILED",
+                            error=f"Muse Voice API returned HTTP {res.status_code}",
+                        )
                     return self._build_deterministic_transcript(audio_bytes, language_hints)
         except Exception as ex:
             logger.warning("Online audio transcription failed: %s; falling back.", ex)
+            if not allow_offline_fixture:
+                return VoiceTranscriptionResult(
+                    transcript="",
+                    confidence=0.0,
+                    language_detected="unknown",
+                    is_final=True,
+                    status="FAILED",
+                    error=str(ex),
+                )
             return self._build_deterministic_transcript(audio_bytes, language_hints)
 
     def _build_deterministic_transcript(

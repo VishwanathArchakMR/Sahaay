@@ -5,8 +5,13 @@ from pathlib import Path
 
 
 def main():
-    token_path = Path(os.environ.get("LOCALAPPDATA", "")) / "Sahaay" / "auth.token"
-    token = token_path.read_text(encoding="utf-8").strip() if token_path.is_file() else ""
+    token = "dev-local-sahaay-token"
+    try:
+        token_path = Path(os.environ.get("LOCALAPPDATA", "")) / "Sahaay" / "auth.token"
+        if token_path.is_file():
+            token = token_path.read_text(encoding="utf-8").strip() or token
+    except Exception:
+        pass
     headers = {"Content-Type": "application/json", "X-Sahaay-Token": token}
 
     # 1. Create a session
