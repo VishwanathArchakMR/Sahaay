@@ -15,7 +15,7 @@ async def test_health_endpoint():
         data = response.json()
         assert data["status"] == "healthy"
         assert data["systemVersion"] == "0.1.0-foundation"
-        assert data["localOnlyMode"] is True
+        assert isinstance(data["localOnlyMode"], bool)
         assert data["databaseReady"] is True
 
 

@@ -94,3 +94,4 @@ All chips are wired to populate the composer input with concrete actionable requ
    - Tasks that fail execution or validation are now truthfully presented with a red alert banner displaying the specific error detail, preventing false positives.
 3. **Harmonized Privacy Mode Indicator**:
    - The "Local Mode" / "Hosted Mode" header pill toggles the live session configuration via `POST /api/v1/sessions` rather than functioning as a cosmetic toggle.
+

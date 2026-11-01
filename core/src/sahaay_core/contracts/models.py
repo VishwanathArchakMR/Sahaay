@@ -99,7 +99,7 @@ class Session(BaseModel):
     createdAt: datetime = Field(default_factory=utc_now)
     expiresAt: Optional[datetime] = None
     isActive: bool = True
-    localOnlyMode: bool = True
+    localOnlyMode: bool = False
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 

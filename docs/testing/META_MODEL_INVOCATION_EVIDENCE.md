@@ -169,3 +169,4 @@ Every request above passes through `PrivacyGateway.evaluate_outbound_request()` 
 - Session Mode: HOSTED_ALLOWED (local_only_mode = False)
 - Decision: ALLOW_TRANSMISSION
 ```
+

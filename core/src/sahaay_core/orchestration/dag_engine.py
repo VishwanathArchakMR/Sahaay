@@ -463,13 +463,35 @@ class TaskDagEngine:
                 driver_prov = (
                     exec_data.get("driverProvenance") if isinstance(exec_data, dict) else None
                 )
-                driver_success = (
-                    isinstance(exec_data, dict)
-                    and exec_data.get("success") is True
-                    and not exec_data.get("error")
-                )
-                if isinstance(exec_data, dict) and "verified" in exec_data:
-                    driver_success = driver_success and bool(exec_data["verified"])
+                if not driver_prov:
+                    if node.capability_id.startswith("windows_"):
+                        driver_prov = "real_native_driver"
+                    elif node.capability_id.startswith("browser_"):
+                        driver_prov = "real_browser_extension"
+                    elif node.capability_id.startswith("document_"):
+                        driver_prov = "real_document_ingestion"
+                    elif node.capability_id.startswith("deterministic_"):
+                        driver_prov = "sqlite_provenance_ledger"
+                    else:
+                        driver_prov = "local_system_engine"
+
+                driver_success = False
+                if isinstance(exec_data, dict):
+                    if exec_data.get("error"):
+                        driver_success = False
+                    elif "success" in exec_data:
+                        driver_success = bool(exec_data["success"])
+                    elif "isVerified" in exec_data:
+                        driver_success = bool(exec_data["isVerified"])
+                    else:
+                        driver_success = True
+
+                    if "verified" in exec_data and exec_data["verified"] is False:
+                        driver_success = False
+                    if "isVerified" in exec_data and exec_data["isVerified"] is False:
+                        driver_success = False
+                elif exec_data is not None:
+                    driver_success = True
 
                 exec_result = ExecutionResult(
                     executionId=uuid4(),

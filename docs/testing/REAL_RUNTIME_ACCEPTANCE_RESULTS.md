@@ -57,34 +57,59 @@ Validates the binary Chrome Native Messaging Host standard I/O protocol with 32-
 
 ---
 
-## 4. Independent Verification & Ledger Invariants (`pytest`)
+## 4. Independent Verification, Core Test Suite & Ledger Invariants (`pytest`)
 
-Validates the cryptographic ledger immutability, independent readback verification, state transition rules, and browser contract allowlists.
+Validates cryptographic ledger immutability, independent readback verification, state transition rules, cross-surface workflows, document ingestion, execute-goal flows, and browser contracts.
 
 ### Execution Command:
 ```powershell
-.\core\.venv\Scripts\python.exe -m pytest tests/unit/test_verification_and_ledger.py tests/unit/test_orchestrator.py tests/browser/test_extension_contracts.py -v
+.\core\.venv\Scripts\pytest.exe tests/unit/ tests/browser/ tests/privacy/ tests/security/
 ```
 
 ### Live Test Log:
 ```text
 ============================= test session starts =============================
-platform win32 -- Python 3.12.8, pytest-9.1.1, pluggy-1.7.0 -- C:\Sahaay\core\.venv\Scripts\python.exe
-cachedir: .pytest_cache
+platform win32 -- Python 3.12.8, pytest-9.1.1, pluggy-1.7.0
 rootdir: C:\Sahaay
+configfile: pyproject.toml
 plugins: anyio-4.15.1, asyncio-1.4.1
-collected 8 items
+asyncio: mode=Mode.STRICT, debug=False
+collected 136 items
 
-tests/unit/test_verification_and_ledger.py::test_model_self_attestation_is_strictly_rejected PASSED [ 12%]
-tests/unit/test_verification_and_ledger.py::test_independent_verification_success_and_conflict PASSED [ 25%]
-tests/unit/test_verification_and_ledger.py::test_evidence_ledger_immutability PASSED [ 37%]
-tests/unit/test_orchestrator.py::test_valid_task_state_transitions PASSED [ 50%]
-tests/unit/test_orchestrator.py::test_invalid_task_state_transitions_rejected PASSED [ 62%]
-tests/unit/test_orchestrator.py::test_cancellation_blocks_future_action_dispatch PASSED [ 75%]
-tests/browser/test_extension_contracts.py::test_extension_message_allowlist PASSED [ 87%]
-tests/browser/test_extension_contracts.py::test_extension_rejects_oversized_payload PASSED [100%]
+tests\unit\test_action_gate.py ..                                        [  1%]
+tests\unit\test_browser_endpoints.py ....                                [  4%]
+tests\unit\test_capability_registry.py .....                             [  8%]
+tests\unit\test_combined_and_retrieval_tasks.py .....                    [ 11%]
+tests\unit\test_contracts.py .....                                       [ 15%]
+tests\unit\test_cross_surface_workflows.py ...                           [ 17%]
+tests\unit\test_deterministic_retrieval.py ..                            [ 19%]
+tests\unit\test_document_ingestion.py .....                              [ 22%]
+tests\unit\test_execute_goal_flows.py ....                               [ 25%]
+tests\unit\test_health_and_capabilities.py ..                            [ 27%]
+tests\unit\test_import_smoke.py ...                                      [ 29%]
+tests\unit\test_integrated_agent_m07.py ............                     [ 38%]
+tests\unit\test_internet_research.py .....                               [ 41%]
+tests\unit\test_local_llama.py ...                                       [ 44%]
+tests\unit\test_meta_models.py ........                                  [ 50%]
+tests\unit\test_meta_muse_spark.py .....                                 [ 53%]
+tests\unit\test_milestone08_browser_eval.py ..............               [ 63%]
+tests\unit\test_muse_image_storytelling.py .....                         [ 67%]
+tests\unit\test_no_false_success.py ......                               [ 72%]
+tests\unit\test_orchestrator.py ...                                      [ 74%]
+tests\unit\test_path_resolution.py .....                                 [ 77%]
+tests\unit\test_persistence_durable.py ...                               [ 80%]
+tests\unit\test_sources_and_retrieval.py ...                             [ 82%]
+tests\unit\test_task_passport.py ....                                    [ 85%]
+tests\unit\test_verification_and_ledger.py ...                           [ 87%]
+tests\unit\test_windows_endpoints.py ....                                [ 90%]
+tests\browser\test_extension_contracts.py ..                             [ 91%]
+tests\browser\test_extension_cors.py ..                                  [ 93%]
+tests\browser\test_extension_packaging.py .                              [ 94%]
+tests\privacy\test_privacy_gateway.py ...                                [ 96%]
+tests\security\test_prompt_injection_defense.py ....                     [ 99%]
+tests\security\test_secret_scanning.py .                                 [100%]
 
-============================== 8 passed in 3.59s ==============================
+======================= 136 passed, 1 warning in 26.36s =======================
 ```
 
 ---
@@ -98,8 +123,8 @@ transforming...
 ✓ 1571 modules transformed.
 dist/index.html                  1.00 kB │ gzip:  0.50 kB
 dist/assets/main-DGkIERQy.css   12.87 kB │ gzip:  3.55 kB
-dist/assets/main-Bfb74gAI.js   192.95 kB │ gzip: 57.97 kB
-✓ built in 5.05s
+dist/assets/main-IEParrLp.js   203.01 kB │ gzip: 59.47 kB
+✓ built in 6.46s
 tsc -p tsconfig.main.json (Clean exit 0)
 ```
 
@@ -126,3 +151,5 @@ tsc -p tsconfig.main.json (Clean exit 0)
 | Meta Model Integration | Routes to Meta Cloud API; zero synthetic bill transcripts | **ACCEPTED** |
 | Cryptographic Ledger | SHA-256 evidence chain stored in SQLite `sahaay.db` | **ACCEPTED** |
 | Action Gate | Prohibits wildcard grants; enforces human-in-the-loop authorization | **ACCEPTED** |
+| Core Test Suite | 136/136 unit, browser, privacy, and security tests passing | **ACCEPTED** |
+

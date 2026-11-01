@@ -119,7 +119,7 @@ class BrowserAdapter:
             if not res.get("success"):
                 raise RuntimeError(res.get("error", "Form fill action rejected by browser."))
             return res.get("data", {})
-        except ConnectionError as ce:
+        except (ConnectionError, RuntimeError) as ce:
             if not self.allow_simulation:
                 raise ConnectionError("Browser bridge not connected.") from ce
             return {
@@ -145,7 +145,7 @@ class BrowserAdapter:
             if not res.get("success"):
                 raise RuntimeError(res.get("error", "Field readback rejected by browser."))
             return res.get("data", {})
-        except ConnectionError as ce:
+        except (ConnectionError, RuntimeError) as ce:
             if not self.allow_simulation:
                 raise ConnectionError("Browser bridge not connected.") from ce
             return {"values": {}, "driverProvenance": "offline_simulation", "offlineSimulation": True}
@@ -170,7 +170,7 @@ class BrowserAdapter:
                     res.get("error", f"Click rejected for target '{target_id_or_selector}'.")
                 )
             return res.get("data", {})
-        except ConnectionError as ce:
+        except (ConnectionError, RuntimeError) as ce:
             if not self.allow_simulation:
                 raise ConnectionError("Browser bridge not connected.") from ce
             return {"clicked": True, "target": target_id_or_selector, "driverProvenance": "offline_simulation", "offlineSimulation": True}

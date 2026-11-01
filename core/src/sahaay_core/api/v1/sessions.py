@@ -6,6 +6,11 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
+from sahaay_core.contracts.consent_purposes import (
+    ALL_META_CLOUD_PURPOSES,
+    META_API_DESTINATION,
+    MetaCloudConsentPurpose,
+)
 from sahaay_core.contracts.models import ConsentGrant, Session
 from sahaay_core.storage.persistence import durable_storage
 
@@ -18,13 +23,39 @@ active_grants: dict[UUID, list[ConsentGrant]] = {}
 
 class CreateSessionRequest(BaseModel):
     localOnlyMode: bool = False
+    autoAuthorizeMetaCloud: bool = True
     metadata: Optional[dict] = None
 
 
 class CreateGrantRequest(BaseModel):
-    scope: str
-    purpose: str
+    scope: Optional[str] = None
+    purpose: Optional[str] = None
     targetDomainOrPath: Optional[str] = None
+    capability: Optional[str] = None
+    justification: Optional[str] = None
+
+
+def _apply_meta_cloud_grants(session_id: UUID) -> List[ConsentGrant]:
+    """Helper to provision canonical Meta Cloud consent grants for a session."""
+    grants = []
+    if session_id not in active_grants:
+        active_grants[session_id] = []
+
+    existing_purposes = {g.purpose for g in active_grants[session_id] if not g.isRevoked}
+
+    for p in ALL_META_CLOUD_PURPOSES:
+        if p not in existing_purposes:
+            grant = ConsentGrant(
+                grantId=uuid4(),
+                sessionId=session_id,
+                scope="meta_cloud",
+                purpose=p,
+                targetDomainOrPath=META_API_DESTINATION,
+            )
+            durable_storage.save_consent_grant(grant)
+            active_grants[session_id].append(grant)
+            grants.append(grant)
+    return grants
 
 
 @router.post("", response_model=Session, status_code=status.HTTP_201_CREATED)
@@ -38,6 +69,10 @@ async def create_session(req: CreateSessionRequest) -> Session:
     durable_storage.save_session(session)
     active_sessions[session.sessionId] = session
     active_grants[session.sessionId] = []
+
+    if not req.localOnlyMode and req.autoAuthorizeMetaCloud:
+        _apply_meta_cloud_grants(session.sessionId)
+
     return session
 
 
@@ -61,18 +96,33 @@ async def grant_consent(session_id: UUID, req: CreateGrantRequest) -> ConsentGra
     # Verify session exists
     await get_session(session_id)
 
+    scope = req.scope or req.capability or "general"
+    purpose = req.purpose or req.justification or req.capability or "task_planning"
+    target = req.targetDomainOrPath or META_API_DESTINATION
+
     grant = ConsentGrant(
         grantId=uuid4(),
         sessionId=session_id,
-        scope=req.scope,
-        purpose=req.purpose,
-        targetDomainOrPath=req.targetDomainOrPath,
+        scope=scope,
+        purpose=purpose,
+        targetDomainOrPath=target,
     )
     durable_storage.save_consent_grant(grant)
     if session_id not in active_grants:
         active_grants[session_id] = []
     active_grants[session_id].append(grant)
     return grant
+
+
+@router.post(
+    "/{session_id}/onboarding-consent",
+    response_model=List[ConsentGrant],
+    status_code=status.HTTP_201_CREATED,
+)
+async def grant_onboarding_consent(session_id: UUID) -> List[ConsentGrant]:
+    """One-time authorization granting all canonical Meta Cloud processing purposes."""
+    await get_session(session_id)
+    return _apply_meta_cloud_grants(session_id)
 
 
 @router.get("/{session_id}/grants", response_model=List[ConsentGrant])

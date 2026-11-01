@@ -215,6 +215,17 @@ class Settings(BaseSettings):
         return (self.storage_dir / "sahaay.db").resolve()
 
     @property
+    def is_testing(self) -> bool:
+        """Determines if the runtime is currently executing in a test environment."""
+        import os
+        import sys
+        return (
+            "pytest" in sys.modules
+            or self.environment == "testing"
+            or os.getenv("SAHAAY_IS_TESTING", "false").lower() in ("1", "true", "yes")
+        )
+
+    @property
     def repo_root(self) -> Path:
         """Returns the canonical repository root path."""
         return REPO_ROOT

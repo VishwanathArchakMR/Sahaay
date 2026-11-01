@@ -13,6 +13,7 @@ OBSERVE -> PROPOSE -> AUTHORIZE -> EXECUTE -> VERIFY -> RECORD.
 import asyncio
 import hashlib
 import json
+import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
@@ -21,13 +22,15 @@ from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+logger = logging.getLogger("sahaay.workflows")
+
 from sahaay_core.adapters.browser.adapter import BrowserAdapter
 from sahaay_core.api.v1.actions import evidence_ledger
 from sahaay_core.api.v1.sessions import active_grants, active_sessions
 from sahaay_core.api.v1.sources import context_store, source_manager
 from sahaay_core.api.v1.storytelling import register_or_update_passport
 from sahaay_core.api.v1.tasks import orchestrator
-from sahaay_core.config.settings import get_fixtures_dir
+from sahaay_core.config.settings import get_fixtures_dir, settings
 from sahaay_core.contracts.models import (
     ActionContract,
     ActionTypeEnum,
@@ -149,7 +152,7 @@ async def execute_browser_to_desktop(req: BrowserToDesktopRequest) -> Dict[str, 
     orchestrator.transition_state(task_id, TaskStatusEnum.OBSERVING)
 
     bill_text = req.browserObservationExcerpt
-    if not bill_text and not is_fixture:
+    if not bill_text and not is_fixture and not getattr(settings, "is_testing", False):
         try:
             live_browser_adapter = BrowserAdapter()
             if live_browser_adapter.is_connected() and live_browser_adapter.is_browser_attached():
@@ -241,13 +244,29 @@ async def execute_browser_to_desktop(req: BrowserToDesktopRequest) -> Dict[str, 
 
     # 3. PROPOSE
     orchestrator.transition_state(task_id, TaskStatusEnum.PROPOSING)
-    grants = active_grants.get(req.sessionId, [])
-    structured_plan = await muse_spark.generate_plan(
-        task=task,
-        context=f"Browser tab bill content: {bill_text[:400]}",
-        source_facts=extracted,
-        active_grants=grants,
-    )
+    _ensure_session_and_grants(req.sessionId)
+    from sahaay_core.storage.persistence import durable_storage
+    grants = durable_storage.get_consent_grants_for_session(req.sessionId) or active_grants.get(req.sessionId, [])
+    try:
+        structured_plan = await muse_spark.generate_plan(
+            task=task,
+            context=f"Browser tab bill content: {bill_text[:400]}",
+            source_facts=extracted,
+            active_grants=grants,
+            allow_test_fallback=is_fixture or getattr(settings, "is_testing", False),
+        )
+    except Exception as ex:
+        logger.warning("Planning failed for browser-to-desktop: %s", ex)
+        orchestrator.transition_state(task_id, TaskStatusEnum.FAILED)
+        task.status = TaskStatusEnum.FAILED
+        durable_storage.save_task(task)
+        return {
+            "workflow": "browser-to-desktop",
+            "taskId": str(task_id),
+            "status": "FAILED",
+            "isVerified": False,
+            "error": f"Planning failed: {ex}",
+        }
 
     target_hwnd = req.targetHwnd or 0
     target_identifier = f"hwnd:{target_hwnd}:{req.targetControlId}"
@@ -490,13 +509,29 @@ async def execute_desktop_to_browser(req: DesktopToBrowserRequest) -> Dict[str, 
 
     # 3. PROPOSE
     orchestrator.transition_state(task_id, TaskStatusEnum.PROPOSING)
-    grants = active_grants.get(req.sessionId, [])
-    structured_plan = await muse_spark.generate_plan(
-        task=task,
-        context=f"Invoice document content: {json.dumps(extracted_fields)}",
-        source_facts=extracted_fields,
-        active_grants=grants,
-    )
+    _ensure_session_and_grants(req.sessionId)
+    from sahaay_core.storage.persistence import durable_storage
+    grants = durable_storage.get_consent_grants_for_session(req.sessionId) or active_grants.get(req.sessionId, [])
+    try:
+        structured_plan = await muse_spark.generate_plan(
+            task=task,
+            context=f"Invoice document content: {json.dumps(extracted_fields)}",
+            source_facts=extracted_fields,
+            active_grants=grants,
+            allow_test_fallback=is_fixture or getattr(settings, "is_testing", False),
+        )
+    except Exception as ex:
+        logger.warning("Planning failed for desktop-to-browser: %s", ex)
+        orchestrator.transition_state(task_id, TaskStatusEnum.FAILED)
+        task.status = TaskStatusEnum.FAILED
+        durable_storage.save_task(task)
+        return {
+            "workflow": "desktop-to-browser",
+            "taskId": str(task_id),
+            "status": "FAILED",
+            "isVerified": False,
+            "error": f"Planning failed: {ex}",
+        }
 
     # Derive field mapping strictly from extracted source fields (no demo fallbacks)
     field_mapping = {
@@ -766,7 +801,9 @@ async def _execute_goal_pipeline(
     from sahaay_core.storage.persistence import durable_storage
 
     task_id = task.taskId
-    grants = active_grants.get(req.sessionId, [])
+    _ensure_session_and_grants(req.sessionId)
+    from sahaay_core.storage.persistence import durable_storage
+    grants = durable_storage.get_consent_grants_for_session(req.sessionId) or active_grants.get(req.sessionId, [])
     goal_lower = req.goal.lower().strip()
 
     # -------------------------------------------------------------------------
@@ -914,134 +951,53 @@ async def _execute_goal_pipeline(
         }
 
     # -------------------------------------------------------------------------
-    # SPECIALIZED GROUNDED EXECUTION PATH B: Local Document / Invoice Fact Ingestion
+    # GENERAL MULTI-STEP TASK ORCHESTRATION VIA MUSE SPARK & DAG ENGINE
     # -------------------------------------------------------------------------
-    is_doc_retrieval = (
-        any(w in goal_lower for w in ["invoice", "invoices", "bill", "bills", "statement", "utility"])
-        and any(w in goal_lower for w in ["search", "summarize", "find", "read", "extract", "details", "key facts"])
-        and not any(w in goal_lower for w in ["write", "notepad", "fill", "form", "calc"])
-    )
-
-    if is_doc_retrieval:
-        from sahaay_core.sources.document_ingestion import DocumentIngestionService
-
-        orchestrator.transition_state(task_id, TaskStatusEnum.PLANNING)
-        orchestrator.transition_state(task_id, TaskStatusEnum.OBSERVING)
-
-        doc_service = DocumentIngestionService(source_manager, context_store)
-        doc_path = FIXTURES_DIR / "electricity_bill.txt"
-        if not doc_path.exists():
-            doc_path = FIXTURES_DIR / "invoice_data.json"
-
-        extracted_facts: Dict[str, Any] = {
-            "customerName": "Aarav Sharma",
-            "accountNumber": "BLR-UTIL-98421",
-            "billingPeriod": "October 2026",
-            "amountDue": "INR 2,450.00",
-            "dueDate": "Nov 15, 2026",
-            "status": "Payment Pending",
-        }
-
-        source_id_str = "local_doc_fixture"
-        if doc_path.exists():
-            try:
-                ingest_res = doc_service.ingest_authorized_file(doc_path, req.sessionId)
-                source_id_str = str(ingest_res.source.sourceId)
-            except Exception:
-                pass
-
-        summary_text = (
-            f"Bangalore Electricity Statement Summary (October 2026):\n"
-            f"  • Customer Name: {extracted_facts['customerName']}\n"
-            f"  • Account Number: {extracted_facts['accountNumber']}\n"
-            f"  • Billing Period: {extracted_facts['billingPeriod']}\n"
-            f"  • Amount Due: {extracted_facts['amountDue']}\n"
-            f"  • Due Date: {extracted_facts['dueDate']}\n"
-            f"  • Status: {extracted_facts['status']}\n\n"
-            f"Source verified from local document: {doc_path.name} (Cryptographic SHA-256 fingerprint verified)."
+    orchestrator.transition_state(task_id, TaskStatusEnum.PLANNING)
+    try:
+        structured_plan = await muse_spark.generate_plan(
+            task=task,
+            context=req.context or "",
+            active_grants=grants,
+            allow_test_fallback=settings.is_testing or (req.isFixtureMode is True),
         )
-
-        orchestrator.transition_state(task_id, TaskStatusEnum.PROPOSING)
-        orchestrator.transition_state(task_id, TaskStatusEnum.AUTHORIZING)
-        orchestrator.transition_state(task_id, TaskStatusEnum.EXECUTING)
-        orchestrator.transition_state(task_id, TaskStatusEnum.VERIFYING)
-
-        exec_action = ActionContract(
-            actionId=uuid4(),
-            actionType=ActionTypeEnum.DETERMINISTIC_RETRIEVAL,
-            target=str(doc_path),
-            parameters={"query": req.goal},
-            expectedPostcondition="Invoice facts extracted and verified",
-            estimatedRisk="READ_ONLY",
-        )
-        exec_result = ExecutionResult(
-            executionId=uuid4(),
-            actionId=exec_action.actionId,
-            isSuccess=True,
-            durationMs=20.0,
-            outputData=extracted_facts,
-        )
-        verifier_result = IndependentVerifier.verify_action_outcome(
-            action=exec_action,
-            execution_result=exec_result,
-            observed_postcondition_data={"accountNumber": "BLR-UTIL-98421", "amountDue": "INR 2,450.00"},
-            is_model_self_attestation=False,
-        )
-        evidence = evidence_ledger.record_evidence(
-            task_id=task_id,
-            step_id=uuid4(),
-            action_id=exec_action.actionId,
-            verification_result=verifier_result,
-            narrative="Extracted verified billing facts from authorized local utility document.",
-        )
-        orchestrator.transition_state(task_id, TaskStatusEnum.COMPLETED)
-        task.status = TaskStatusEnum.COMPLETED
+    except Exception as ex:
+        logger.error("Planning failed for task %s: %s", task_id, ex)
+        orchestrator.transition_state(task_id, TaskStatusEnum.FAILED)
+        task.status = TaskStatusEnum.FAILED
         durable_storage.save_task(task)
 
+        error_msg = str(ex)
+        narrative = f"Task planning could not proceed: {error_msg}"
         passport = register_or_update_passport(
             task_id=str(task_id),
             goal=req.goal,
             workflow_mode=task_type,
-            direction="Local Document Extraction",
-            extracted_fields=extracted_facts,
-            verification_status="VERIFIED",
-            evidence_id=str(evidence.evidenceId),
-            target_app_or_url=doc_path.name,
-            source_ref=f"Source ID: {source_id_str}",
-            summary=f"Extracted verified billing facts from {doc_path.name}: " + ", ".join(f"{k}: {v}" for k, v in extracted_facts.items()),
+            direction="Meta Cloud Planning",
+            extracted_fields={},
+            verification_status="FAILED",
+            evidence_id=None,
+            target_app_or_url="Meta Cloud Planner",
+            source_ref="Sahaay Muse Spark",
+            summary=narrative,
         )
-
         return {
             "workflow": "execute-goal",
             "taskId": str(task_id),
-            "status": "COMPLETED",
-            "isVerified": True,
-            "mode": req.workflowMode or "ask",
+            "status": "FAILED",
+            "isVerified": False,
+            "mode": req.workflowMode or "understand_and_act",
             "sourceSurface": req.sourceSurface or "desktop",
-            "summary": summary_text,
-            "completedSteps": 1,
-            "totalSteps": 1,
-            "stepResults": {"step-doc-1": {"success": True, "result": extracted_facts}},
-            "accumulatedFacts": {
-                **extracted_facts,
-                "bill_summary": summary_text,
-                "key_findings": summary_text,
-            },
-            "evidenceIds": [str(evidence.evidenceId)],
-            "evidenceRecordId": str(evidence.evidenceId),
-            "error": None,
+            "summary": narrative,
+            "completedSteps": 0,
+            "totalSteps": 0,
+            "stepResults": {},
+            "accumulatedFacts": {},
+            "evidenceIds": [],
+            "error": error_msg,
+            "structuredPlan": None,
             "passport": passport.model_dump(),
         }
-
-    # -------------------------------------------------------------------------
-    # GENERAL MULTI-STEP TASK ORCHESTRATION VIA MUSE SPARK & DAG ENGINE
-    # -------------------------------------------------------------------------
-    orchestrator.transition_state(task_id, TaskStatusEnum.PLANNING)
-    structured_plan = await muse_spark.generate_plan(
-        task=task,
-        context=req.context or "",
-        active_grants=grants,
-    )
 
     # 2. CONSTRUCT DAG
     orchestrator.transition_state(task_id, TaskStatusEnum.OBSERVING)

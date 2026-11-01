@@ -152,3 +152,4 @@ CRITICAL RULES:
    If network loss or endpoint outage occurs during a Meta Cloud call:
    - Sahaay NEVER returns fabricated transcripts or synthetic completed task receipts.
    - The system falls back to deterministic local rule engines (`_generate_deterministic_local_plan`) that construct basic DAGs strictly using known registered templates, or returns typed errors (`NOT_CONFIGURED`, `FAILED`) so the user is truthfully informed.
+

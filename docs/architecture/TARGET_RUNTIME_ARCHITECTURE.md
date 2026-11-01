@@ -135,3 +135,4 @@ flowchart LR
 - An action is never assumed successful based on the model's self-attestation or driver return code alone.
 - The `IndependentVerifier` reads back postcondition state (e.g., querying the active Notepad text box via UI Automation `ValuePattern` to verify the written content matches the extracted text).
 - Verified results are serialized, hashed (SHA-256), and appended to the immutable SQLite ledger (`sahaay.db`).
+

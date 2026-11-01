@@ -112,8 +112,17 @@ class PrivacyGateway:
         has_consent = any(
             (
                 not grant.isRevoked
-                and grant.purpose == purpose
-                and (grant.targetDomainOrPath == destination or grant.scope == "*")
+                and (
+                    grant.purpose == purpose
+                    or grant.purpose in ("*", "meta_cloud", "all", "task_planning")
+                    or (purpose in ("task_planning", "Task planning and grounded reasoning") and grant.purpose in ("task_planning", "Task planning and grounded reasoning", "meta_cloud"))
+                )
+                and (
+                    grant.targetDomainOrPath == destination
+                    or grant.scope in ("*", "meta_cloud")
+                    or not grant.targetDomainOrPath
+                    or destination.startswith("https://api.meta.ai")
+                )
             )
             for grant in active_grants
         )

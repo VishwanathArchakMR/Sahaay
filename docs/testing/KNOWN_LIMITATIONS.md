@@ -55,3 +55,4 @@ In keeping with Sahaay's core engineering principle of truthful attestation, thi
 - **Constraint**: The `PrivacyGateway` aggressively redacts high-entropy strings, JWT tokens, AWS/GCP keys, and passwords.
 - **Behavior**: If a user prompts: *"Log in using my password MySecretPassword123!"*, the secret scanner intercepts the prompt and prevents egress to cloud models.
 - **Recommendation**: Authentication operations should always be completed using manual handoff or password managers.
+
