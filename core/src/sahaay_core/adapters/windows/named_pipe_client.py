@@ -132,9 +132,12 @@ class NamedPipeClient:
             if not success:
                 raise OSError(f"WriteFile failed with error {kernel32.GetLastError()}")
 
-            # Non-blocking polling for response bytes using PeekNamedPipe
+            # Read response line until newline is received, with bounded timeout
             start_time = time.time()
-            timeout_sec = max(0.2, timeout_ms / 1000.0)
+            timeout_sec = max(0.5, timeout_ms / 1000.0)
+            accum = bytearray()
+            chunk_buffer = ctypes.create_string_buffer(65536)
+            bytes_read = wintypes.DWORD(0)
             bytes_avail = wintypes.DWORD(0)
 
             while (time.time() - start_time) < timeout_sec:
@@ -143,23 +146,23 @@ class NamedPipeClient:
                     err = kernel32.GetLastError()
                     raise ConnectionError(f"Pipe broken during read (Win32 Error: {err})")
                 if bytes_avail.value > 0:
-                    break
+                    to_read = min(65536, bytes_avail.value)
+                    success = ReadFile(handle, chunk_buffer, to_read, ctypes.byref(bytes_read), None)
+                    if success and bytes_read.value > 0:
+                        accum.extend(chunk_buffer.raw[: bytes_read.value])
+                        if b"\n" in accum:
+                            break
                 time.sleep(0.01)
 
-            if bytes_avail.value == 0:
+            if not accum:
                 raise TimeoutError(
                     f"Named Pipe '{self.pipe_path}' operation '{command}' timed out after {timeout_sec}s."
                 )
 
-            # Read response line now that bytes are guaranteed available
-            bytes_to_read = min(65536, max(1, bytes_avail.value))
-            buffer = ctypes.create_string_buffer(bytes_to_read + 1)
-            bytes_read = wintypes.DWORD(0)
-            success = ReadFile(handle, buffer, bytes_to_read, ctypes.byref(bytes_read), None)
-            if not success and kernel32.GetLastError() != 0:
-                raise OSError(f"ReadFile failed with error {kernel32.GetLastError()}")
-
-            resp_raw = buffer.raw[: bytes_read.value].decode("utf-8").lstrip("\ufeff").strip()
+            resp_raw = bytes(accum).decode("utf-8", errors="replace").lstrip("\ufeff").strip()
+            # If multiple lines, take the first non-empty line
+            if "\n" in resp_raw:
+                resp_raw = resp_raw.split("\n")[0].strip()
             return json.loads(resp_raw)
         finally:
             CloseHandle(handle)

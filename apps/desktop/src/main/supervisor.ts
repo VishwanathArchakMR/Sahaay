@@ -47,6 +47,8 @@ export class RuntimeSupervisor {
   private controllerRestartCount = 0;
   private maxRestarts = 3;
   private isShuttingDown = false;
+  private backendOwnership: "STARTED_BY_SAHAAY" | "REUSED" | "NONE" = "NONE";
+  private controllerOwnership: "STARTED_BY_SAHAAY" | "REUSED" | "NONE" = "NONE";
 
   constructor(appPath: string) {
     this.repoRoot = this.detectRepoRoot(appPath);
@@ -85,7 +87,8 @@ export class RuntimeSupervisor {
   public async ensureBackendRunning(): Promise<boolean> {
     const isHealthy = await this.probeBackendHealth();
     if (isHealthy) {
-      console.log("[Supervisor] Backend is already running and healthy on 127.0.0.1:8000 (reusing instance).");
+      this.backendOwnership = "REUSED";
+      console.log("[Supervisor] Component: Backend | Ownership: REUSED | Health: ONLINE | Endpoint: http://127.0.0.1:8000/api/v1/health");
       return true;
     }
 
@@ -139,7 +142,12 @@ export class RuntimeSupervisor {
         }
       });
 
-      return await this.waitForBackendReady(25000);
+      const ready = await this.waitForBackendReady(25000);
+      if (ready) {
+        this.backendOwnership = "STARTED_BY_SAHAAY";
+        console.log(`[Supervisor] Component: Backend | PID: ${this.backendProcess?.pid} | Ownership: STARTED_BY_SAHAAY | Health: ONLINE | Endpoint: http://127.0.0.1:8000/api/v1/health`);
+      }
+      return ready;
     } catch (err: any) {
       console.error(`[Supervisor] Failed to spawn backend: ${err.message}`);
       return false;
@@ -174,7 +182,8 @@ export class RuntimeSupervisor {
   public async ensureControllerRunning(): Promise<boolean> {
     const isPipeUp = await this.probeControllerPipe();
     if (isPipeUp) {
-      console.log("[Supervisor] Windows Controller pipe is already listening (reusing instance).");
+      this.controllerOwnership = "REUSED";
+      console.log("[Supervisor] Component: Controller | Ownership: REUSED | Health: ONLINE | Pipe: \\.\pipe\SahaayControllerPipe");
       return true;
     }
 
@@ -237,7 +246,12 @@ export class RuntimeSupervisor {
         }
       });
 
-      return await this.waitForControllerReady(8000);
+      const ready = await this.waitForControllerReady(8000);
+      if (ready) {
+        this.controllerOwnership = "STARTED_BY_SAHAAY";
+        console.log(`[Supervisor] Component: Controller | PID: ${this.controllerProcess?.pid} | Ownership: STARTED_BY_SAHAAY | Health: ONLINE | Pipe: \\.\pipe\SahaayControllerPipe`);
+      }
+      return ready;
     } catch (err: any) {
       console.error(`[Supervisor] Failed to spawn controller: ${err.message}`);
       return false;
@@ -354,7 +368,7 @@ export class RuntimeSupervisor {
     console.log("[Supervisor] Gracefully terminating managed child processes...");
     this.isShuttingDown = true;
 
-    if (this.backendProcess && this.backendProcess.pid) {
+    if (this.backendOwnership === "STARTED_BY_SAHAAY" && this.backendProcess && this.backendProcess.pid) {
       try {
         console.log(`[Supervisor] Terminating backend PID ${this.backendProcess.pid}...`);
         if (process.platform === "win32") {
@@ -368,7 +382,7 @@ export class RuntimeSupervisor {
       this.backendProcess = null;
     }
 
-    if (this.controllerProcess && this.controllerProcess.pid) {
+    if (this.controllerOwnership === "STARTED_BY_SAHAAY" && this.controllerProcess && this.controllerProcess.pid) {
       try {
         console.log(`[Supervisor] Terminating controller PID ${this.controllerProcess.pid}...`);
         if (process.platform === "win32") {

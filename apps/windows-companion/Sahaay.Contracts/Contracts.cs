@@ -89,12 +89,15 @@ public record NativeHostMessageRequest(
     [property: JsonPropertyName("command")] string Command,
     [property: JsonPropertyName("sessionId")] string SessionId,
     [property: JsonPropertyName("taskId")] string? TaskId,
-    [property: JsonPropertyName("parameters")] Dictionary<string, object>? Parameters
+    [property: JsonPropertyName("parameters")] Dictionary<string, object>? Parameters,
+    [property: JsonPropertyName("id")] string? Id = null,
+    [property: JsonPropertyName("payload")] object? Payload = null
 );
 
 public record NativeHostMessageResponse(
     [property: JsonPropertyName("success")] bool Success,
     [property: JsonPropertyName("command")] string Command,
     [property: JsonPropertyName("data")] object? Data,
-    [property: JsonPropertyName("error")] string? Error
+    [property: JsonPropertyName("error")] string? Error,
+    [property: JsonPropertyName("id")] string? Id = null
 );

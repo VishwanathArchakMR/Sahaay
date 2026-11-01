@@ -137,6 +137,19 @@ class CapabilityExecutor:
                             ):
                                 hwnd = win["hwnd"]
                                 break
+                        if hwnd <= 0:
+                            launch_res = self.windows_adapter.launch_application("notepad.exe")
+                            hwnd = int(launch_res.get("hwnd", 0))
+                            if hwnd <= 0:
+                                import time
+                                time.sleep(0.4)
+                                for win in self.windows_adapter.list_open_windows():
+                                    if (
+                                        "notepad" in win.get("processName", "").lower()
+                                        and win.get("hwnd", 0) > 0
+                                    ):
+                                        hwnd = win["hwnd"]
+                                        break
                     except Exception:
                         pass
                 text = str(parameters.get("text", ""))

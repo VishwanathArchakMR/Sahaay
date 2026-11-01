@@ -133,28 +133,42 @@ try {
   console.warn("[Main] Dedicated userData initialization notice:", e);
 }
 
-app.whenReady().then(async () => {
-  supervisor = new RuntimeSupervisor(app.getAppPath());
-  await supervisor.startSupervisedRuntime();
-
-  createWindow();
-
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+// Single Instance Lock: ensure only one Sahaay desktop application runs at a time
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  console.log("[Main] Another Sahaay Desktop instance is already running. Quitting duplicate process.");
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
   });
-});
 
-app.on("before-quit", () => {
-  supervisor?.shutdown();
-});
+  app.whenReady().then(async () => {
+    supervisor = new RuntimeSupervisor(app.getAppPath());
+    await supervisor.startSupervisedRuntime();
 
-app.on("will-quit", () => {
-  supervisor?.shutdown();
-});
+    createWindow();
 
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
+    app.on("activate", () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
+  });
+
+  app.on("before-quit", () => {
     supervisor?.shutdown();
-    app.quit();
-  }
-});
+  });
+
+  app.on("will-quit", () => {
+    supervisor?.shutdown();
+  });
+
+  app.on("window-all-closed", () => {
+    if (process.platform !== "darwin") {
+      supervisor?.shutdown();
+      app.quit();
+    }
+  });
+}

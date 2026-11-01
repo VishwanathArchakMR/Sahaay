@@ -36,6 +36,13 @@ param(
 $ErrorActionPreference = "Stop"
 $RepoRoot = (Resolve-Path "$PSScriptRoot\..").Path
 
+# Configure user-local .NET 10 environment if installed in LOCALAPPDATA
+$localDotnet = "$env:LOCALAPPDATA\Microsoft\dotnet"
+if (Test-Path "$localDotnet\dotnet.exe") {
+    $env:DOTNET_ROOT = $localDotnet
+    $env:PATH = "$localDotnet;$env:PATH"
+}
+
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "         Launching Sahaay Windows AI Agent Runtime         " -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
@@ -75,9 +82,10 @@ if (-not (Test-Path $PythonExe)) {
 }
 
 # 1b. Windows Companion Controller binary
+$ControllerStandalone = Join-Path $RepoRoot "bin\dist\controller-standalone\Sahaay.Controller.exe"
 $ControllerRelease = Join-Path $RepoRoot "apps\windows-companion\Sahaay.Controller\bin\Release\net10.0-windows\Sahaay.Controller.exe"
 $ControllerDebug = Join-Path $RepoRoot "apps\windows-companion\Sahaay.Controller\bin\Debug\net10.0-windows\Sahaay.Controller.exe"
-$ControllerExe = if (Test-Path $ControllerRelease) { $ControllerRelease } elseif (Test-Path $ControllerDebug) { $ControllerDebug } else { $null }
+$ControllerExe = if (Test-Path $ControllerStandalone) { $ControllerStandalone } elseif (Test-Path $ControllerRelease) { $ControllerRelease } elseif (Test-Path $ControllerDebug) { $ControllerDebug } else { $null }
 
 if (-not $ControllerExe) {
     Write-Host "[BUILD] Windows companion controller binary not found. Building..." -ForegroundColor Yellow
@@ -114,7 +122,7 @@ if (-not $NeedsHostInstall) {
 
 if ($NeedsHostInstall) {
     Write-Host "[INSTALL] Browser native messaging host not fully registered. Installing and configuring origins..." -ForegroundColor Yellow
-    & "$PSScriptRoot\install-browser-native-host.ps1" -ExtensionId "filgbgddapmjcddcoadfpimdicmkhpolc"
+    & "$PSScriptRoot\install-browser-native-host.ps1" -SkipBuild
     $ChromeRegistered = Test-Path $ChromeRegPath
     $EdgeRegistered = Test-Path $EdgeRegPath
 }
@@ -271,77 +279,17 @@ elseif ($Mode -eq "Dev") {
     }
 }
 else {
-    # Default Desktop mode: Supervised Electron Application
-    Write-Host "`n[START] Starting Supervised Sahaay Desktop Application..." -ForegroundColor Green
+    # Default Desktop mode: Electron Desktop Application with RuntimeSupervisor as single owner
+    Write-Host "`n[START] Launching Sahaay Desktop Application..." -ForegroundColor Green
+    Write-Host "Runtime lifecycle managed by Electron RuntimeSupervisor." -ForegroundColor Gray
 
     # Ensure persistent log directory exists under AppData
     $LogDir = Join-Path $env:LOCALAPPDATA "Sahaay\logs"
     if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Path $LogDir -Force | Out-Null }
 
-    # Ensure port 8000 is clean
-    Ensure-Port8000Available
-
-    # 1. Ensure backend is running and healthy on 127.0.0.1:8000
-    $BackendRunning = $false
-    try {
-        $res = Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/health" -TimeoutSec 2 -ErrorAction Stop
-        if ($res.status -eq "healthy") { $BackendRunning = $true }
-    } catch {}
-
-    $spawnedBackend = $null
-    if (-not $BackendRunning) {
-        Write-Host "Spawning FastAPI backend on 127.0.0.1:8000..." -ForegroundColor Cyan
-        $env:PYTHONPATH = Join-Path $RepoRoot "core\src"
-        $backendLog = Join-Path $LogDir "backend.log"
-        $backendErr = Join-Path $LogDir "backend-err.log"
-        $spawnedBackend = Start-Process -FilePath $PythonExe `
-            -ArgumentList "-m", "uvicorn", "sahaay_core.main:app", "--host", "127.0.0.1", "--port", "8000" `
-            -WorkingDirectory (Join-Path $RepoRoot "core") `
-            -RedirectStandardOutput $backendLog `
-            -RedirectStandardError $backendErr `
-            -WindowStyle Hidden `
-            -PassThru
-        Write-Host "Backend process spawned (PID: $($spawnedBackend.Id))." -ForegroundColor Green
-
-        # Wait up to 15 seconds for backend to become healthy
-        $retries = 25
-        while ($retries -gt 0 -and -not $BackendRunning) {
-            Start-Sleep -Milliseconds 600
-            try {
-                $h = Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/health" -TimeoutSec 1 -ErrorAction Stop
-                if ($h.status -eq "healthy") { $BackendRunning = $true }
-            } catch {}
-            $retries--
-        }
-        if ($BackendRunning) {
-            Write-Host "[READY] FastAPI Backend verified healthy at http://127.0.0.1:8000" -ForegroundColor Green
-        } else {
-            Write-Host "[WARN] Backend health probe did not respond within 15s; Electron supervisor will continue monitoring." -ForegroundColor Yellow
-        }
-    } else {
-        Write-Host "[ONLINE] FastAPI backend already active on 127.0.0.1:8000 (reusing instance)." -ForegroundColor Green
-    }
-
-    # 2. Ensure Windows Controller daemon is running
-    $PipeRunning = Test-NamedPipePing -pipeName "SahaayControllerPipe"
-    $spawnedController = $null
-    if (-not $PipeRunning -and $ControllerExe) {
-        Write-Host "Spawning interactive Windows Controller..." -ForegroundColor Cyan
-        $ctrlLog = Join-Path $LogDir "controller.log"
-        $ctrlErr = Join-Path $LogDir "controller-err.log"
-        $spawnedController = Start-Process -FilePath $ControllerExe `
-            -WorkingDirectory (Split-Path $ControllerExe) `
-            -RedirectStandardOutput $ctrlLog `
-            -RedirectStandardError $ctrlErr `
-            -WindowStyle Hidden `
-            -PassThru
-        Write-Host "Controller process spawned (PID: $($spawnedController.Id))." -ForegroundColor Green
-    } elseif ($PipeRunning) {
-        Write-Host "[ONLINE] Windows Controller pipe already active (reusing instance)." -ForegroundColor Green
-    }
-
-    # 3. Clear ELECTRON_RUN_AS_NODE and launch Electron
+    # Clear ELECTRON_RUN_AS_NODE if inherited from IDE terminal so Electron runs as GUI app, not Node CLI
     Remove-Item Env:\ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+
     Push-Location $DesktopRoot
     try {
         # Ensure electron main is freshly built
@@ -349,13 +297,5 @@ else {
         npx electron .
     } finally {
         Pop-Location
-        if ($spawnedBackend -and -not $spawnedBackend.HasExited) {
-            Write-Host "Stopping spawned backend (PID: $($spawnedBackend.Id))..." -ForegroundColor Gray
-            Stop-Process -Id $spawnedBackend.Id -Force -ErrorAction SilentlyContinue
-        }
-        if ($spawnedController -and -not $spawnedController.HasExited) {
-            Write-Host "Stopping spawned controller (PID: $($spawnedController.Id))..." -ForegroundColor Gray
-            Stop-Process -Id $spawnedController.Id -Force -ErrorAction SilentlyContinue
-        }
     }
 }

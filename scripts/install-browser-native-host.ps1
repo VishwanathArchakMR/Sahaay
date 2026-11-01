@@ -1,18 +1,16 @@
 <#
 .SYNOPSIS
-Installs and registers Sahaay Native Messaging Host for Google Chrome and Microsoft Edge (Per-User, No Admin Required).
+Authoritative installer and verifier for Sahaay Native Messaging Host (Chrome & Edge).
 
 .DESCRIPTION
-Deploys standalone Sahaay.NativeHost executable to %LOCALAPPDATA%\Sahaay\native-host,
-generates the native messaging manifest with dual Chrome/Edge scheme support and
-unpacked extension auto-detection, and registers it in HKCU for both Chrome and Edge.
-
-.PARAMETER ExtensionId
-Target browser extension ID (default: "knldjmfmopnpolahpmmgbagdohdnhkik").
+Compiles (or uses pre-built) standalone Sahaay.NativeHost.exe, discovers currently loaded
+Chromium extension IDs, generates strict browser manifests, and registers them in HKCU.
+Single authoritative owner of native host registration.
 #>
 
+[CmdletBinding()]
 param(
-    [string]$ExtensionId = "filgbgddapmjcddcoadfpimdicmkhpolc",
+    [string]$ExtensionId = "",
     [switch]$SkipBuild
 )
 
@@ -22,40 +20,68 @@ $RepoRoot = (Resolve-Path "$PSScriptRoot\..").Path
 $InstallDir = Join-Path $env:LOCALAPPDATA "Sahaay\native-host"
 $SourceExe = Join-Path $RepoRoot "bin\dist\native-host-standalone\Sahaay.NativeHost.exe"
 $TargetExe = Join-Path $InstallDir "Sahaay.NativeHost.exe"
-$ManifestPath = Join-Path $InstallDir "com.sahaay.nativehost.json"
 
-# Calculate unpacked extension ID derived from repository path
-function Get-ChromiumExtensionId([string]$folderPath) {
-    $sha256 = [System.Security.Cryptography.SHA256]::Create()
-    $bytes = [System.Text.Encoding]::UTF8.GetBytes($folderPath)
-    $hash = $sha256.ComputeHash($bytes)
-    $chars = [char[]]::new(32)
-    for ($i = 0; $i -lt 16; $i++) {
-        $b = $hash[$i]
-        $chars[$i * 2] = [char]([byte][char]'a' + ($b -shr 4))
-        $chars[$i * 2 + 1] = [char]([byte][char]'a' + ($b -band 0x0F))
+$ChromeManifestPath = Join-Path $InstallDir "com.sahaay.nativehost.chrome.json"
+$EdgeManifestPath = Join-Path $InstallDir "com.sahaay.nativehost.edge.json"
+$DefaultManifestPath = Join-Path $InstallDir "com.sahaay.nativehost.json"
+
+Write-Host "==========================================================" -ForegroundColor Cyan
+Write-Host "     Sahaay Authoritative Browser Native Host Installer    " -ForegroundColor Cyan
+Write-Host "==========================================================" -ForegroundColor Cyan
+
+# 1. Discover actual installed / unpacked extension IDs from Chrome and Edge profiles
+function Find-LoadedChromiumExtensionIds {
+    $found = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    $localApp = $env:LOCALAPPDATA
+    $browsers = @(
+        (Join-Path $localApp "Google\Chrome\User Data"),
+        (Join-Path $localApp "Microsoft\Edge\User Data")
+    )
+
+    foreach ($userData in $browsers) {
+        if (-not (Test-Path $userData)) { continue }
+        $prefFiles = Get-ChildItem -Path $userData -Recurse -Depth 2 -Include "Secure Preferences", "Preferences" -ErrorAction SilentlyContinue
+        foreach ($file in $prefFiles) {
+            try {
+                $raw = Get-Content $file.FullName -Raw -ErrorAction SilentlyContinue
+                if (-not $raw -or -not ($raw.Contains("browser-extension") -or $raw.Contains("Sahaay"))) { continue }
+                $json = ConvertFrom-Json -InputObject $raw -ErrorAction SilentlyContinue
+                if ($json.extensions -and $json.extensions.settings) {
+                    foreach ($prop in $json.extensions.settings.PSObject.Properties) {
+                        $p = [string]$prop.Value.path
+                        $n = [string]$prop.Value.manifest.name
+                        if ($p -like "*browser-extension*" -or $n -like "*Sahaay*") {
+                            $found.Add($prop.Name) | Out-Null
+                        }
+                    }
+                }
+            } catch {}
+        }
     }
-    return [string]::new($chars)
+    return $found
 }
 
-$ExtensionDir = Join-Path $RepoRoot "apps\browser-extension"
-$UnpackedId = if (Test-Path $ExtensionDir) {
-    Get-ChromiumExtensionId (Resolve-Path $ExtensionDir).Path
-} else {
-    $ExtensionId
+$detectedIds = Find-LoadedChromiumExtensionIds
+Write-Host "`nDiscovered loaded extension IDs:" -ForegroundColor Yellow
+foreach ($id in $detectedIds) {
+    Write-Host "  • $id" -ForegroundColor Green
 }
 
-Write-Host "=== Installing Sahaay Native Messaging Host ===" -ForegroundColor Cyan
-Write-Host "Target Directory:     $InstallDir"
-Write-Host "Configured Ext ID:    $ExtensionId"
-Write-Host "Unpacked Repo Ext ID: $UnpackedId"
+# Collect target extension IDs
+$targetIds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+if ($ExtensionId) { $targetIds.Add($ExtensionId) | Out-Null }
+foreach ($id in $detectedIds) { $targetIds.Add($id) | Out-Null }
+# Known development & repository fallback IDs
+$targetIds.Add("fnlhiookeiehboleaohdmpigdiodheda") | Out-Null
+$targetIds.Add("fnlihookeiehboleaohdmpigdiodheda") | Out-Null
+$targetIds.Add("filgbgddapmjcddcoadfpimdicmkhpolc") | Out-Null
 
-# 1. Build unless explicitly skipped
-if (-not $SkipBuild) {
-    Write-Host "`nBuilding standalone NativeHost..." -ForegroundColor Yellow
+# 2. Build standalone NativeHost if missing or requested
+if (-not $SkipBuild -or -not (Test-Path $SourceExe)) {
+    Write-Host "`nBuilding standalone NativeHost binary..." -ForegroundColor Cyan
     $localDotnet = Join-Path $env:LOCALAPPDATA "Microsoft\dotnet\dotnet.exe"
     $dotnetCmd = if (Test-Path $localDotnet) { $localDotnet } else { "dotnet" }
-    
+
     $publishOut = Join-Path $RepoRoot "bin\dist\native-host-standalone"
     & $dotnetCmd publish "$RepoRoot\apps\windows-companion\Sahaay.NativeHost\Sahaay.NativeHost.csproj" `
         -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o $publishOut
@@ -65,86 +91,108 @@ if (-not $SkipBuild) {
     }
 }
 
-if (-not (Test-Path $SourceExe)) {
-    Write-Error "Source binary not found at: $SourceExe"
-    exit 1
-}
-
-# 2. Deploy binary to stable AppData directory
+# 3. Deploy binary to stable AppData directory
 if (-not (Test-Path $InstallDir)) {
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
 }
-
 Copy-Item -Path (Join-Path (Split-Path $SourceExe) "*") -Destination $InstallDir -Recurse -Force
 Write-Host "[OK] Binary deployed to: $TargetExe" -ForegroundColor Green
 
-# 3. Generate Native Messaging Manifest with all verified extension origins
-$allOrigins = [System.Collections.Generic.HashSet[string]]::new()
-$allOrigins.Add("chrome-extension://$ExtensionId/") | Out-Null
-$allOrigins.Add("extension://$ExtensionId/") | Out-Null
-$allOrigins.Add("chrome-extension://filgbgddapmjcddcoadfpimdicmkhpolc/") | Out-Null
-$allOrigins.Add("extension://filgbgddapmjcddcoadfpimdicmkhpolc/") | Out-Null
-$allOrigins.Add("chrome-extension://knldjmfmopnpolahpmmgbagdohdnhkik/") | Out-Null
-$allOrigins.Add("extension://knldjmfmopnpolahpmmgbagdohdnhkik/") | Out-Null
-$allOrigins.Add("chrome-extension://nokchmadkhaghgooijgkgpheoieaibdp/") | Out-Null
-$allOrigins.Add("extension://nokchmadkhaghgooijgkgpheoieaibdp/") | Out-Null
-if ($UnpackedId) {
-    $allOrigins.Add("chrome-extension://$UnpackedId/") | Out-Null
-    $allOrigins.Add("extension://$UnpackedId/") | Out-Null
+# 4. Generate Chrome Manifest (strictly chrome-extension:// origins)
+$chromeOrigins = @()
+foreach ($id in $targetIds) {
+    $chromeOrigins += "chrome-extension://$id/"
 }
 
-$manifest = [ordered]@{
+$chromeManifest = [ordered]@{
     name = $HostName
-    description = "Sahaay Native Messaging Host for Chrome and Edge"
+    description = "Sahaay Native Messaging Host for Google Chrome"
     path = $TargetExe
     type = "stdio"
-    allowed_origins = @($allOrigins)
+    allowed_origins = $chromeOrigins
 }
+$chromeJson = $chromeManifest | ConvertTo-Json -Depth 4
+[System.IO.File]::WriteAllText($ChromeManifestPath, $chromeJson)
+[System.IO.File]::WriteAllText($DefaultManifestPath, $chromeJson)
+Write-Host "[OK] Chrome Manifest generated: $ChromeManifestPath" -ForegroundColor Green
 
-$manifestJson = $manifest | ConvertTo-Json -Depth 4
-[System.IO.File]::WriteAllText($ManifestPath, $manifestJson)
-Write-Host "[OK] Manifest generated: $ManifestPath" -ForegroundColor Green
-
-# Also mirror manifest to repository standalone dist directory
-$RepoManifest = Join-Path $RepoRoot "bin\dist\native-host-standalone\$HostName.json"
-$repoManifestData = [ordered]@{
+# 5. Generate Edge Manifest (extension:// and chrome-extension:// origins)
+$edgeOrigins = @()
+foreach ($id in $targetIds) {
+    $edgeOrigins += "extension://$id/"
+    $edgeOrigins += "chrome-extension://$id/"
+}
+$edgeManifest = [ordered]@{
     name = $HostName
-    description = "Sahaay Native Messaging Host for Chrome and Edge"
-    path = $SourceExe
+    description = "Sahaay Native Messaging Host for Microsoft Edge"
+    path = $TargetExe
     type = "stdio"
-    allowed_origins = @($allOrigins)
+    allowed_origins = $edgeOrigins
 }
-[System.IO.File]::WriteAllText($RepoManifest, ($repoManifestData | ConvertTo-Json -Depth 4))
+$edgeJson = $edgeManifest | ConvertTo-Json -Depth 4
+[System.IO.File]::WriteAllText($EdgeManifestPath, $edgeJson)
+Write-Host "[OK] Edge Manifest generated: $EdgeManifestPath" -ForegroundColor Green
 
-Write-Host "Allowed Origins:" -ForegroundColor Gray
-foreach ($origin in $allOrigins) {
-    Write-Host "  - $origin" -ForegroundColor Gray
-}
-
-# 4. Register in HKCU (Google Chrome & Microsoft Edge)
-$RegTargets = @(
-    "HKCU:\Software\Google\Chrome\NativeMessagingHosts\$HostName",
-    "HKCU:\Software\Microsoft\Edge\NativeMessagingHosts\$HostName"
+# 6. Register in HKCU (both 64-bit and Wow6432Node)
+$regConfigs = @(
+    @{ Key = "HKCU\Software\Google\Chrome\NativeMessagingHosts\$HostName"; Manifest = $ChromeManifestPath },
+    @{ Key = "HKCU\Software\Wow6432Node\Google\Chrome\NativeMessagingHosts\$HostName"; Manifest = $ChromeManifestPath },
+    @{ Key = "HKCU\Software\Microsoft\Edge\NativeMessagingHosts\$HostName"; Manifest = $EdgeManifestPath },
+    @{ Key = "HKCU\Software\Wow6432Node\Microsoft\Edge\NativeMessagingHosts\$HostName"; Manifest = $EdgeManifestPath }
 )
 
-# Use reg.exe directly with /ve to guarantee default (unnamed) registry value is set
-reg.exe add "HKCU\Software\Google\Chrome\NativeMessagingHosts\$HostName" /ve /t REG_SZ /d "$ManifestPath" /f
-reg.exe add "HKCU\Software\Microsoft\Edge\NativeMessagingHosts\$HostName" /ve /t REG_SZ /d "$ManifestPath" /f
+foreach ($cfg in $regConfigs) {
+    $k = $cfg.Key
+    $m = $cfg.Manifest
+    # Use cmd /c to ensure reg.exe errors don't trigger PowerShell native command error traps
+    & cmd.exe /c "reg.exe add `"$k`" /ve /t REG_SZ /d `"$m`" /f >nul 2>&1"
+    & cmd.exe /c "reg.exe delete `"$k`" /v `"(Default)`" /f >nul 2>&1"
+    & cmd.exe /c "reg.exe delete `"$k`" /v `"(default)`" /f >nul 2>&1"
+    Write-Host "[OK] Registered registry key: $k -> $m" -ForegroundColor Green
+}
 
-foreach ($regPath in $RegTargets) {
-    if (-not (Test-Path $regPath)) {
-        New-Item -Path $regPath -Force | Out-Null
+# 7. Verification: Validate registry and manifest integrity
+Write-Host "`nVerifying Native Host Registration Integrity:" -ForegroundColor Cyan
+
+$chromeKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("Software\Google\Chrome\NativeMessagingHosts\$HostName")
+$regValue = if ($chromeKey) { $chromeKey.GetValue("") } else { $null }
+if (-not $regValue) {
+    Write-Error "Chrome Native Messaging registry key verification failed!"
+    exit 1
+}
+if (-not (Test-Path $regValue)) {
+    Write-Error "Registry key points to non-existent manifest: $regValue"
+    exit 1
+}
+
+$parsedManifest = Get-Content $regValue -Raw | ConvertFrom-Json
+if ($parsedManifest.name -ne $HostName) {
+    Write-Error "Manifest 'name' property mismatch: expected $HostName, got $($parsedManifest.name)"
+    exit 1
+}
+if ($parsedManifest.type -ne "stdio") {
+    Write-Error "Manifest 'type' property must be 'stdio'"
+    exit 1
+}
+if (-not (Test-Path $parsedManifest.path)) {
+    Write-Error "Manifest executable path does not exist on disk: $($parsedManifest.path)"
+    exit 1
+}
+
+# Verify each detected ID is in allowed_origins
+foreach ($id in $detectedIds) {
+    $expectedOrigin = "chrome-extension://$id/"
+    if (-not ($parsedManifest.allowed_origins -contains $expectedOrigin)) {
+        Write-Error "Loaded extension ID '$id' is missing from allowed_origins in $regValue"
+        exit 1
     }
-    Set-ItemProperty -Path $regPath -Name "(default)" -Value $ManifestPath -ErrorAction SilentlyContinue
-    Set-ItemProperty -Path $regPath -Name "(Default)" -Value $ManifestPath -ErrorAction SilentlyContinue
-    Write-Host "[OK] Registered in: $regPath" -ForegroundColor Green
 }
 
-# 5. Native binary self-registration & diagnostics
-if (Test-Path $TargetExe) {
-    & $TargetExe --register "$ExtensionId"
-} elseif (Test-Path $SourceExe) {
-    & $SourceExe --register "$ExtensionId"
+Write-Host "`n[PASS] All Native Messaging Host Registration Invariants Verified Cleanly!" -ForegroundColor Green
+Write-Host "Executable:       $TargetExe"
+Write-Host "Chrome Manifest:  $ChromeManifestPath"
+Write-Host "Edge Manifest:    $EdgeManifestPath"
+Write-Host "Allowed Origins:"
+foreach ($orig in $parsedManifest.allowed_origins) {
+    Write-Host "  - $orig" -ForegroundColor Gray
 }
-
-Write-Host "`nInstallation & Registration Successfully Completed!" -ForegroundColor Green

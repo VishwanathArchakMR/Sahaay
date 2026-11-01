@@ -154,3 +154,66 @@ def test_disconnected_browser_fails_closed():
     adapter = BrowserAdapter(pipe_name="NonExistentSahaayPipe_Test")
     assert adapter.is_connected() is False
     assert adapter.is_browser_attached() is False
+
+
+def test_native_host_binary_framed_io_roundtrip():
+    """Live protocol test: Launch NativeHost binary, send framed message on stdin, verify framed response."""
+    import subprocess
+    import sys
+
+    repo_root = get_repo_root()
+    candidates = [
+        repo_root / "bin" / "dist" / "native-host-standalone" / "Sahaay.NativeHost.exe",
+        repo_root
+        / "apps"
+        / "windows-companion"
+        / "Sahaay.NativeHost"
+        / "bin"
+        / "Release"
+        / "net10.0-windows"
+        / "Sahaay.NativeHost.exe",
+        repo_root
+        / "apps"
+        / "windows-companion"
+        / "Sahaay.NativeHost"
+        / "bin"
+        / "Debug"
+        / "net10.0-windows"
+        / "Sahaay.NativeHost.exe",
+    ]
+    binary_path = next((p for p in candidates if p.is_file()), None)
+    if not binary_path or sys.platform != "win32":
+        return
+
+    # Frame 4-byte little-endian message
+    req_obj = {
+        "id": "hs-live-protocol-test",
+        "command": "hello",
+        "sessionId": "pytest-session",
+        "payload": {"test": True},
+    }
+    raw_json = json.dumps(req_obj).encode("utf-8")
+    header = struct.pack("<I", len(raw_json))
+
+    proc = subprocess.Popen(
+        [str(binary_path), "chrome-extension://test-ext-origin/"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    try:
+        stdout_bytes, stderr_bytes = proc.communicate(input=header + raw_json, timeout=4)
+        assert len(stdout_bytes) >= 4, f"Truncated stdout: {len(stdout_bytes)} bytes"
+        resp_len = struct.unpack("<I", stdout_bytes[:4])[0]
+        assert len(stdout_bytes) >= 4 + resp_len, "Incomplete message read"
+
+        resp_json = json.loads(stdout_bytes[4 : 4 + resp_len].decode("utf-8"))
+        assert resp_json.get("success") is True
+        assert resp_json.get("command") == "hello"
+        assert resp_json.get("id") == "hs-live-protocol-test"
+        assert resp_json.get("data", {}).get("status") == "connected"
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()

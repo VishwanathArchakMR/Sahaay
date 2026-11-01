@@ -22,32 +22,14 @@ public class Program
     private static volatile bool _isBrowserAttached = false;
     private static Stream? _activeStdout;
 
-    // Configured permitted extension IDs (Chrome and Edge origins)
-    private static readonly HashSet<string> AllowedExtensionOrigins = new()
-    {
-        "chrome-extension://sahaay-dev-extension-id/",
-        "chrome-extension://filgbgddapmjcddcoadfpimdicmkhpolc/", // Active installed browser extension ID
-        "extension://filgbgddapmjcddcoadfpimdicmkhpolc/",        // Active installed Edge scheme ID
-        "chrome-extension://knldjmfmopnpolahpmmgbagdohdnhkik/", // Common unpacked dev ID pattern
-        "extension://knldjmfmopnpolahpmmgbagdohdnhkik/",        // Microsoft Edge native scheme
-        "chrome-extension://nokchmadkhaghgooijgkgpheoieaibdp/", // Unpacked repo path ID (uppercase C:)
-        "extension://nokchmadkhaghgooijgkgpheoieaibdp/",        // Unpacked repo path Edge scheme (uppercase C:)
-        "chrome-extension://ddbdffinhcfibhclfaiaemgnnajphgbf/", // Unpacked repo path ID (lowercase c:)
-        "extension://ddbdffinhcfibhclfaiaemgnnajphgbf/",        // Unpacked repo path Edge scheme (lowercase c:)
-        "chrome-extension://paeilcdpihcpnlkgjbemiigbefbhbgdo/", // Canonical dist path ID (uppercase C:)
-        "extension://paeilcdpihcpnlkgjbemiigbefbhbgdo/",        // Canonical dist path Edge scheme (uppercase C:)
-        "chrome-extension://incpiefenjejkjfholbomkhcflfbecnc/", // Canonical dist path ID (lowercase c:)
-        "extension://incpiefenjejkjfholbomkhcflfbecnc/",        // Canonical dist path Edge scheme (lowercase c:)
-    };
-
     public static async Task Main(string[] args)
     {
         // 1. Diagnostics / Verification CLI mode
         if (args.Any(a => a.Equals("--register", StringComparison.OrdinalIgnoreCase) ||
                           a.Equals("--install", StringComparison.OrdinalIgnoreCase)))
         {
-            string? extId = args.FirstOrDefault(a => !a.StartsWith("-"));
-            RegisterNativeHost(extId);
+            Console.Error.WriteLine("[NativeHost] Manifest registration is authoritatively managed by scripts/install-browser-native-host.ps1.");
+            RunDiagnostics();
             return;
         }
 
@@ -325,11 +307,28 @@ public class Program
         }
     }
 
+    private static string? GetLocalAuthToken()
+    {
+        try
+        {
+            string appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string tokenPath = Path.Combine(appData, "Sahaay", "auth.token");
+            if (File.Exists(tokenPath))
+            {
+                string token = File.ReadAllText(tokenPath).Trim();
+                if (!string.IsNullOrEmpty(token)) return token;
+            }
+        }
+        catch { }
+        return null;
+    }
+
     public static NativeHostMessageResponse ProcessRequest(NativeHostMessageRequest request)
     {
+        string? reqId = request.Id;
         if (string.IsNullOrWhiteSpace(request.Command))
         {
-            return new NativeHostMessageResponse(false, "unknown", null, "Command cannot be empty.");
+            return new NativeHostMessageResponse(false, "unknown", null, "Command cannot be empty.", reqId);
         }
 
         string sessionId = string.IsNullOrWhiteSpace(request.SessionId) ? "browser-extension" : request.SessionId;
@@ -337,27 +336,44 @@ public class Program
 
         return cmd switch
         {
-            "ping" => new NativeHostMessageResponse(true, "ping", new { status = "pong", timestamp = DateTime.UtcNow }, null),
+            "ping" => new NativeHostMessageResponse(true, "ping", new { status = "pong", timestamp = DateTime.UtcNow }, null, reqId),
 
             "hello" or "handshake" => new NativeHostMessageResponse(
                 true,
                 request.Command,
-                new { status = "connected", hostName = "com.sahaay.nativehost", pid = Environment.ProcessId, timestamp = DateTime.UtcNow },
-                null
+                new
+                {
+                    status = "connected",
+                    hostName = "com.sahaay.nativehost",
+                    pid = Environment.ProcessId,
+                    timestamp = DateTime.UtcNow,
+                    authToken = GetLocalAuthToken()
+                },
+                null,
+                reqId
             ),
 
             "get_capabilities" => new NativeHostMessageResponse(
                 true,
                 "get_capabilities",
                 new ControllerCapabilityReport(true, true, true, "0.2.0-vertical-slice", Environment.ProcessId),
-                null
+                null,
+                reqId
             ),
 
             "get_status" => new NativeHostMessageResponse(
                 true,
                 "get_status",
-                new { status = "running", hostName = "com.sahaay.nativehost", pid = Environment.ProcessId, timestamp = DateTime.UtcNow },
-                null
+                new
+                {
+                    status = "running",
+                    hostName = "com.sahaay.nativehost",
+                    pid = Environment.ProcessId,
+                    timestamp = DateTime.UtcNow,
+                    authToken = GetLocalAuthToken()
+                },
+                null,
+                reqId
             ),
 
             "get_active_window" or "list_open_windows" or "inspect_window_elements" or "capture_window_screenshot" or "set_control_text" or "get_control_text" => ForwardToController(request with { SessionId = sessionId }),
@@ -366,7 +382,8 @@ public class Program
                 false,
                 request.Command,
                 null,
-                $"Command '{request.Command}' is rejected. Native host rejects unallowlisted operations."
+                $"Command '{request.Command}' is rejected. Native host rejects unallowlisted operations.",
+                reqId
             )
         };
     }
@@ -382,7 +399,7 @@ public class Program
             using var reader = new StreamReader(client);
 
             var ipcReq = new IpcMessageRequest(
-                Id: Guid.NewGuid().ToString("N"),
+                Id: request.Id ?? Guid.NewGuid().ToString("N"),
                 Command: request.Command,
                 SessionId: request.SessionId,
                 TaskId: request.TaskId,
@@ -394,7 +411,7 @@ public class Program
             string? responseLine = reader.ReadLine();
             if (responseLine == null)
             {
-                return new NativeHostMessageResponse(false, request.Command, null, "Empty response from Sahaay controller.");
+                return new NativeHostMessageResponse(false, request.Command, null, "Empty response from Sahaay controller.", request.Id);
             }
 
             var ipcRes = JsonSerializer.Deserialize<IpcMessageResponse>(responseLine);
@@ -402,83 +419,18 @@ public class Program
                 ipcRes?.Success ?? false,
                 request.Command,
                 ipcRes?.Data,
-                ipcRes?.Error
+                ipcRes?.Error,
+                request.Id
             );
         }
         catch (TimeoutException)
         {
-            return new NativeHostMessageResponse(false, request.Command, null, "Sahaay controller daemon is not running or timed out.");
+            return new NativeHostMessageResponse(false, request.Command, null, "Sahaay controller daemon is not running or timed out.", request.Id);
         }
         catch (Exception ex)
         {
-            return new NativeHostMessageResponse(false, request.Command, null, $"Forwarding to controller failed: {ex.Message}");
+            return new NativeHostMessageResponse(false, request.Command, null, $"Forwarding to controller failed: {ex.Message}", request.Id);
         }
-    }
-
-    private static void RegisterNativeHost(string? customExtensionId = null)
-    {
-        const string hostName = "com.sahaay.nativehost";
-        string exePath = Environment.ProcessPath ??
-                         System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName ??
-                         Path.Combine(AppContext.BaseDirectory, "Sahaay.NativeHost.exe");
-
-        if (!string.IsNullOrWhiteSpace(customExtensionId))
-        {
-            AllowedExtensionOrigins.Add($"chrome-extension://{customExtensionId}/");
-            AllowedExtensionOrigins.Add($"extension://{customExtensionId}/");
-        }
-
-        var manifestObj = new
-        {
-            name = hostName,
-            description = "Sahaay Native Messaging Host for Chrome and Edge",
-            path = exePath,
-            type = "stdio",
-            allowed_origins = AllowedExtensionOrigins.ToList()
-        };
-
-        string manifestJson = JsonSerializer.Serialize(manifestObj, new JsonSerializerOptions { WriteIndented = true });
-
-        // Primary manifest path in executable directory
-        string localManifestPath = Path.Combine(AppContext.BaseDirectory, $"{hostName}.json");
-        File.WriteAllText(localManifestPath, manifestJson);
-
-        // Also deploy to %LOCALAPPDATA%\Sahaay\native-host if possible
-        string appDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Sahaay", "native-host");
-        string appDataManifestPath = Path.Combine(appDataDir, $"{hostName}.json");
-        try
-        {
-            Directory.CreateDirectory(appDataDir);
-            File.WriteAllText(appDataManifestPath, manifestJson);
-        }
-        catch { }
-
-        string targetManifestPath = File.Exists(appDataManifestPath) ? appDataManifestPath : localManifestPath;
-
-        // Register in HKCU for Chrome and Edge
-        string[] keyPaths = new[]
-        {
-            $@"Software\Google\Chrome\NativeMessagingHosts\{hostName}",
-            $@"Software\Microsoft\Edge\NativeMessagingHosts\{hostName}"
-        };
-
-        foreach (var keyPath in keyPaths)
-        {
-            try
-            {
-                using var key = Registry.CurrentUser.CreateSubKey(keyPath, writable: true);
-                key.SetValue("", targetManifestPath, RegistryValueKind.String);
-                key.SetValue("(Default)", targetManifestPath, RegistryValueKind.String);
-                key.SetValue("(default)", targetManifestPath, RegistryValueKind.String);
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"[NativeHost] Warning: failed to write to registry key {keyPath}: {ex.Message}");
-            }
-        }
-
-        Console.WriteLine($"[NativeHost] Successfully registered {hostName} -> {targetManifestPath}");
-        RunDiagnostics();
     }
 
     private static void RunDiagnostics()

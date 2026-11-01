@@ -88,6 +88,32 @@ async function checkBridgeStatus(): Promise<void> {
   }
 }
 
+
+let activeAuthToken: string = "";
+
+async function getAuthToken(): Promise<string> {
+  if (activeAuthToken) return activeAuthToken;
+  try {
+    if (chrome?.storage?.local) {
+      const stored = await chrome.storage.local.get("sahaayAuthToken");
+      if (stored && stored.sahaayAuthToken) {
+        activeAuthToken = stored.sahaayAuthToken;
+        return activeAuthToken;
+      }
+    }
+  } catch {}
+  return "";
+}
+
+async function getAuthHeaders(extra: Record<string, string> = {}): Promise<Record<string, string>> {
+  const token = await getAuthToken();
+  const headers: Record<string, string> = { ...extra };
+  if (token) {
+    headers["X-Sahaay-Token"] = token;
+  }
+  return headers;
+}
+
 async function safeFetch(url: string, options: RequestInit = {}, timeoutMs: number = 3000): Promise<Response> {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
@@ -103,9 +129,10 @@ async function safeFetch(url: string, options: RequestInit = {}, timeoutMs: numb
 
 async function checkBackendHealth(): Promise<boolean> {
   try {
+    const headers = await getAuthHeaders();
     const res = await safeFetch(`${API_BASE}/health`, {
       method: "GET",
-      headers: { "X-Sahaay-Token": "dev-local-sahaay-token" },
+      headers,
     }, 2000);
     if (res.ok) {
       isBackendConnected = true;
@@ -138,12 +165,11 @@ async function ensureSession(): Promise<string> {
 
   // Create session on canonical backend
   try {
+    const headers = await getAuthHeaders({ "Content-Type": "application/json" });
     const res = await safeFetch(`${API_BASE}/sessions`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Sahaay-Token": "dev-local-sahaay-token",
-      },
+      headers,
+
       body: JSON.stringify({
         userId: "local-user",
         privacyTier: "LOCAL_ONLY",
@@ -266,12 +292,11 @@ async function handleSummarizeAndSendToNotepad(): Promise<void> {
       browserObservationExcerpt: currentTabContext.visibleTextExcerpt || currentTabContext.title || "Active Web Page",
     };
 
+    const headers = await getAuthHeaders({ "Content-Type": "application/json" });
     const res = await safeFetch(`${API_BASE}/workflows/browser-to-desktop`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Sahaay-Token": "dev-local-sahaay-token",
-      },
+      headers,
+
       body: JSON.stringify(payload),
     }, 12000);
 
@@ -353,12 +378,11 @@ async function handleGeneralPrompt(promptText: string): Promise<void> {
       context: `Current active browser tab title: "${currentTabContext.title}", URL: "${currentTabContext.url}". Excerpt: "${(currentTabContext.visibleTextExcerpt || "").slice(0, 300)}"`,
     };
 
+    const headers = await getAuthHeaders({ "Content-Type": "application/json" });
     const res = await safeFetch(`${API_BASE}/workflows/execute-goal`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Sahaay-Token": "dev-local-sahaay-token",
-      },
+      headers,
+
       body: JSON.stringify(payload),
     }, 15000);
 
@@ -385,8 +409,9 @@ async function handleGeneralPrompt(promptText: string): Promise<void> {
           attempts++;
 
           try {
+            const pHeaders = await getAuthHeaders();
             const pollRes = await safeFetch(`${API_BASE}/tasks/${taskId}`, {
-              headers: { "X-Sahaay-Token": "dev-local-sahaay-token" },
+              headers: pHeaders,
             }, 2500);
 
             if (pollRes.ok) {
@@ -398,8 +423,9 @@ async function handleGeneralPrompt(promptText: string): Promise<void> {
                 if (cardBody) {
                   let summary = tData.summary;
                   try {
+                    const passHeaders = await getAuthHeaders();
                     const pRes = await safeFetch(`${API_BASE}/tasks/${taskId}/passport`, {
-                      headers: { "X-Sahaay-Token": "dev-local-sahaay-token" },
+                      headers: passHeaders,
                     }, 2000);
                     if (pRes.ok) {
                       const pData = await pRes.json();

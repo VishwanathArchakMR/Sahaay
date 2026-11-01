@@ -123,6 +123,11 @@ function handleNativeMessage(msg: any) {
       clearTimeout(handshakeTimeoutTimer);
       handshakeTimeoutTimer = null;
     }
+    const authToken = msg.data?.authToken;
+    if (authToken && chrome?.storage?.local) {
+      chrome.storage.local.set({ sahaayAuthToken: authToken });
+      console.log("[Sahaay ServiceWorker] Paired with local Sahaay backend using secure auth token.");
+    }
     console.log("[Sahaay ServiceWorker] Handshake verified. Native Host CONNECTED:", msg.data);
     return;
   }

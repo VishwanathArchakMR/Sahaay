@@ -52,6 +52,10 @@ app = FastAPI(
 
 # CORS: strictly allow loopback desktop & installed Sahaay extension origins
 EXPLICIT_EXTENSION_ORIGINS = [
+    "chrome-extension://fnlhiookeiehboleaohdmpigdiodheda",
+    "extension://fnlhiookeiehboleaohdmpigdiodheda",
+    "chrome-extension://fnlihookeiehboleaohdmpigdiodheda",
+    "extension://fnlihookeiehboleaohdmpigdiodheda",
     "chrome-extension://filgbgddapmjcddcoadfpimdicmkhpolc",
     "extension://filgbgddapmjcddcoadfpimdicmkhpolc",
     "chrome-extension://nokchmadkhaghgooijgkgpheoieaibdp",

@@ -90,6 +90,11 @@ def register_or_update_passport(
 
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
+    is_retrieval_only = (
+        workflow_mode in ("system_introspection", "retrieval_grounding", "ask")
+        or direction in ("Local System Introspection", "Local Document Extraction")
+    )
+
     # 1. Source Milestone
     m1 = MilestoneCard(
         milestone_id=f"ms-{task_id}-1",
@@ -99,7 +104,7 @@ def register_or_update_passport(
         status="VERIFIED",
         direction=direction,
         source_reference=source_ref,
-        evidence_id=f"{evidence_id}-src",
+        evidence_id=f"{evidence_id}-src" if evidence_id else None,
         svg_fallback=muse_image._generate_vector_svg("source_ingest", direction),
         is_ai_generated=False,
         ai_label="Vector Illustration",
@@ -107,73 +112,108 @@ def register_or_update_passport(
         technical_details={"source": source_ref, "extracted_keys": list(extracted_fields.keys())},
     )
 
-    # 2. Plan Milestone
-    m2 = MilestoneCard(
-        milestone_id=f"ms-{task_id}-2",
-        milestone_type="plan_prepared",
-        title="Structured Plan Formulated",
-        description="Muse Spark Open generated a typed sequential plan with deterministic Action Gate boundaries.",
-        status="EXECUTED",
-        direction=direction,
-        source_reference=source_ref,
-        evidence_id=f"{evidence_id}-plan",
-        svg_fallback=muse_image._generate_vector_svg("plan_prepared", direction),
-        is_ai_generated=False,
-        ai_label="Vector Illustration",
-        timestamp=now,
-        technical_details={"workflow": workflow_mode, "planned_steps": 4},
-    )
+    if is_retrieval_only:
+        # For retrieval-only workflows, reflect truthful 3-milestone progress (no fabricated Action Gate or cross-surface execution)
+        m2 = MilestoneCard(
+            milestone_id=f"ms-{task_id}-2",
+            milestone_type="plan_prepared",
+            title="Intent & Query Analysis",
+            description="Grounded query analyzed against authoritative runtime schema.",
+            status="EXECUTED",
+            direction=direction,
+            source_reference=source_ref,
+            evidence_id=f"{evidence_id}-plan" if evidence_id else None,
+            svg_fallback=muse_image._generate_vector_svg("plan_prepared", direction),
+            is_ai_generated=False,
+            ai_label="Vector Illustration",
+            timestamp=now,
+            technical_details={"workflow": workflow_mode, "planned_steps": 2},
+        )
+        m3 = MilestoneCard(
+            milestone_id=f"ms-{task_id}-3",
+            milestone_type="verified",
+            title="Verified Grounded Retrieval",
+            description=f"Retrieved authoritative facts from {target_app_or_url}. Model self-attestation rejected.",
+            status=verification_status,
+            direction=direction,
+            source_reference=source_ref,
+            evidence_id=evidence_id,
+            svg_fallback=muse_image._generate_vector_svg("verified", direction),
+            is_ai_generated=False,
+            ai_label="Vector Illustration",
+            timestamp=now,
+            technical_details={"verification_status": verification_status, "evidence_id": evidence_id},
+        )
+        milestones = [m1, m2, m3]
+    else:
+        # 2. Plan Milestone
+        m2 = MilestoneCard(
+            milestone_id=f"ms-{task_id}-2",
+            milestone_type="plan_prepared",
+            title="Structured Plan Formulated",
+            description="Muse Spark Open generated a typed sequential plan with deterministic Action Gate boundaries.",
+            status="EXECUTED",
+            direction=direction,
+            source_reference=source_ref,
+            evidence_id=f"{evidence_id}-plan" if evidence_id else None,
+            svg_fallback=muse_image._generate_vector_svg("plan_prepared", direction),
+            is_ai_generated=False,
+            ai_label="Vector Illustration",
+            timestamp=now,
+            technical_details={"workflow": workflow_mode, "planned_steps": 4},
+        )
 
-    # 3. Policy Authorization Milestone
-    m3 = MilestoneCard(
-        milestone_id=f"ms-{task_id}-3",
-        milestone_type="policy_authorized",
-        title="Action Gate Authorized",
-        description=f"Action Gate evaluated consent grant and verified target scope '{target_app_or_url}'.",
-        status="AUTHORIZED",
-        direction=direction,
-        source_reference=source_ref,
-        evidence_id=f"{evidence_id}-auth",
-        svg_fallback=muse_image._generate_vector_svg("policy_authorized", direction),
-        is_ai_generated=False,
-        ai_label="Vector Illustration",
-        timestamp=now,
-        technical_details={"policy_decision": "ALLOW", "scope": target_app_or_url},
-    )
+        # 3. Policy Authorization Milestone
+        m3 = MilestoneCard(
+            milestone_id=f"ms-{task_id}-3",
+            milestone_type="policy_authorized",
+            title="Action Gate Authorized",
+            description=f"Action Gate evaluated consent grant and verified target scope '{target_app_or_url}'.",
+            status="AUTHORIZED",
+            direction=direction,
+            source_reference=source_ref,
+            evidence_id=f"{evidence_id}-auth" if evidence_id else None,
+            svg_fallback=muse_image._generate_vector_svg("policy_authorized", direction),
+            is_ai_generated=False,
+            ai_label="Vector Illustration",
+            timestamp=now,
+            technical_details={"policy_decision": "ALLOW", "scope": target_app_or_url},
+        )
 
-    # 4. Action Execution Milestone
-    m4 = MilestoneCard(
-        milestone_id=f"ms-{task_id}-4",
-        milestone_type="action_executed",
-        title=f"Cross-Surface Transfer: {direction}",
-        description=f"Dispatched fields to target '{target_app_or_url}'. General shell execution permanently blocked.",
-        status="EXECUTED",
-        direction=direction,
-        source_reference=source_ref,
-        evidence_id=f"{evidence_id}-exec",
-        svg_fallback=muse_image._generate_vector_svg("action_executed", direction),
-        is_ai_generated=False,
-        ai_label="Vector Illustration",
-        timestamp=now,
-        technical_details={"target": target_app_or_url, "fields_transferred": extracted_fields},
-    )
+        # 4. Action Execution Milestone
+        m4 = MilestoneCard(
+            milestone_id=f"ms-{task_id}-4",
+            milestone_type="action_executed",
+            title=f"Cross-Surface Transfer: {direction}",
+            description=f"Dispatched fields to target '{target_app_or_url}'. General shell execution permanently blocked.",
+            status="EXECUTED",
+            direction=direction,
+            source_reference=source_ref,
+            evidence_id=f"{evidence_id}-exec" if evidence_id else None,
+            svg_fallback=muse_image._generate_vector_svg("action_executed", direction),
+            is_ai_generated=False,
+            ai_label="Vector Illustration",
+            timestamp=now,
+            technical_details={"target": target_app_or_url, "fields_transferred": extracted_fields},
+        )
 
-    # 5. Verification Milestone
-    m5 = MilestoneCard(
-        milestone_id=f"ms-{task_id}-5",
-        milestone_type="verified",
-        title="Independent Postcondition Check",
-        description="Independent verifier read back live state from target and verified values match. Model self-attestation rejected.",
-        status=verification_status,
-        direction=direction,
-        source_reference=source_ref,
-        evidence_id=evidence_id,
-        svg_fallback=muse_image._generate_vector_svg("verified", direction),
-        is_ai_generated=False,
-        ai_label="Vector Illustration",
-        timestamp=now,
-        technical_details={"verification_status": verification_status, "evidence_id": evidence_id},
-    )
+        # 5. Verification Milestone
+        m5 = MilestoneCard(
+            milestone_id=f"ms-{task_id}-5",
+            milestone_type="verified",
+            title="Independent Postcondition Check",
+            description="Independent verifier read back live state from target and verified values match. Model self-attestation rejected.",
+            status=verification_status,
+            direction=direction,
+            source_reference=source_ref,
+            evidence_id=evidence_id,
+            svg_fallback=muse_image._generate_vector_svg("verified", direction),
+            is_ai_generated=False,
+            ai_label="Vector Illustration",
+            timestamp=now,
+            technical_details={"verification_status": verification_status, "evidence_id": evidence_id},
+        )
+        milestones = [m1, m2, m3, m4, m5]
 
     passport = TaskPassportResponse(
         task_id=task_id,
@@ -181,8 +221,8 @@ def register_or_update_passport(
         workflow_mode=workflow_mode,
         source_to_target=direction,
         verification_status=verification_status,
-        total_milestones=5,
-        milestones=[m1, m2, m3, m4, m5],
+        total_milestones=len(milestones),
+        milestones=milestones,
         summary_notice="Illustrations are generated as visual metaphors. Exact labels, statuses, and evidence IDs are rendered independently from verified SQLite records.",
         visual_storytelling_enabled=settings.enable_visual_storytelling,
         summary=summary,

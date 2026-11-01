@@ -226,8 +226,26 @@ class Settings(BaseSettings):
         self.sync_database_path.parent.mkdir(parents=True, exist_ok=True)
 
         if not self.api_token:
-            # Generate unguessable 32-byte hex token for this launch
-            self.api_token = secrets.token_hex(32)
+            try:
+                local_app = Path(os.environ.get("LOCALAPPDATA", "C:/temp")) / "Sahaay"
+                token_file = local_app / "auth.token"
+                if token_file.exists():
+                    existing = token_file.read_text(encoding="utf-8").strip()
+                    if existing:
+                        self.api_token = existing
+            except Exception:
+                pass
+            if not self.api_token:
+                # Generate unguessable 32-byte hex token for this launch
+                self.api_token = secrets.token_hex(32)
+
+        # Persist pairing token to local user AppData so NativeHost and desktop clients can securely pair
+        try:
+            local_app = Path(os.environ.get("LOCALAPPDATA", "C:/temp")) / "Sahaay"
+            local_app.mkdir(parents=True, exist_ok=True)
+            (local_app / "auth.token").write_text(self.api_token, encoding="utf-8")
+        except Exception:
+            pass
         if not self.model_api_key:
             self.model_api_key = os.environ.get(
                 "MODEL_API_KEY", os.environ.get("META_LLAMA_API_KEY", "")
