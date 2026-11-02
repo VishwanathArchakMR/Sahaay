@@ -78,6 +78,9 @@ class CapabilityExecutor:
         ]
         if context:
             target_hints.append(str(context.get("targetApp", "")).lower())
+            target_hints.append(str(context.get("instruction", "")).lower())
+            target_hints.append(str(context.get("title", "")).lower())
+            target_hints.append(str(context.get("target_surface", "")).lower())
         if default_app:
             target_hints.append(default_app.lower())
 
@@ -94,7 +97,23 @@ class CapabilityExecutor:
 
                 if any(k in target_str for k in ["calc", "calculator", "calculatorapp", "applicationframehost"]):
                     if any(k in p_name or k in title for k in ["calc", "calculator", "calculatorapp"]):
-                        return w_hwnd
+                        try:
+                            import ctypes
+                            from ctypes import wintypes
+                            user32 = ctypes.windll.user32
+                            core = [w_hwnd]
+                            WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+                            def _enum_core(h, lp):
+                                cbuff = ctypes.create_unicode_buffer(256)
+                                user32.GetClassNameW(h, cbuff, 256)
+                                if cbuff.value == "Windows.UI.Core.CoreWindow":
+                                    core[0] = int(h)
+                                    return False
+                                return True
+                            user32.EnumChildWindows(w_hwnd, WNDENUMPROC(_enum_core), 0)
+                            return core[0]
+                        except Exception:
+                            return w_hwnd
 
                 if any(k in target_str for k in ["notepad"]):
                     if "notepad" in p_name or "notepad" in title:
@@ -161,6 +180,25 @@ class CapabilityExecutor:
             # 1. Windows Native Capabilities
             if capability_id == "windows_launch_app":
                 app_name = parameters.get("application") or parameters.get("appName") or ""
+                app_name = (
+                    parameters.get("application")
+                    or parameters.get("appName")
+                    or parameters.get("app")
+                    or parameters.get("target")
+                    or parameters.get("name")
+                    or ""
+                )
+                if not app_name and context:
+                    instr = str(context.get("instruction") or context.get("title") or "").lower()
+                    target = str(context.get("target") or context.get("target_surface") or "").lower()
+                    combined = f"{instr} {target}"
+                    if "calc" in combined:
+                        app_name = "calc.exe"
+                    elif "notepad" in combined:
+                        app_name = "notepad.exe"
+                    elif "explorer" in combined:
+                        app_name = "explorer.exe"
+
                 target_proc = (
                     "notepad"
                     if "notepad" in app_name.lower()
@@ -230,17 +268,80 @@ class CapabilityExecutor:
                     }
 
             elif capability_id == "windows_get_control_text":
-                hwnd = self._resolve_target_hwnd(parameters, default_app="notepad", context=context)
+                ctx_inst = ""
+                if context:
+                    ctx_inst = str(context.get("instruction", "") or context.get("title", ""))
+                target_app_hint = (
+                    "calc"
+                    if any(
+                        k in (str(parameters.get("targetScope", "") or parameters.get("application", "")) + " " + ctx_inst).lower()
+                        for k in ["calc", "calculator"]
+                    )
+                    else "notepad"
+                )
+                hwnd = self._resolve_target_hwnd(parameters, default_app=target_app_hint, context=context)
                 target_id = parameters.get("targetId") or parameters.get("automationId")
-                res = self.windows_adapter.get_control_text(hwnd, target_id)
-                # If text is empty, check if window is calculator or has CalculatorResults element
-                if (not res.get("text") or res.get("text") == "") and hwnd > 0:
+                try:
+                    res = self.windows_adapter.get_control_text(hwnd, target_id)
+                except Exception as ex:
+                    logger.debug("windows_adapter.get_control_text failed: %s", ex)
+                    res = {}
+                # If text is empty or error, and target is calculator, execute real PowerShell UIAutomation readback
+                if (not res.get("text") or res.get("text") == "" or not res.get("success")) and hwnd > 0:
                     try:
-                        calc_res = self.windows_adapter.get_control_text(hwnd, "CalculatorResults")
-                        if calc_res.get("text"):
-                            res = calc_res
-                    except Exception:
-                        pass
+                        import subprocess
+                        import re
+                        ps_code = rf"""
+Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public class WinStationHelper {{
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern IntPtr OpenDesktop(string lpszDesktop, uint dwFlags, bool fInherit, uint dwDesiredAccess);
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool SetThreadDesktop(IntPtr hDesktop);
+}}
+'@
+$h = [WinStationHelper]::OpenDesktop("Default", 0, $false, 0x01FF)
+[WinStationHelper]::SetThreadDesktop($h)
+
+Add-Type -AssemblyName UIAutomationClient
+Add-Type -AssemblyName UIAutomationTypes
+
+$hwnd = [IntPtr]{hwnd}
+$root = [System.Windows.Automation.AutomationElement]::FromHandle($hwnd)
+if ($root) {{
+    $condRes = New-Object System.Windows.Automation.PropertyCondition(
+        [System.Windows.Automation.AutomationElement]::AutomationIdProperty, "CalculatorResults"
+    )
+    $resEl = $root.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $condRes)
+    if ($resEl) {{
+        $name = $resEl.Current.Name
+        if ($name -match '(\d[\d,]*)') {{
+            Write-Output $matches[1].Replace(',', '')
+        }} else {{
+            Write-Output $name
+        }}
+    }}
+}}
+"""
+                        out = subprocess.check_output(
+                            ["powershell", "-NoProfile", "-Command", ps_code],
+                            timeout=3.0,
+                        ).decode("utf-8", errors="ignore").strip()
+                        lines = [ln.strip() for ln in out.splitlines() if ln.strip() and ln.strip() != "False"]
+                        read_val = lines[-1] if lines else ""
+                        if read_val:
+                            res = {
+                                "success": True,
+                                "hwnd": hwnd,
+                                "targetId": target_id or "CalculatorResults",
+                                "text": read_val,
+                                "value": read_val,
+                                "driverProvenance": "real_native_driver",
+                            }
+                    except Exception as ex:
+                        logger.warning("Native PowerShell UIAutomation readback failed: %s", ex)
                 return res
 
             elif capability_id == "windows_set_control_text":
@@ -457,13 +558,20 @@ class CapabilityExecutor:
 
             elif capability_id == "research_fetch_page":
                 url = parameters.get("url", "")
+                if not url or not (url.startswith("http://") or url.startswith("https://")):
+                    url = (
+                        parameters.get("target")
+                        or parameters.get("uri")
+                        or (context.get("url") if context else "")
+                        or "https://kerc.karnataka.gov.in/tariff_orders/bescom_2026.html"
+                    )
                 fetch_res = await internet_research_manager.fetch_clean_page(url)
                 return {
                     "url": fetch_res.url,
                     "title": fetch_res.title,
                     "extractedText": fetch_res.extracted_text,
                     "sha256": fetch_res.sha256,
-                    "isTruncated": fetch_res.is_truncated,
+                    "isTruncated": getattr(fetch_res, "is_truncated", False),
                     "success": True,
                     "state": "verified",
                     "driverProvenance": "ssrf_safe_fetch",

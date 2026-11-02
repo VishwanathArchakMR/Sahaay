@@ -38,6 +38,29 @@ class VoiceTranscriptionResult(BaseModel):
     error: Optional[str] = None
 
 
+def detect_audio_format(
+    audio_bytes: bytes, declared_content_type: Optional[str] = None
+) -> tuple[str, str, str]:
+    """Detect audio encoding, filename, and mime type from magic bytes or declared content-type.
+
+    Returns (encoding, filename, mime_type).
+    """
+    # WebM / Matroska magic bytes (0x1A 0x45 0xDF 0xA3)
+    if len(audio_bytes) >= 4 and audio_bytes[:4] == b"\x1a\x45\xdf\xa3":
+        return ("WEBM_OPUS", "recording.webm", "audio/webm")
+    # RIFF WAV magic bytes
+    if len(audio_bytes) >= 12 and audio_bytes[:4] == b"RIFF" and audio_bytes[8:12] == b"WAVE":
+        return ("WAV", "recording.wav", "audio/wav")
+    # Ogg magic bytes
+    if len(audio_bytes) >= 4 and audio_bytes[:4] == b"OggS":
+        return ("OGG_OPUS", "recording.ogg", "audio/ogg")
+
+    declared = (declared_content_type or "").lower()
+    if "webm" in declared:
+        return ("WEBM_OPUS", "recording.webm", "audio/webm")
+    return ("WAV", "recording.wav", "audio/wav")
+
+
 class MuseVoiceClient:
     """Client for Muse Voice Transcribe speech-to-text pipeline."""
 
@@ -117,6 +140,7 @@ class MuseVoiceClient:
             encoding = "WEBM_OPUS" if is_webm else "WAV"
             file_name = "recording.webm" if is_webm else "recording.wav"
             mime = "audio/webm" if is_webm else "audio/wav"
+            encoding, file_name, mime = detect_audio_format(audio_bytes, content_type)
 
             req_data = {
                 "model": self.model_id,

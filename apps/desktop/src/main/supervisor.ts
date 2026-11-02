@@ -15,10 +15,10 @@
  */
 
 import { ChildProcess, spawn } from "child_process";
-import { appendFileSync, existsSync, mkdirSync } from "fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "fs";
 import * as http from "http";
 import * as net from "net";
-import { join, resolve } from "path";
+import { dirname, join, resolve } from "path";
 
 export interface ComponentHealth {
   name: string;
@@ -102,6 +102,23 @@ export class RuntimeSupervisor {
 
     console.log(`[Supervisor] Spawning Core Backend using ${pythonExe}...`);
 
+    let modelApiKey = process.env.MODEL_API_KEY || "";
+    if (!modelApiKey) {
+      const rootEnv = join(this.repoRoot, ".env");
+      if (existsSync(rootEnv)) {
+        try {
+          const lines = readFileSync(rootEnv, "utf-8").split("\n");
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith("MODEL_API_KEY=")) {
+              modelApiKey = trimmed.substring("MODEL_API_KEY=".length).trim();
+              break;
+            }
+          }
+        } catch {}
+      }
+    }
+
     try {
       this.backendProcess = spawn(
         pythonExe,
@@ -111,6 +128,8 @@ export class RuntimeSupervisor {
           windowsHide: true,
           env: {
             ...process.env,
+            MODEL_API_KEY: modelApiKey,
+            SAHAAY_MODEL_API_KEY: modelApiKey,
             PYTHONPATH: join(this.repoRoot, "core", "src"),
           },
         }
@@ -215,7 +234,7 @@ export class RuntimeSupervisor {
 
     try {
       this.controllerProcess = spawn(controllerExe, [], {
-        cwd: join(this.repoRoot, "apps", "windows-companion", "Sahaay.Controller"),
+        cwd: dirname(controllerExe),
         windowsHide: true,
         env: controllerEnv,
       });

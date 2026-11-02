@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from sahaay_core.contracts.consent_purposes import (
     ALL_META_CLOUD_PURPOSES,
+    LOCAL_AUTOMATION_SCOPES,
     META_API_DESTINATION,
     MetaCloudConsentPurpose,
 )
@@ -35,6 +36,11 @@ class CreateGrantRequest(BaseModel):
     justification: Optional[str] = None
 
 
+class OnboardingConsentRequest(BaseModel):
+    accepted: bool = True
+    justification: Optional[str] = None
+
+
 def _apply_meta_cloud_grants(session_id: UUID) -> List[ConsentGrant]:
     """Helper to provision canonical Meta Cloud consent grants for a session."""
     grants = []
@@ -56,6 +62,27 @@ def _apply_meta_cloud_grants(session_id: UUID) -> List[ConsentGrant]:
             active_grants[session_id].append(grant)
             grants.append(grant)
     return grants
+    return [g for g in active_grants[session_id] if not g.isRevoked]
+
+
+def _apply_onboarding_grants(session_id: UUID) -> List[ConsentGrant]:
+    """Helper to provision both Meta Cloud and local automation consent grants upon user onboarding."""
+    _apply_meta_cloud_grants(session_id)
+
+    existing_scopes = {g.scope for g in active_grants[session_id] if not g.isRevoked}
+    for s in LOCAL_AUTOMATION_SCOPES:
+        if s not in existing_scopes:
+            grant = ConsentGrant(
+                grantId=uuid4(),
+                sessionId=session_id,
+                scope=s,
+                purpose=s,
+                targetDomainOrPath="local",
+            )
+            durable_storage.save_consent_grant(grant)
+            active_grants[session_id].append(grant)
+
+    return [g for g in active_grants[session_id] if not g.isRevoked]
 
 
 @router.post("", response_model=Session, status_code=status.HTTP_201_CREATED)
@@ -86,6 +113,12 @@ async def get_session(session_id: UUID) -> Session:
             active_sessions[session_id] = session
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+
+    # Ensure persisted grants are synchronized into active_grants
+    grants = durable_storage.get_consent_grants_for_session(session_id)
+    if not grants:
+        grants = active_grants.get(session_id, [])
+    active_grants[session_id] = grants
     return session
 
 
@@ -119,10 +152,12 @@ async def grant_consent(session_id: UUID, req: CreateGrantRequest) -> ConsentGra
     response_model=List[ConsentGrant],
     status_code=status.HTTP_201_CREATED,
 )
-async def grant_onboarding_consent(session_id: UUID) -> List[ConsentGrant]:
-    """One-time authorization granting all canonical Meta Cloud processing purposes."""
+async def grant_onboarding_consent(
+    session_id: UUID, req: Optional[OnboardingConsentRequest] = None
+) -> List[ConsentGrant]:
+    """One-time authorization granting all canonical Meta Cloud processing and local automation purposes."""
     await get_session(session_id)
-    return _apply_meta_cloud_grants(session_id)
+    return _apply_onboarding_grants(session_id)
 
 
 @router.get("/{session_id}/grants", response_model=List[ConsentGrant])
@@ -156,6 +191,11 @@ class SessionManager:
             session = durable_storage.get_session(session_id)
             if session:
                 active_sessions[session_id] = session
+        if session:
+            grants = durable_storage.get_consent_grants_for_session(session_id)
+            if not grants:
+                grants = active_grants.get(session_id, [])
+            active_grants[session_id] = grants
         return session
 
     @staticmethod

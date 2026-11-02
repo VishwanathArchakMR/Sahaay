@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using System.Windows.Automation;
 using Sahaay.Contracts;
 
@@ -195,9 +196,13 @@ public static class UiAutomationInspector
             if (target == null)
             {
                 target = root.FindFirst(TreeScope.Descendants,
+                    new PropertyCondition(AutomationElement.AutomationIdProperty, "CalculatorResults"))
+                    ?? root.FindFirst(TreeScope.Descendants,
                     new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Edit))
                     ?? root.FindFirst(TreeScope.Descendants,
-                    new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Document));
+                    new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Document))
+                    ?? root.FindFirst(TreeScope.Descendants,
+                    new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Text));
             }
 
             if (target == null)
@@ -235,7 +240,12 @@ public static class UiAutomationInspector
                 }
             }
 
-            return (true, target.Current.Name ?? string.Empty, null);
+            string text = target.Current.Name ?? string.Empty;
+            if (text.StartsWith("Display is ", StringComparison.OrdinalIgnoreCase))
+            {
+                text = text.Substring("Display is ".Length).Trim().Replace(",", "");
+            }
+            return (true, text, null);
         }
         catch (Exception ex)
         {
@@ -252,6 +262,75 @@ public static class UiAutomationInspector
             if (root == null)
             {
                 return (false, targetIdentifier ?? string.Empty, $"Window HWND {hwnd} not found.");
+            }
+
+            // Check if this is a Calculator multi-step expression like "125 multiplied by 48" or "125 * 48"
+            if (!string.IsNullOrWhiteSpace(targetIdentifier) &&
+                (targetIdentifier.Contains("multiplied by") || targetIdentifier.Contains("*") || targetIdentifier.Contains("+") || targetIdentifier.Contains("-") || targetIdentifier.Contains("/")))
+            {
+                string expr = targetIdentifier.ToLowerInvariant()
+                    .Replace("multiplied by", "*")
+                    .Replace("multiply by", "*")
+                    .Replace("times", "*")
+                    .Replace("x", "*")
+                    .Replace("plus", "+")
+                    .Replace("minus", "-")
+                    .Replace("divided by", "/")
+                    .Replace("divide by", "/")
+                    .Replace("equals", "=")
+                    .Replace("equal", "=");
+
+                var buttonMap = new Dictionary<char, string>
+                {
+                    { '0', "num0Button" },
+                    { '1', "num1Button" },
+                    { '2', "num2Button" },
+                    { '3', "num3Button" },
+                    { '4', "num4Button" },
+                    { '5', "num5Button" },
+                    { '6', "num6Button" },
+                    { '7', "num7Button" },
+                    { '8', "num8Button" },
+                    { '9', "num9Button" },
+                    { '*', "multiplyButton" },
+                    { '+', "plusButton" },
+                    { '-', "minusButton" },
+                    { '/', "divideButton" },
+                    { '=', "equalButton" },
+                };
+
+                bool anyClicked = false;
+                foreach (char c in expr)
+                {
+                    if (buttonMap.TryGetValue(c, out string? btnId))
+                    {
+                        var btn = root.FindFirst(TreeScope.Descendants,
+                            new PropertyCondition(AutomationElement.AutomationIdProperty, btnId));
+                        if (btn != null && btn.TryGetCurrentPattern(InvokePattern.Pattern, out object? inv) && inv is InvokePattern ip)
+                        {
+                            ip.Invoke();
+                            anyClicked = true;
+                            Thread.Sleep(60);
+                        }
+                    }
+                }
+
+                if (!expr.Contains("="))
+                {
+                    var eqBtn = root.FindFirst(TreeScope.Descendants,
+                        new PropertyCondition(AutomationElement.AutomationIdProperty, "equalButton"));
+                    if (eqBtn != null && eqBtn.TryGetCurrentPattern(InvokePattern.Pattern, out object? inv) && inv is InvokePattern ip)
+                    {
+                        ip.Invoke();
+                        anyClicked = true;
+                        Thread.Sleep(60);
+                    }
+                }
+
+                if (anyClicked)
+                {
+                    return (true, targetIdentifier, null);
+                }
             }
 
             AutomationElement? target = null;

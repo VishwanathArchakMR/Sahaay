@@ -179,7 +179,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="SAHAAY_",
-        env_file=".env",
+        env_file=[str(REPO_ROOT / ".env"), ".env"],
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -264,6 +264,20 @@ class Settings(BaseSettings):
             (local_app / "auth.token").write_text(self.pairing_token, encoding="utf-8")
         except Exception:
             pass
+        if not self.model_api_key:
+            env_file = REPO_ROOT / ".env"
+            if env_file.exists():
+                try:
+                    for line in env_file.read_text(encoding="utf-8").splitlines():
+                        line = line.strip()
+                        if line.startswith("#") or "=" not in line:
+                            continue
+                        k, v = line.split("=", 1)
+                        if k.strip() in ("MODEL_API_KEY", "SAHAAY_MODEL_API_KEY", "META_LLAMA_API_KEY"):
+                            self.model_api_key = v.strip()
+                            break
+                except Exception:
+                    pass
         if not self.model_api_key:
             self.model_api_key = os.environ.get(
                 "MODEL_API_KEY", os.environ.get("META_LLAMA_API_KEY", "")

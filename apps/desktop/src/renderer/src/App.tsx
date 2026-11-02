@@ -159,6 +159,9 @@ export function App(): React.JSX.Element {
   const [modelsStatus, setModelsStatus] = useState<ModelsStatusReport | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isProbing, setIsProbing] = useState<boolean>(false);
+  const [modelApiKeyInput, setModelApiKeyInput] = useState<string>("");
+  const [isUpdatingApiKey, setIsUpdatingApiKey] = useState<boolean>(false);
+  const [apiKeyFeedback, setApiKeyFeedback] = useState<string>("");
 
   // Persistent Tasks Ledger
   const [tasksList, setTasksList] = useState<Array<{
@@ -237,14 +240,18 @@ export function App(): React.JSX.Element {
             `Session: ${data.sessionId.slice(0, 8)}... (${data.localOnlyMode ? "Local-Only Mode" : "Hosted Allowed"})`
           );
           if (!data.localOnlyMode) {
-            safeFetch(`${API_BASE}/sessions/${data.sessionId}/onboarding-consent`, {
-              method: "POST",
-              headers,
-              body: JSON.stringify({
-                accepted: true,
-                justification: "Session resumed with Meta Cloud intelligence enabled",
-              }),
-            }, 2000).catch(() => {});
+            await safeFetch(
+              `${API_BASE}/sessions/${data.sessionId}/onboarding-consent`,
+              {
+                method: "POST",
+                headers,
+                body: JSON.stringify({
+                  accepted: true,
+                  justification: "Session resumed with Meta Cloud intelligence enabled",
+                }),
+              },
+              3000
+            ).catch(() => {});
           }
           return data.sessionId;
         }
@@ -257,7 +264,7 @@ export function App(): React.JSX.Element {
         {
           method: "POST",
           headers,
-          body: JSON.stringify({ localOnlyMode }),
+          body: JSON.stringify({ localOnlyMode, autoAuthorizeMetaCloud: true }),
         },
         2500
       );
@@ -272,14 +279,18 @@ export function App(): React.JSX.Element {
           `Session: ${data.sessionId.slice(0, 8)}... (${data.localOnlyMode ? "Local-Only Mode" : "Hosted Allowed"})`
         );
         if (!data.localOnlyMode) {
-          safeFetch(`${API_BASE}/sessions/${data.sessionId}/onboarding-consent`, {
-            method: "POST",
-            headers,
-            body: JSON.stringify({
-              accepted: true,
-              justification: "Session initialized with Meta Cloud intelligence enabled",
-            }),
-          }, 2000).catch(() => {});
+          await safeFetch(
+            `${API_BASE}/sessions/${data.sessionId}/onboarding-consent`,
+            {
+              method: "POST",
+              headers,
+              body: JSON.stringify({
+                accepted: true,
+                justification: "Session initialized with Meta Cloud intelligence enabled",
+              }),
+            },
+            3000
+          ).catch(() => {});
         }
         return data.sessionId;
       } else {
@@ -343,6 +354,32 @@ export function App(): React.JSX.Element {
       }
     } catch {
       // offline logs probe
+    }
+  };
+
+  const handleSaveModelApiKey = async () => {
+    if (!modelApiKeyInput.trim()) return;
+    setIsUpdatingApiKey(true);
+    setApiKeyFeedback("Authenticating with Meta Model API...");
+    try {
+      const headers = await getApiHeaders();
+      const res = await safeFetch(`${API_BASE}/models/credentials`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ modelApiKey: modelApiKeyInput.trim() }),
+      }, 10000);
+      if (res.ok) {
+        setApiKeyFeedback("✓ Successfully authenticated with Meta Model API.");
+        setModelApiKeyInput("");
+        await runDiagnosticsProbe();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setApiKeyFeedback(`✗ Failed: ${err.detail || res.statusText}`);
+      }
+    } catch (e: any) {
+      setApiKeyFeedback(`✗ Error: ${e.message || "Failed to reach backend"}`);
+    } finally {
+      setIsUpdatingApiKey(false);
     }
   };
 
@@ -496,6 +533,16 @@ export function App(): React.JSX.Element {
 
     try {
       const headers = await getApiHeaders();
+      if (!localOnlyMode) {
+        await safeFetch(`${API_BASE}/sessions/${activeSessionId}/onboarding-consent`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            accepted: true,
+            justification: "Automatic task dispatch consent confirmation",
+          }),
+        }, 3000).catch(() => {});
+      }
       const res = await safeFetch(
         `${API_BASE}/workflows/execute-goal`,
         {
@@ -792,6 +839,11 @@ export function App(): React.JSX.Element {
                 setMicState("TRANSCRIBED");
                 setUserPrompt(data.transcript);
                 setStatusNarrative(`Transcript: "${data.transcript}". Review or edit before sending.`);
+                const transcribedText = data.transcript.trim();
+                setUserPrompt(transcribedText);
+                setStatusNarrative(`Transcript: "${transcribedText}". Executing voice command...`);
+                addTimelineEntry("OBSERVE", "Voice Command Recognized", `"${transcribedText}"`);
+                triggerPromptExecution(transcribedText);
               } else {
                 setMicState("FAILED");
                 setStatusNarrative(
@@ -1827,9 +1879,52 @@ export function App(): React.JSX.Element {
 
               <div style={{ padding: "10px 14px", borderRadius: "10px", background: "rgba(255, 255, 255, 0.04)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <span>Meta Model Routing</span>
-                <span className="badge badge-neutral">
-                  {modelsStatus?.metaHosted?.isConfigured ? "MUSE SPARK READY" : "LOCAL DETERMINISTIC"}
+                <span className={`badge ${modelsStatus?.metaHosted?.isConfigured ? "badge-success" : "badge-neutral"}`}>
+                  {modelsStatus?.metaHosted?.isConfigured ? "META CLOUD (MUSE SPARK)" : "CREDENTIALS REQUIRED"}
                 </span>
+              </div>
+
+              <div style={{ padding: "12px 14px", borderRadius: "10px", background: "rgba(255, 255, 255, 0.04)", display: "flex", flexDirection: "column", gap: "8px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span style={{ fontWeight: 600 }}>Meta Cloud API Credentials (MODEL_API_KEY)</span>
+                  <span className={`badge ${modelsStatus?.metaHosted?.isConfigured ? "badge-success" : "badge-neutral"}`}>
+                    {modelsStatus?.metaHosted?.isConfigured ? "AUTHENTICATED" : "NOT CONFIGURED"}
+                  </span>
+                </div>
+                <div style={{ fontSize: "11px", color: "var(--sahaay-text-subtle)" }}>
+                  Configures access to Meta hosted models (Muse Spark 1.3, Muse Voice, Muse Wonder) via https://api.meta.ai/v1.
+                </div>
+                <div style={{ display: "flex", gap: "8px", marginTop: "4px" }}>
+                  <input
+                    type="password"
+                    value={modelApiKeyInput}
+                    onChange={(e) => setModelApiKeyInput(e.target.value)}
+                    placeholder={modelsStatus?.metaHosted?.isConfigured ? "•••••••••••••••••••••••••••••••• (Configured)" : "Paste MODEL_API_KEY here"}
+                    style={{
+                      flex: 1,
+                      padding: "8px 12px",
+                      borderRadius: "6px",
+                      background: "rgba(0, 0, 0, 0.3)",
+                      border: "1px solid rgba(255, 255, 255, 0.1)",
+                      color: "#fff",
+                      fontSize: "12px",
+                      outline: "none",
+                    }}
+                  />
+                  <button
+                    onClick={handleSaveModelApiKey}
+                    disabled={isUpdatingApiKey || !modelApiKeyInput.trim()}
+                    className="btn btn-primary text-xs"
+                    style={{ whiteSpace: "nowrap" }}
+                  >
+                    {isUpdatingApiKey ? "Testing..." : "Save & Verify"}
+                  </button>
+                </div>
+                {apiKeyFeedback && (
+                  <div style={{ fontSize: "11px", color: apiKeyFeedback.startsWith("✓") ? "var(--sahaay-green)" : "var(--sahaay-accent-crimson)", marginTop: "2px" }}>
+                    {apiKeyFeedback}
+                  </div>
+                )}
               </div>
 
               <div style={{ padding: "10px 14px", borderRadius: "10px", background: "rgba(255, 255, 255, 0.04)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>

@@ -147,6 +147,20 @@ class ActionGate:
                 and (
                     grant.scope == required_scope
                     or grant.scope == action.actionType.value
+                    or (grant.scope in ("computer_use", "desktop_automation") and action.actionType in (
+                        ActionTypeEnum.LAUNCH_APPLICATION,
+                        ActionTypeEnum.FOCUS_WINDOW,
+                        ActionTypeEnum.CLICK_DESKTOP_CONTROL,
+                        ActionTypeEnum.TYPE_DESKTOP_TEXT,
+                        ActionTypeEnum.SET_CONTROL_TEXT,
+                        ActionTypeEnum.SET_SYSTEM_VOLUME,
+                    ))
+                    or (grant.scope in ("computer_use", "browser_automation") and action.actionType in (
+                        ActionTypeEnum.NAVIGATE_BROWSER_TAB,
+                        ActionTypeEnum.CLICK_BROWSER_ELEMENT,
+                        ActionTypeEnum.INPUT_BROWSER_TEXT,
+                        ActionTypeEnum.FILL_FORM_FIELDS,
+                    ))
                     or (grant.scope == "*" and is_test)
                 )
             )

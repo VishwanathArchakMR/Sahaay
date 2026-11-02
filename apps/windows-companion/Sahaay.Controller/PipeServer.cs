@@ -422,15 +422,32 @@ public class PipeServer
             string detectedTitle = string.Empty;
             string searchProcess = Path.GetFileNameWithoutExtension(exeName);
 
-            var openWindows = WindowDiscovery.GetOpenWindows();
-            foreach (var win in openWindows)
+            // Wait up to 3 seconds for the window to initialize and be discovered
+            for (int retry = 0; retry < 10; retry++)
             {
-                if (win.ProcessName.Equals(searchProcess, StringComparison.OrdinalIgnoreCase))
+                Thread.Sleep(300);
+                var openWindows = WindowDiscovery.GetOpenWindows();
+                foreach (var win in openWindows)
                 {
-                    detectedHwnd = win.Hwnd;
-                    detectedTitle = win.Title;
-                    break;
+                    bool isMatch = win.ProcessName.Equals(searchProcess, StringComparison.OrdinalIgnoreCase) ||
+                                   win.ProcessName.Contains(searchProcess, StringComparison.OrdinalIgnoreCase) ||
+                                   win.Title.Contains(searchProcess, StringComparison.OrdinalIgnoreCase);
+
+                    if (!isMatch && searchProcess.Equals("calc", StringComparison.OrdinalIgnoreCase))
+                    {
+                        isMatch = win.ProcessName.Contains("Calculator", StringComparison.OrdinalIgnoreCase) ||
+                                  win.Title.Contains("Calculator", StringComparison.OrdinalIgnoreCase) ||
+                                  (win.ProcessName.Contains("ApplicationFrameHost", StringComparison.OrdinalIgnoreCase) && win.Title.Contains("Calculator", StringComparison.OrdinalIgnoreCase));
+                    }
+
+                    if (isMatch && win.Hwnd > 0)
+                    {
+                        detectedHwnd = win.Hwnd;
+                        detectedTitle = win.Title;
+                        break;
+                    }
                 }
+                if (detectedHwnd > 0) break;
             }
 
             return new IpcMessageResponse(

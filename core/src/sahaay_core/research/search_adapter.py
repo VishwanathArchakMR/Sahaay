@@ -110,6 +110,7 @@ class InternetResearchManager:
         from sahaay_core.research.safe_fetcher import safe_web_fetcher
 
         return await safe_web_fetcher.fetch_clean_page(url)
+        return await safe_web_fetcher.fetch_page(url)
 
     async def search_and_cite(
         self,

@@ -32,3 +32,20 @@ ALL_META_CLOUD_PURPOSES = [
 # Canonical Meta provider destination endpoint
 META_API_DESTINATION = "https://api.meta.ai/v1"
 
+# Canonical Local Computer-Use and Automation Scopes
+LOCAL_AUTOMATION_SCOPES = [
+    "desktop_automation",
+    "browser_automation",
+    "computer_use",
+    "launch_application",
+    "focus_window",
+    "click_desktop_control",
+    "type_desktop_text",
+    "set_control_text",
+    "navigate_browser_tab",
+    "click_browser_element",
+    "input_browser_text",
+    "fill_form_fields",
+    "set_system_volume",
+]
+

@@ -35,6 +35,15 @@ public static class WindowDiscovery
     [DllImport("user32.dll")]
     private static extern bool IsIconic(IntPtr hWnd);
 
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    private static extern IntPtr OpenDesktop(string lpszDesktop, uint dwFlags, bool fInherit, uint dwDesiredAccess);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool CloseDesktop(IntPtr hDesktop);
+
+    [DllImport("user32.dll")]
+    private static extern bool EnumDesktopWindows(IntPtr hDesktop, EnumWindowsProc lpfn, IntPtr lParam);
+
     [StructLayout(LayoutKind.Sequential)]
     private struct RECT
     {
@@ -56,7 +65,7 @@ public static class WindowDiscovery
     {
         var windows = new List<WindowDescriptor>();
 
-        EnumWindows((hWnd, lParam) =>
+        EnumWindowsProc proc = (hWnd, lParam) =>
         {
             if (!IsWindowVisible(hWnd)) return true;
 
@@ -73,8 +82,8 @@ public static class WindowDiscovery
             string processName = "Unknown";
             try
             {
-                using var proc = Process.GetProcessById((int)processId);
-                processName = proc.ProcessName;
+                using var p = Process.GetProcessById((int)processId);
+                processName = p.ProcessName;
             }
             catch
             {
@@ -102,7 +111,25 @@ public static class WindowDiscovery
             ));
 
             return true;
-        }, IntPtr.Zero);
+        };
+
+        EnumWindows(proc, IntPtr.Zero);
+
+        if (windows.Count == 0)
+        {
+            IntPtr hDefault = OpenDesktop("Default", 0, false, 0x01FF);
+            if (hDefault != IntPtr.Zero)
+            {
+                try
+                {
+                    EnumDesktopWindows(hDefault, proc, IntPtr.Zero);
+                }
+                finally
+                {
+                    CloseDesktop(hDefault);
+                }
+            }
+        }
 
         return windows;
     }

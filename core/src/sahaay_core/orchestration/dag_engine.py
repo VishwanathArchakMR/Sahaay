@@ -208,8 +208,10 @@ class TaskDagEngine:
         nodes: List[TaskDAGNode],
         active_grants: Optional[List[ConsentGrant]] = None,
         is_cancelled_func: Optional[Any] = None,
+        executor: Optional[CapabilityExecutor] = None,
     ) -> DAGExecutionReport:
         """Executes the task DAG with bounded steps, action authorization, and independent verification."""
+        active_executor = executor or self.executor
         active_grants = active_grants or []
         task_id_str = str(task.taskId)
 
@@ -296,11 +298,19 @@ class TaskDagEngine:
                 cap_to_action = {
                     "deterministic_retrieval": ActionTypeEnum.DETERMINISTIC_RETRIEVAL,
                     "windows_launch_app": ActionTypeEnum.LAUNCH_APPLICATION,
+                    "windows_click_control": ActionTypeEnum.CLICK_DESKTOP_CONTROL,
+                    "windows_get_control_text": ActionTypeEnum.GET_CONTROL_TEXT,
                     "windows_set_control_text": ActionTypeEnum.SET_CONTROL_TEXT,
+                    "windows_type_text": ActionTypeEnum.TYPE_DESKTOP_TEXT,
                     "windows_inspect_window": ActionTypeEnum.GET_ACTIVE_WINDOW,
+                    "windows_set_volume": ActionTypeEnum.SET_SYSTEM_VOLUME,
+                    "windows_get_volume": ActionTypeEnum.GET_SYSTEM_VOLUME,
                     "browser_tab_observe": ActionTypeEnum.GET_TAB_CONTENT,
                     "browser_scroll": ActionTypeEnum.SCROLL_BROWSER_TAB,
                     "browser_form_fill": ActionTypeEnum.FILL_FORM_FIELDS,
+                    "browser_click_element": ActionTypeEnum.CLICK_BROWSER_ELEMENT,
+                    "browser_input_text": ActionTypeEnum.INPUT_BROWSER_TEXT,
+                    "browser_navigate": ActionTypeEnum.NAVIGATE_BROWSER_TAB,
                     "windows_ui_tree_inspect": ActionTypeEnum.DETERMINISTIC_RETRIEVAL,
                     "document_ingestion": ActionTypeEnum.DOCUMENT_INGEST_CHUNK,
                     "document_ingest_chunk": ActionTypeEnum.DOCUMENT_INGEST_CHUNK,
@@ -310,7 +320,22 @@ class TaskDagEngine:
                     "calculate": ActionTypeEnum.DETERMINISTIC_RETRIEVAL,
                     "verify_readback": ActionTypeEnum.VERIFY_READBACK,
                 }
-                if node.capability_id in cap_to_action:
+                action_alias_map = {
+                    "windows_click_control": ActionTypeEnum.CLICK_DESKTOP_CONTROL,
+                    "windows_get_control_text": ActionTypeEnum.GET_CONTROL_TEXT,
+                    "windows_set_control_text": ActionTypeEnum.SET_CONTROL_TEXT,
+                    "windows_type_text": ActionTypeEnum.TYPE_DESKTOP_TEXT,
+                    "windows_launch_app": ActionTypeEnum.LAUNCH_APPLICATION,
+                    "click_control": ActionTypeEnum.CLICK_DESKTOP_CONTROL,
+                    "get_control_text": ActionTypeEnum.GET_CONTROL_TEXT,
+                    "set_control_text": ActionTypeEnum.SET_CONTROL_TEXT,
+                    "launch_app": ActionTypeEnum.LAUNCH_APPLICATION,
+                    "readback_verify": ActionTypeEnum.VERIFY_READBACK,
+                    "verify": ActionTypeEnum.VERIFY_READBACK,
+                }
+                if node.action_type in action_alias_map:
+                    act_type_enum = action_alias_map[node.action_type]
+                elif node.capability_id in cap_to_action:
                     act_type_enum = cap_to_action[node.capability_id]
                 else:
                     err_msg = f"Unsupported or unregistered action_type '{node.action_type}' for capability '{node.capability_id}' on step '{node.step_id}'."
@@ -378,10 +403,17 @@ class TaskDagEngine:
             # 4. Execute Step via Capability Executor
             node.status = TaskStatusEnum.EXECUTING
             try:
-                exec_data = await self.executor.execute(
+                exec_data = await active_executor.execute(
                     capability_id=node.capability_id,
                     parameters=resolved_params,
-                    context={"taskId": task_id_str, "stepId": node.step_id},
+                    context={
+                        "taskId": task_id_str,
+                        "stepId": node.step_id,
+                        "instruction": node.instruction,
+                        "title": node.instruction,
+                        "target_surface": node.target_surface,
+                        "intended_outcome": node.intended_outcome,
+                    },
                 )
                 node.result_data = exec_data
                 step_outputs[node.step_id] = exec_data

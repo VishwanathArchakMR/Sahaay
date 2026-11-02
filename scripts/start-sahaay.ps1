@@ -101,22 +101,34 @@ if (-not $ControllerExe) {
 # 1c. Browser Native Messaging Host registration (Chrome and Edge)
 $ChromeRegPath = "HKCU:\Software\Google\Chrome\NativeMessagingHosts\com.sahaay.nativehost"
 $EdgeRegPath = "HKCU:\Software\Microsoft\Edge\NativeMessagingHosts\com.sahaay.nativehost"
-$ChromeRegistered = Test-Path $ChromeRegPath
-$EdgeRegistered = Test-Path $EdgeRegPath
+$ChromeRegistered = $false
+$EdgeRegistered = $false
+try {
+    $ChromeRegistered = Test-Path $ChromeRegPath -ErrorAction SilentlyContinue
+    $EdgeRegistered = Test-Path $EdgeRegPath -ErrorAction SilentlyContinue
+} catch {
+    $ChromeRegistered = $true
+    $EdgeRegistered = $true
+}
 
 $NeedsHostInstall = -not $ChromeRegistered -or -not $EdgeRegistered
 if (-not $NeedsHostInstall) {
     # Verify that the registered manifest file actually exists
-    $chromeItem = Get-Item -Path $ChromeRegPath -ErrorAction SilentlyContinue
-    $regVal = if ($chromeItem) { $chromeItem.GetValue("") } else { $null }
-    if (-not $regVal) {
-        $regVal = (Get-ItemProperty -Path $ChromeRegPath -ErrorAction SilentlyContinue)."(default)"
-    }
-    if (-not $regVal) {
-        $regVal = (Get-ItemProperty -Path $ChromeRegPath -ErrorAction SilentlyContinue)."(Default)"
-    }
-    if (-not $regVal -or -not (Test-Path $regVal)) {
-        $NeedsHostInstall = $true
+    try {
+        $chromeItem = Get-Item -Path $ChromeRegPath -ErrorAction SilentlyContinue
+        $regVal = if ($chromeItem) { $chromeItem.GetValue("") } else { $null }
+        if (-not $regVal) {
+            $regVal = (Get-ItemProperty -Path $ChromeRegPath -ErrorAction SilentlyContinue)."(default)"
+        }
+        if (-not $regVal) {
+            $regVal = (Get-ItemProperty -Path $ChromeRegPath -ErrorAction SilentlyContinue)."(Default)"
+        }
+        if ($regVal -and (-not (Test-Path $regVal -ErrorAction SilentlyContinue))) {
+            $NeedsHostInstall = $true
+        }
+    } catch {
+        # Permission constraint reading registry value; key exists so skip reinstall
+        $NeedsHostInstall = $false
     }
 }
 

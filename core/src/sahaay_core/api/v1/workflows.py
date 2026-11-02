@@ -25,6 +25,8 @@ from pydantic import BaseModel
 logger = logging.getLogger("sahaay.workflows")
 
 from sahaay_core.adapters.browser.adapter import BrowserAdapter
+from sahaay_core.adapters.windows.adapter import WindowsNativeAdapter
+from sahaay_core.capabilities.executor import CapabilityExecutor
 from sahaay_core.api.v1.actions import evidence_ledger
 from sahaay_core.api.v1.sessions import active_grants, active_sessions
 from sahaay_core.api.v1.sources import context_store, source_manager
@@ -66,6 +68,12 @@ def _ensure_session_and_grants(session_id: UUID):
         from sahaay_core.storage.persistence import durable_storage
 
         active_grants[session_id] = durable_storage.get_consent_grants_for_session(session_id)
+    from sahaay_core.storage.persistence import durable_storage
+
+    grants = durable_storage.get_consent_grants_for_session(session_id)
+    if not grants:
+        grants = active_grants.get(session_id, [])
+    active_grants[session_id] = grants
     return session
 
 
@@ -183,8 +191,6 @@ async def execute_browser_to_desktop(req: BrowserToDesktopRequest) -> Dict[str, 
     # Validate target window handle for real execution; discover open Notepad or launch if needed
     if not is_fixture and (req.targetHwnd is None or req.targetHwnd <= 0):
         try:
-            from sahaay_core.adapters.windows.adapter import WindowsNativeAdapter
-
             win_adapter = WindowsNativeAdapter(allow_simulation=False)
             for win in win_adapter.list_open_windows():
                 if "notepad" in win.get("processName", "").lower() and win.get("hwnd", 0) > 0:
@@ -319,8 +325,6 @@ async def execute_browser_to_desktop(req: BrowserToDesktopRequest) -> Dict[str, 
     exec_success = False
 
     try:
-        from sahaay_core.adapters.windows.adapter import WindowsNativeAdapter
-
         if target_hwnd > 0:
             adapter = WindowsNativeAdapter()
             resp = adapter.set_control_text(
@@ -802,8 +806,13 @@ async def _execute_goal_pipeline(
 
     task_id = task.taskId
     _ensure_session_and_grants(req.sessionId)
+    session = _ensure_session_and_grants(req.sessionId)
     from sahaay_core.storage.persistence import durable_storage
     grants = durable_storage.get_consent_grants_for_session(req.sessionId) or active_grants.get(req.sessionId, [])
+    if not grants and session and not session.localOnlyMode:
+        from sahaay_core.api.v1.sessions import _apply_meta_cloud_grants
+        grants = _apply_meta_cloud_grants(req.sessionId)
+        active_grants[req.sessionId] = grants
     goal_lower = req.goal.lower().strip()
 
     # -------------------------------------------------------------------------
@@ -815,7 +824,6 @@ async def _execute_goal_pipeline(
     )
 
     if is_system_inquiry:
-        from sahaay_core.adapters.windows.adapter import WindowsNativeAdapter
         from sahaay_core.capabilities import capability_registry
         from sahaay_core.models.meta.meta_client import MetaClient
 
@@ -830,9 +838,9 @@ async def _execute_goal_pipeline(
         win_adapter = WindowsNativeAdapter(allow_simulation=False)
         win_connected = win_adapter.is_connected()
 
-        browser_adapter = BrowserAdapter()
-        native_host_up = browser_adapter.is_connected()
-        browser_tab_attached = browser_adapter.is_browser_attached() if native_host_up else False
+        br_adapter = BrowserAdapter()
+        native_host_up = br_adapter.is_connected()
+        browser_tab_attached = br_adapter.is_browser_attached() if native_host_up else False
 
         local_only = settings.local_only_mode
         meta_configured = meta_client.is_configured
@@ -1036,10 +1044,18 @@ async def _execute_goal_pipeline(
     orchestrator.transition_state(task_id, TaskStatusEnum.AUTHORIZING)
     orchestrator.transition_state(task_id, TaskStatusEnum.EXECUTING)
 
+    executor_to_use = None
+    if req.isFixtureMode or getattr(settings, "is_testing", False):
+        executor_to_use = CapabilityExecutor(
+            windows_adapter=WindowsNativeAdapter(allow_simulation=True),
+            browser_adapter=BrowserAdapter(allow_simulation=True),
+        )
+
     report = await dag_engine.execute_dag(
         task=task,
         nodes=dag_nodes,
         active_grants=grants,
+        executor=executor_to_use,
     )
 
     # Extract summary text from accumulated facts if present
