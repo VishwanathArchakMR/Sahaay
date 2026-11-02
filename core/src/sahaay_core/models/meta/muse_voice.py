@@ -5,8 +5,11 @@ Supports streaming or batch audio processing, Kannada and Hindi language context
 editable transcript confirmation, and fail-closed privacy evaluation.
 """
 
+import audioop
+import io
 import json
 import logging
+import wave
 from typing import List, Optional
 
 import httpx
@@ -59,6 +62,48 @@ def detect_audio_format(
     if "webm" in declared:
         return ("WEBM_OPUS", "recording.webm", "audio/webm")
     return ("WAV", "recording.wav", "audio/wav")
+
+
+def normalize_wav_for_meta(audio_bytes: bytes) -> bytes:
+    """Ensure WAV is mono s16le at 16000 or 24000 Hz as required by Meta Voyager ASR.
+
+    Meta requires: channels=1, sampleRate=16000 or 24000, bitsPerSample=16.
+    Raises ValueError if audio is not a valid WAV file.
+    """
+    try:
+        with wave.open(io.BytesIO(audio_bytes), "rb") as w:
+            n_ch = w.getnchannels()
+            sw = w.getsampwidth()
+            fr = w.getframerate()
+            frames = w.readframes(w.getnframes())
+    except Exception as exc:
+        raise ValueError(f"Could not parse WAV audio: {exc}") from exc
+
+    # Mix stereo to mono
+    if n_ch == 2:
+        frames = audioop.tomono(frames, sw, 0.5, 0.5)
+        n_ch = 1
+    elif n_ch != 1:
+        raise ValueError(f"Unsupported channel count: {n_ch} (must be 1 or 2)")
+
+    # Convert to 16-bit samples
+    if sw != 2:
+        frames = audioop.lin2lin(frames, sw, 2)
+        sw = 2
+
+    # Resample to 16000 Hz if not already at 16000 or 24000
+    if fr not in (16000, 24000):
+        frames, _ = audioop.ratecv(frames, sw, n_ch, fr, 16000, None)
+        fr = 16000
+
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(fr)
+        w.writeframes(frames)
+
+    return buf.getvalue()
 
 
 class MuseVoiceClient:
@@ -136,27 +181,53 @@ class MuseVoiceClient:
 
         # Hosted call via multipart audio endpoint
         try:
-            is_webm = "webm" in (content_type or "").lower()
-            encoding = "WEBM_OPUS" if is_webm else "WAV"
-            file_name = "recording.webm" if is_webm else "recording.wav"
-            mime = "audio/webm" if is_webm else "audio/wav"
             encoding, file_name, mime = detect_audio_format(audio_bytes, content_type)
+
+            # Meta Voyager ASR requires mono s16le WAV at 16000 or 24000 Hz.
+            # Always normalise WAV audio before uploading; non-WAV formats (WebM, Ogg)
+            # are not accepted by the live endpoint — convert them to WAV first.
+            upload_bytes = audio_bytes
+            if encoding != "WAV":
+                # For unsupported formats, we cannot transcode without ffmpeg;
+                # return a clear error rather than sending a payload that will 400.
+                return VoiceTranscriptionResult(
+                    transcript="",
+                    confidence=0.0,
+                    language_detected="unknown",
+                    is_final=True,
+                    status="FAILED",
+                    error=(
+                        f"Audio format {encoding} is not accepted by Meta Voyager ASR. "
+                        "The browser must record in WAV format. Please use the desktop app "
+                        "microphone capture which always encodes to WAV."
+                    ),
+                )
+            try:
+                upload_bytes = normalize_wav_for_meta(audio_bytes)
+                logger.debug(
+                    "WAV normalised to 16kHz mono s16le: %d -> %d bytes",
+                    len(audio_bytes),
+                    len(upload_bytes),
+                )
+            except ValueError as norm_err:
+                logger.warning("WAV normalisation failed: %s", norm_err)
+                upload_bytes = audio_bytes  # Try raw anyway; let the API report the error.
 
             req_data = {
                 "model": self.model_id,
-                "audioEncoding": encoding,
+                "audioEncoding": "WAV",
             }
             if language_hints and len(language_hints) > 0:
                 req_data["language"] = language_hints[0]
 
             files = {
                 "request": (None, json.dumps(req_data), "application/json"),
-                "audio": (file_name, audio_bytes, mime),
+                "audio": ("recording.wav", upload_bytes, "audio/wav"),
             }
             headers = {
                 "Authorization": f"Bearer {self.client.api_key}",
             }
-            async with httpx.AsyncClient(timeout=25.0) as http_client:
+            async with httpx.AsyncClient(timeout=60.0) as http_client:
                 res = await http_client.post(
                     f"{self.client.base_url}/asr/transcribe",
                     headers=headers,
@@ -171,7 +242,7 @@ class MuseVoiceClient:
                         confidence=0.95 if transcript else 0.0,
                         language_detected=language_hints[0] if language_hints else "en",
                         is_final=True,
-                        duration_seconds=duration_sec or round(len(audio_bytes) / 32000.0, 2),
+                        duration_seconds=duration_sec or round(len(upload_bytes) / 32000.0, 2),
                         is_live_call=True,
                         editable=True,
                     )

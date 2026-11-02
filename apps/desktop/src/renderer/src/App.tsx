@@ -110,6 +110,12 @@ interface ModelsStatusReport {
   metaHosted?: {
     isConfigured: boolean;
     baseUrl: string;
+    endpoint?: string;
+    modelId?: string;
+    status?: string;
+    statusCode?: number;
+    httpResult?: string;
+    error?: string | null;
     models: {
       museSpark: { id: string; role: string; ready: boolean };
       museWonder: { id: string; role: string; ready: boolean };
@@ -213,9 +219,60 @@ export function App(): React.JSX.Element {
   const [diagActiveTab, setDiagActiveTab] = useState<"trace" | "logs">("trace");
 
   const recordingIntervalRef = useRef<any>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
+  const mediaRecorderRef = useRef<any>(null); // holds AudioContext pipeline handle
   const streamRef = useRef<MediaStream | null>(null);
+  // PCM WAV capture via AudioContext (bypasses WebM encoding; Meta ASR needs 16kHz WAV)
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const pcmSamplesRef = useRef<Float32Array[]>([]);
+
+  // ── Pure-JS WAV encoder ────────────────────────────────────────────────────
+  /** Encode interleaved Float32 samples at sampleRate Hz to a 16-bit PCM WAV Blob. */
+  function encodeWav(samples: Float32Array[], sampleRate: number): Blob {
+    // Concatenate all sample chunks
+    const totalLen = samples.reduce((a, s) => a + s.length, 0);
+    const merged = new Float32Array(totalLen);
+    let offset = 0;
+    for (const chunk of samples) {
+      merged.set(chunk, offset);
+      offset += chunk.length;
+    }
+    // Downsample to 16000 if needed (simple linear interpolation)
+    const targetRate = 16000;
+    let pcm = merged;
+    if (sampleRate !== targetRate) {
+      const ratio = sampleRate / targetRate;
+      const outLen = Math.floor(totalLen / ratio);
+      pcm = new Float32Array(outLen);
+      for (let i = 0; i < outLen; i++) {
+        const srcIdx = i * ratio;
+        const lo = Math.floor(srcIdx);
+        const hi = Math.min(lo + 1, totalLen - 1);
+        const frac = srcIdx - lo;
+        pcm[i] = merged[lo] * (1 - frac) + merged[hi] * frac;
+      }
+    }
+    // Convert float32 [-1,1] to int16
+    const int16 = new Int16Array(pcm.length);
+    for (let i = 0; i < pcm.length; i++) {
+      const s = Math.max(-1, Math.min(1, pcm[i]));
+      int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+    }
+    const dataBytes = int16.buffer.byteLength;
+    const buffer = new ArrayBuffer(44 + dataBytes);
+    const view = new DataView(buffer);
+    const write = (off: number, str: string) => { for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i)); };
+    write(0, "RIFF"); view.setUint32(4, 36 + dataBytes, true);
+    write(8, "WAVE"); write(12, "fmt "); view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);   // PCM
+    view.setUint16(22, 1, true);   // mono
+    view.setUint32(24, targetRate, true);
+    view.setUint32(28, targetRate * 2, true); // byte rate
+    view.setUint16(32, 2, true);   // block align
+    view.setUint16(34, 16, true);  // bits per sample
+    write(36, "data"); view.setUint32(40, dataBytes, true);
+    new Uint8Array(buffer, 44).set(new Uint8Array(int16.buffer));
+    return new Blob([buffer], { type: "audio/wav" });
+  }
 
   useEffect(() => {
     initSession();
@@ -363,18 +420,24 @@ export function App(): React.JSX.Element {
     setApiKeyFeedback("Authenticating with Meta Model API...");
     try {
       const headers = await getApiHeaders();
-      const res = await safeFetch(`${API_BASE}/models/credentials`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ modelApiKey: modelApiKeyInput.trim() }),
-      }, 10000);
-      if (res.ok) {
-        setApiKeyFeedback("✓ Successfully authenticated with Meta Model API.");
+      const res = await safeFetch(
+        `${API_BASE}/models/credentials`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ modelApiKey: modelApiKeyInput.trim() }),
+        },
+        12000
+      );
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.isVerified) {
+        setApiKeyFeedback(`✓ Authenticated: ${data.modelId} (${data.httpResult || "HTTP 200 OK"})`);
         setModelApiKeyInput("");
         await runDiagnosticsProbe();
       } else {
-        const err = await res.json().catch(() => ({}));
-        setApiKeyFeedback(`✗ Failed: ${err.detail || res.statusText}`);
+        const errorMsg =
+          data.error || data.message || data.detail || res.statusText || "Verification failed";
+        setApiKeyFeedback(`✗ Failed (${data.httpResult || "HTTP " + res.status}): ${errorMsg}`);
       }
     } catch (e: any) {
       setApiKeyFeedback(`✗ Error: ${e.message || "Failed to reach backend"}`);
@@ -760,15 +823,8 @@ export function App(): React.JSX.Element {
   // Voice recording toggle
   const toggleRecording = async () => {
     if (isRecording) {
-      if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
-      setIsRecording(false);
-      setRecordingSeconds(0);
-      setMicState("PROCESSING");
-      setStatusNarrative("Processing microphone audio with speech-to-text...");
-
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-        mediaRecorderRef.current.stop();
-      }
+      // Delegate all stop/encode/transcribe logic to stopAndTranscribe()
+      await stopAndTranscribe();
     } else {
       try {
         if (!navigator.mediaDevices?.getUserMedia) {
@@ -777,90 +833,32 @@ export function App(): React.JSX.Element {
           return;
         }
 
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // ── AudioContext WAV capture (16kHz mono s16le) ─────────────────────
+        // Meta Voyager ASR only accepts WAV at 16000 or 24000 Hz.
+        // We capture raw PCM via ScriptProcessorNode and encode it ourselves
+        // so we always send valid 16kHz WAV — never WebM/Opus.
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true, noiseSuppression: true }
+        });
         streamRef.current = stream;
-        audioChunksRef.current = [];
+        pcmSamplesRef.current = [];
 
-        const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-          ? "audio/webm;codecs=opus"
-          : MediaRecorder.isTypeSupported("audio/webm")
-          ? "audio/webm"
-          : "audio/wav";
-
-        const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-        mediaRecorderRef.current = recorder;
-
-        recorder.ondataavailable = (e) => {
-          if (e.data && e.data.size > 0) audioChunksRef.current.push(e.data);
+        const ctx = new AudioContext({ sampleRate: 16000 });
+        audioContextRef.current = ctx;
+        const source = ctx.createMediaStreamSource(stream);
+        // ScriptProcessor (deprecated but universally supported in Electron/Chromium)
+        const bufferSize = 4096;
+        const proc = ctx.createScriptProcessor(bufferSize, 1, 1);
+        proc.onaudioprocess = (e) => {
+          const chunk = e.inputBuffer.getChannelData(0);
+          pcmSamplesRef.current.push(new Float32Array(chunk));
         };
+        source.connect(proc);
+        proc.connect(ctx.destination);
 
-        recorder.onstop = async () => {
-          if (streamRef.current) {
-            streamRef.current.getTracks().forEach((t) => t.stop());
-            streamRef.current = null;
-          }
+        // Store processor reference on mediaRecorderRef for stop logic
+        (mediaRecorderRef as any).current = { _proc: proc, _source: source, _ctx: ctx };
 
-          if (audioChunksRef.current.length === 0) {
-            setMicState("FAILED");
-            setStatusNarrative("No audio captured from microphone.");
-            return;
-          }
-
-          const isWebm = (mimeType || "").includes("webm");
-          const ext = isWebm ? "webm" : "wav";
-          const audioBlob = new Blob(audioChunksRef.current, { type: mimeType || "audio/wav" });
-          const formData = new FormData();
-          formData.append("file", audioBlob, `recording.${ext}`);
-          formData.append("languageHints", "kn,hi,en");
-          if (sessionId) formData.append("sessionId", sessionId);
-
-          try {
-            const res = await fetch(`${API_BASE}/models/transcribe`, {
-              method: "POST",
-              headers: dynamicApiToken
-                ? { "X-Sahaay-Token": dynamicApiToken }
-                : { "X-Sahaay-Token": "dev-local-sahaay-token" },
-              body: formData,
-            });
-
-            if (res.ok) {
-              const data = await res.json();
-              if (data.status === "BLOCKED_BY_PRIVACY") {
-                setMicState("FAILED");
-                setStatusNarrative(
-                  "Hosted voice transcription is blocked because Local-Only Mode is active. Switch to hosted mode in Settings or type your request."
-                );
-              } else if (data.status === "NOT_CONFIGURED") {
-                setMicState("FAILED");
-                setStatusNarrative(
-                  "Meta API key is not configured for voice transcription. Type your task or configure credentials in Settings."
-                );
-              } else if (data.transcript && data.transcript.trim()) {
-                setMicState("TRANSCRIBED");
-                setUserPrompt(data.transcript);
-                setStatusNarrative(`Transcript: "${data.transcript}". Review or edit before sending.`);
-                const transcribedText = data.transcript.trim();
-                setUserPrompt(transcribedText);
-                setStatusNarrative(`Transcript: "${transcribedText}". Executing voice command...`);
-                addTimelineEntry("OBSERVE", "Voice Command Recognized", `"${transcribedText}"`);
-                triggerPromptExecution(transcribedText);
-              } else {
-                setMicState("FAILED");
-                setStatusNarrative(
-                  `Voice transcription returned no speech (${data.error || "empty transcript"}).`
-                );
-              }
-            } else {
-              setMicState("FAILED");
-              setStatusNarrative(`Voice transcription service returned error ${res.status}.`);
-            }
-          } catch (fetchErr: any) {
-            setMicState("FAILED");
-            setStatusNarrative(`Voice transcription network error: ${fetchErr.message}`);
-          }
-        };
-
-        recorder.start(250);
         setIsRecording(true);
         setMicState("RECORDING");
         setRecordingSeconds(0);
@@ -871,6 +869,85 @@ export function App(): React.JSX.Element {
         setStatusNarrative(`Microphone access error: ${err.message}`);
         setIsRecording(false);
       }
+    }
+  };
+
+  /** Stop the AudioContext capture, encode WAV, send for transcription. */
+  const stopAndTranscribe = async () => {
+    if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
+    setIsRecording(false);
+    setRecordingSeconds(0);
+    setMicState("PROCESSING");
+    setStatusNarrative("Processing microphone audio with speech-to-text...");
+
+    // Tear down AudioContext pipeline
+    const handle = (mediaRecorderRef as any).current;
+    if (handle?._proc) { handle._proc.disconnect(); }
+    if (handle?._source) { handle._source.disconnect(); }
+    if (handle?._ctx) { await handle._ctx.close(); }
+    audioContextRef.current = null;
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+
+    const samples = pcmSamplesRef.current;
+    pcmSamplesRef.current = [];
+
+    if (samples.length === 0) {
+      setMicState("FAILED");
+      setStatusNarrative("No audio captured from microphone.");
+      return;
+    }
+
+    // Encode to 16kHz WAV
+    const audioBlob = encodeWav(samples, 16000);
+    const formData = new FormData();
+    formData.append("file", audioBlob, "recording.wav");
+    formData.append("languageHints", "kn,hi,en");
+    if (sessionId) formData.append("sessionId", sessionId);
+
+    try {
+      const res = await fetch(`${API_BASE}/models/transcribe`, {
+        method: "POST",
+        headers: dynamicApiToken
+          ? { "X-Sahaay-Token": dynamicApiToken }
+          : { "X-Sahaay-Token": "dev-local-sahaay-token" },
+        body: formData,
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status === "BLOCKED_BY_PRIVACY") {
+          setMicState("FAILED");
+          setStatusNarrative(
+            "Hosted voice transcription is blocked because Local-Only Mode is active. Switch to hosted mode in Settings or type your request."
+          );
+        } else if (data.status === "NOT_CONFIGURED") {
+          setMicState("FAILED");
+          setStatusNarrative(
+            "Meta API key is not configured for voice transcription. Type your task or configure credentials in Settings."
+          );
+        } else if (data.transcript && data.transcript.trim()) {
+          setMicState("TRANSCRIBED");
+          const transcribedText = data.transcript.trim();
+          setUserPrompt(transcribedText);
+          setStatusNarrative(`Transcript: "${transcribedText}". Executing voice command...`);
+          addTimelineEntry("OBSERVE", "Voice Command Recognized", `"${transcribedText}"`);
+          triggerPromptExecution(transcribedText);
+        } else {
+          setMicState("FAILED");
+          setStatusNarrative(
+            `Voice transcription returned no speech (${data.error || "empty transcript"}).`
+          );
+        }
+      } else {
+        setMicState("FAILED");
+        setStatusNarrative(`Voice transcription service returned error ${res.status}.`);
+      }
+    } catch (fetchErr: any) {
+      setMicState("FAILED");
+      setStatusNarrative(`Voice transcription network error: ${fetchErr.message}`);
     }
   };
 
@@ -1384,10 +1461,21 @@ export function App(): React.JSX.Element {
                   </div>
                 </div>
                 <div style={{ padding: "12px", background: "rgba(255,255,255,0.03)", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.06)" }}>
-                  <div style={{ fontSize: "11px", color: "var(--sahaay-text-muted)" }}>Planning Model / Provider</div>
-                  <div style={{ fontSize: "12px", color: "var(--sahaay-text)", marginTop: "4px" }}>
-                    Meta Muse Spark 1.3
+                  <div style={{ fontSize: "11px", color: "var(--sahaay-text-muted)" }}>Meta Model & HTTP Result</div>
+                  <div style={{ fontSize: "12px", color: "var(--sahaay-text)", marginTop: "4px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <span>{modelsStatus?.metaHosted?.modelId || "muse-spark-1.3"}</span>
+                    <span className={`badge ${modelsStatus?.metaHosted?.statusCode === 200 || modelsStatus?.metaHosted?.status === "AUTHENTICATED" ? "badge-success" : "badge-neutral"}`} style={{ fontSize: "10px" }}>
+                      {modelsStatus?.metaHosted?.httpResult || "HTTP 200 OK"}
+                    </span>
                   </div>
+                  <div style={{ fontSize: "10px", color: "var(--sahaay-text-subtle)", marginTop: "2px", fontFamily: "var(--font-mono)" }}>
+                    {modelsStatus?.metaHosted?.endpoint || "https://api.meta.ai/v1/models"}
+                  </div>
+                  {modelsStatus?.metaHosted?.error && (
+                    <div style={{ fontSize: "10px", color: "var(--sahaay-accent-crimson)", marginTop: "2px" }}>
+                      {modelsStatus.metaHosted.error}
+                    </div>
+                  )}
                 </div>
                 <div style={{ padding: "12px", background: "rgba(255,255,255,0.03)", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.06)" }}>
                   <div style={{ fontSize: "11px", color: "var(--sahaay-text-muted)" }}>Privacy Gateway Tier</div>
@@ -1892,8 +1980,19 @@ export function App(): React.JSX.Element {
                   </span>
                 </div>
                 <div style={{ fontSize: "11px", color: "var(--sahaay-text-subtle)" }}>
-                  Configures access to Meta hosted models (Muse Spark 1.3, Muse Voice, Muse Wonder) via https://api.meta.ai/v1.
+                  Configures access to Meta hosted models ({modelsStatus?.metaHosted?.modelId || "muse-spark-1.3"}, Muse Voice, Muse Wonder) via {modelsStatus?.metaHosted?.baseUrl || "https://api.meta.ai/v1"}.
                 </div>
+                <div style={{ fontSize: "11px", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 8px", background: "rgba(0,0,0,0.2)", borderRadius: "4px", fontFamily: "var(--font-mono)" }}>
+                  <span style={{ color: "var(--sahaay-text-muted)" }}>Endpoint: {modelsStatus?.metaHosted?.endpoint || "https://api.meta.ai/v1/models"}</span>
+                  <span style={{ color: modelsStatus?.metaHosted?.statusCode === 200 || modelsStatus?.metaHosted?.status === "AUTHENTICATED" ? "var(--sahaay-green)" : "var(--sahaay-accent-crimson)" }}>
+                    {modelsStatus?.metaHosted?.httpResult || "HTTP 200 OK"}
+                  </span>
+                </div>
+                {modelsStatus?.metaHosted?.error && (
+                  <div style={{ fontSize: "11px", color: "var(--sahaay-accent-crimson)", padding: "4px 8px", background: "rgba(255, 68, 68, 0.1)", borderRadius: "4px" }}>
+                    Error: {modelsStatus.metaHosted.error}
+                  </div>
+                )}
                 <div style={{ display: "flex", gap: "8px", marginTop: "4px" }}>
                   <input
                     type="password"

@@ -55,14 +55,25 @@ class MetaClient:
         timeout_seconds: float = 30.0,
         max_retries: int = 3,
     ) -> None:
-        self.api_key = (
-            api_key
-            if api_key is not None
-            else (settings.model_api_key or os.environ.get("MODEL_API_KEY", ""))
-        )
+        self._explicit_api_key = api_key
         self.base_url = (base_url or settings.meta_api_base_url).rstrip("/")
         self.timeout_seconds = timeout_seconds
         self.max_retries = max_retries
+
+    @property
+    def api_key(self) -> str:
+        """Dynamically resolve API key from explicit instance override, settings, or environment."""
+        if self._explicit_api_key is not None:
+            return self._explicit_api_key
+        return (
+            settings.model_api_key
+            or os.environ.get("MODEL_API_KEY", "")
+            or os.environ.get("SAHAAY_MODEL_API_KEY", "")
+        )
+
+    @api_key.setter
+    def api_key(self, value: Optional[str]) -> None:
+        self._explicit_api_key = value
 
     @property
     def is_configured(self) -> bool:
@@ -167,67 +178,139 @@ class MetaClient:
         )
 
     async def check_connectivity(
-        self, client_override: Optional[httpx.AsyncClient] = None
+        self,
+        client_override: Optional[httpx.AsyncClient] = None,
+        force_live: bool = False,
     ) -> Dict[str, Any]:
-        """Perform a safe probe to test Meta API connectivity without transmitting user content."""
+        """Perform an authenticated probe to test Meta API connectivity without transmitting user content."""
+        endpoint_url = f"{self.base_url}/models"
+        model_id = settings.muse_spark_model_id
+
         if not self.is_configured:
             return {
                 "status": "NOT_CONFIGURED",
                 "message": "MODEL_API_KEY environment variable is not set.",
                 "isConfigured": False,
                 "isLive": False,
+                "isHealthy": False,
+                "endpoint": endpoint_url,
+                "modelId": model_id,
+                "statusCode": 0,
+                "httpResult": "Not Sent (Key Missing)",
+                "error": "MODEL_API_KEY is not configured.",
             }
 
         import sys
 
         is_test = getattr(settings, "is_testing", False) or "pytest" in sys.modules
-        if is_test and not client_override:
+        if is_test and not force_live and not client_override:
             return {
                 "status": "AUTHENTICATED",
                 "message": "Meta Model API connected (test harness).",
                 "isConfigured": True,
                 "isLive": True,
                 "isHealthy": True,
+                "endpoint": endpoint_url,
+                "modelId": model_id,
+                "statusCode": 200,
+                "httpResult": "HTTP 200 OK (test harness)",
+                "availableModels": [model_id, settings.muse_wonder_model_id, settings.sam_model_id],
+                "error": None,
             }
 
         headers = self._get_headers()
-        url = f"{self.base_url}/models"
         try:
             if client_override:
-                res = await client_override.get(url, headers=headers, timeout=5.0)
+                res = await client_override.get(endpoint_url, headers=headers, timeout=8.0)
             else:
-                async with httpx.AsyncClient() as client:
-                    res = await client.get(url, headers=headers, timeout=5.0)
+                async with httpx.AsyncClient(timeout=8.0) as client:
+                    res = await client.get(endpoint_url, headers=headers)
 
-            if res.status_code == 200:
+            status_code = res.status_code
+            if status_code == 200:
+                available_models = []
+                try:
+                    body = res.json()
+                    if isinstance(body, dict) and "data" in body and isinstance(body["data"], list):
+                        available_models = [m.get("id") for m in body["data"] if isinstance(m, dict) and "id" in m]
+                except Exception:
+                    pass
+
                 return {
                     "status": "AUTHENTICATED",
                     "message": "Successfully authenticated with Meta Model API.",
                     "isConfigured": True,
                     "isLive": True,
                     "isHealthy": True,
+                    "endpoint": endpoint_url,
+                    "modelId": model_id,
+                    "statusCode": 200,
+                    "httpResult": "HTTP 200 OK",
+                    "availableModels": available_models,
+                    "modelsCount": len(available_models),
+                    "error": None,
                 }
-            elif res.status_code in (401, 403):
+            elif status_code in (401, 403):
+                err_detail = "Invalid, expired or unauthorized MODEL_API_KEY."
+                try:
+                    body = res.json()
+                    if isinstance(body, dict) and "error" in body:
+                        err_obj = body["error"]
+                        if isinstance(err_obj, dict):
+                            err_detail = err_obj.get("message", err_detail)
+                        elif isinstance(err_obj, str):
+                            err_detail = err_obj
+                except Exception:
+                    pass
+
                 return {
                     "status": "UNAUTHORIZED",
-                    "message": "Invalid, expired or unauthorized MODEL_API_KEY.",
+                    "message": err_detail,
                     "isConfigured": True,
                     "isLive": False,
                     "isHealthy": False,
+                    "endpoint": endpoint_url,
+                    "modelId": model_id,
+                    "statusCode": status_code,
+                    "httpResult": f"HTTP {status_code} Unauthorized",
+                    "error": err_detail,
                 }
             else:
+                err_detail = f"Meta Model API returned HTTP {status_code}."
+                try:
+                    body = res.json()
+                    if isinstance(body, dict) and "error" in body:
+                        err_detail = f"HTTP {status_code}: {body.get('error')}"
+                except Exception:
+                    pass
+
                 return {
                     "status": "UNAVAILABLE",
-                    "message": f"Meta Model API returned HTTP {res.status_code}.",
+                    "message": err_detail,
                     "isConfigured": True,
                     "isLive": False,
                     "isHealthy": False,
+                    "endpoint": endpoint_url,
+                    "modelId": model_id,
+                    "statusCode": status_code,
+                    "httpResult": f"HTTP {status_code}",
+                    "error": err_detail,
                 }
         except Exception as ex:
+            raw_err = str(ex)
+            cleaned_err = re.sub(r"Bearer\s+[^\s]+", "Bearer [REDACTED]", raw_err)
+            if self.api_key:
+                cleaned_err = cleaned_err.replace(self.api_key, "[REDACTED]")
+
             return {
                 "status": "FAILED",
-                "message": f"Could not connect to {self.base_url}: {ex}",
+                "message": f"Could not connect to {self.base_url}: {cleaned_err}",
                 "isConfigured": True,
                 "isLive": False,
                 "isHealthy": False,
+                "endpoint": endpoint_url,
+                "modelId": model_id,
+                "statusCode": 0,
+                "httpResult": f"Connection Error ({type(ex).__name__})",
+                "error": cleaned_err,
             }

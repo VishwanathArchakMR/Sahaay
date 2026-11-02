@@ -8,7 +8,8 @@ import asyncio
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, File, Form, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from sahaay_core.adapters.browser.adapter import BrowserAdapter
@@ -72,6 +73,7 @@ provider_connectivity_cache: Dict[str, str] = {
     "meta": "UNTESTED",
     "muse_image": "UNTESTED",
 }
+last_meta_connectivity_result: Dict[str, Any] = {}
 
 
 def _resolve_provider_readiness(is_configured: bool, cache_key: str) -> str:
@@ -109,7 +111,20 @@ async def get_models_status() -> Dict[str, Any]:
         "metaHosted": {
             "isConfigured": meta_client.is_configured,
             "baseUrl": meta_client.base_url,
+            "endpoint": f"{meta_client.base_url}/models",
+            "modelId": settings.muse_spark_model_id,
             "status": meta_status,
+            "statusCode": last_meta_connectivity_result.get(
+                "statusCode",
+                200 if meta_status in ("READY", "AUTHENTICATED", "MODEL_REQUEST_VERIFIED") else 0,
+            ),
+            "httpResult": last_meta_connectivity_result.get(
+                "httpResult",
+                "HTTP 200 OK"
+                if meta_status in ("READY", "AUTHENTICATED", "MODEL_REQUEST_VERIFIED")
+                else meta_status,
+            ),
+            "error": last_meta_connectivity_result.get("error"),
             "models": {
                 "museSpark": {
                     "id": settings.muse_spark_model_id,
@@ -137,6 +152,7 @@ async def get_models_status() -> Dict[str, Any]:
                     "role": "Visual Grounding & Element Segmentation",
                 },
             },
+            "lastVerification": last_meta_connectivity_result,
         },
         "localLlama": {
             "status": local_status["status"],
@@ -192,8 +208,11 @@ async def test_model_connectivity() -> Dict[str, Any]:
             },
         }
 
-    meta_result = await meta_client.check_connectivity()
+    meta_result = await meta_client.check_connectivity(force_live=True)
     muse_image_result = await muse_image.check_connectivity()
+
+    last_meta_connectivity_result.clear()
+    last_meta_connectivity_result.update(meta_result)
 
     provider_connectivity_cache["meta"] = (
         meta_result.get("status", "AUTHENTICATED")
@@ -223,18 +242,27 @@ class UpdateCredentialsRequest(BaseModel):
 
 @router.post("/credentials")
 async def update_model_credentials(req: UpdateCredentialsRequest) -> Dict[str, Any]:
-    """Securely updates, persists, and tests Meta Cloud MODEL_API_KEY."""
+    """Securely updates, persists, and tests Meta Cloud MODEL_API_KEY.
+
+    Returns verified success only when the authenticated Meta API request genuinely succeeds.
+    """
+    import os
     from sahaay_core.config.settings import REPO_ROOT
 
     new_key = req.modelApiKey.strip()
     if not new_key:
-        raise HTTPException(status_code=400, detail="API key cannot be empty.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="API key cannot be empty.")
 
+    # 1. Update in-memory settings and active clients
     settings.model_api_key = new_key
+    os.environ["MODEL_API_KEY"] = new_key
+    os.environ["SAHAAY_MODEL_API_KEY"] = new_key
     meta_client.api_key = new_key
     muse_image.api_key = new_key
+    if hasattr(muse_spark, "client"):
+        muse_spark.client.api_key = new_key
 
-    # Persist securely to REPO_ROOT/.env
+    # 2. Persist securely to REPO_ROOT/.env
     env_file = REPO_ROOT / ".env"
     existing_lines = []
     found = False
@@ -250,14 +278,39 @@ async def update_model_credentials(req: UpdateCredentialsRequest) -> Dict[str, A
         existing_lines.append(f"MODEL_API_KEY={new_key}")
     env_file.write_text("\n".join(existing_lines) + "\n", encoding="utf-8")
 
-    # Live test connectivity with new credentials
-    conn = await meta_client.check_connectivity()
-    return {
-        "status": "SUCCESS",
+    # 3. Live test connectivity with new credentials
+    conn = await meta_client.check_connectivity(force_live=True)
+    last_meta_connectivity_result.clear()
+    last_meta_connectivity_result.update(conn)
+    provider_connectivity_cache["meta"] = conn.get("status", "FAILED")
+
+    is_verified = bool(conn.get("isHealthy") and conn.get("status") == "AUTHENTICATED")
+
+    response_payload = {
+        "status": "VERIFIED_SUCCESS" if is_verified else conn.get("status", "FAILED"),
+        "isVerified": is_verified,
         "isConfigured": meta_client.is_configured,
+        "modelId": conn.get("modelId", settings.muse_spark_model_id),
+        "endpoint": conn.get("endpoint", f"{meta_client.base_url}/models"),
+        "statusCode": conn.get("statusCode", 200 if is_verified else 0),
+        "httpResult": conn.get("httpResult", "HTTP 200 OK" if is_verified else "Verification Failed"),
+        "error": conn.get("error"),
+        "availableModels": conn.get("availableModels", []),
         "connectivity": conn,
-        "message": "Meta Cloud MODEL_API_KEY updated, persisted, and verified.",
+        "message": "Meta Cloud MODEL_API_KEY authenticated and verified against Meta API."
+        if is_verified
+        else f"Meta credential verification failed: {conn.get('message', 'Authentication failed')}",
     }
+
+    if not is_verified:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST
+            if conn.get("status") in ("UNAUTHORIZED", "FAILED")
+            else status.HTTP_200_OK,
+            content=response_payload,
+        )
+
+    return response_payload
 
 
 @router.post("/meta/muse-spark/plan", response_model=StructuredTaskPlan)
@@ -363,9 +416,6 @@ async def transcribe_audio(
             from sahaay_core.api.v1.sessions import active_grants
             from sahaay_core.storage.persistence import durable_storage
 
-            grants = active_grants.get(UUID(sessionId), [])
-        except Exception:
-            pass
             parsed_session_id = UUID(sessionId)
             grants = durable_storage.get_consent_grants_for_session(parsed_session_id) or active_grants.get(parsed_session_id, [])
             if not grants:
