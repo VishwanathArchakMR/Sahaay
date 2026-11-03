@@ -1533,27 +1533,30 @@ export function App(): React.JSX.Element {
                     <span className="badge" style={{ background: "rgba(138,245,207,0.1)", color: "var(--sahaay-mint)" }}>Browser (Chrome & Edge)</span>
                     <span className="badge" style={{ background: "rgba(138,245,207,0.1)", color: "var(--sahaay-mint)" }}>Calculator (calc.exe)</span>
                     <span className="badge" style={{ background: "rgba(138,245,207,0.1)", color: "var(--sahaay-mint)" }}>Notepad (notepad.exe)</span>
-                    <span className="badge" style={{ background: "rgba(138,245,207,0.1)", color: "var(--sahaay-mint)" }}>File System & Desktop Reports</span>
-                    <span className="badge" style={{ background: "rgba(85,216,255,0.1)", color: "var(--sahaay-cyan)" }}>Screen Visual Reasoning</span>
+                    <span className="badge" style={{ background: "rgba(138,245,207,0.1)", color: "var(--sahaay-mint)" }}>Office Artifacts (.docx & .xlsx)</span>
+                    <span className="badge" style={{ background: "rgba(85,216,255,0.1)", color: "var(--sahaay-cyan)" }}>Screen Vision Reasoning</span>
+                    <span className="badge" style={{ background: "rgba(85,216,255,0.1)", color: "var(--sahaay-cyan)" }}>Multi-Hop Web Research</span>
+                    <span className="badge" style={{ background: "rgba(85,216,255,0.1)", color: "var(--sahaay-cyan)" }}>Tabular Data Engine</span>
+                    <span className="badge" style={{ background: "rgba(138,245,207,0.1)", color: "var(--sahaay-mint)" }}>Multi-Format Ingestion</span>
                   </div>
                 </div>
 
                 <div style={{ background: "rgba(255,255,255,0.03)", padding: "14px", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.06)" }}>
-                  <h4 style={{ fontSize: "13px", fontWeight: 600, color: "#fff", marginBottom: "8px" }}>Direct Computer & Web Actions</h4>
+                  <h4 style={{ fontSize: "13px", fontWeight: 600, color: "#fff", marginBottom: "8px" }}>General Computer Actions</h4>
                   <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                    <button
+                      onClick={() => triggerPromptExecution("Research latest advancements in AI agent orchestration and prepare a report on my Desktop")}
+                      className="quick-action-btn"
+                    >
+                      <FileText size={14} color="var(--sahaay-mint)" />
+                      <span>Deep Research & Desktop Report</span>
+                    </button>
                     <button
                       onClick={() => triggerPromptExecution("Open Amazon in my browser")}
                       className="quick-action-btn"
                     >
-                      <Globe size={14} color="var(--sahaay-mint)" />
-                      <span>Open Amazon in Browser</span>
-                    </button>
-                    <button
-                      onClick={() => triggerPromptExecution("Open YouTube and search for AI agent tutorials")}
-                      className="quick-action-btn"
-                    >
                       <Globe size={14} color="var(--sahaay-cyan)" />
-                      <span>Search YouTube for AI Agent Tutorials</span>
+                      <span>Open Amazon in Browser</span>
                     </button>
                     <button
                       onClick={() => triggerPromptExecution("Look at my screen and tell me what is open")}
@@ -1570,18 +1573,18 @@ export function App(): React.JSX.Element {
                       <span>Calculate 125 * 48 in Calculator</span>
                     </button>
                     <button
-                      onClick={() => triggerPromptExecution("Open Notepad and write automated status note")}
-                      className="quick-action-btn"
-                    >
-                      <FileText size={14} color="var(--sahaay-mint)" />
-                      <span>Launch Notepad & Type Note</span>
-                    </button>
-                    <button
                       onClick={() => triggerPromptExecution("Read the current browser page and create a report on my Desktop")}
                       className="quick-action-btn"
                     >
-                      <FileText size={14} color="var(--sahaay-cyan)" />
+                      <FileText size={14} color="var(--sahaay-mint)" />
                       <span>Cross-Surface Page Report to Desktop</span>
+                    </button>
+                    <button
+                      onClick={() => triggerPromptExecution("Understand this project and tell me what is wrong")}
+                      className="quick-action-btn"
+                    >
+                      <Search size={14} color="var(--sahaay-cyan)" />
+                      <span>Understand Project & Check Health</span>
                     </button>
                   </div>
                 </div>

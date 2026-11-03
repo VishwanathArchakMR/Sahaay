@@ -1192,7 +1192,17 @@ async def _execute_tool_for_meta(
                 return {"success": False, "error": str(vex)}
 
         else:
-            return {"success": False, "error": f"Unknown tool: '{fn_name}'"}
+            # Delegate to universal CapabilityExecutor for all registered capabilities
+            try:
+                res = await executor.execute(
+                    capability_id=fn_name,
+                    parameters=fn_args,
+                    context={"sessionId": str(session_id)},
+                )
+                return res
+            except Exception as cap_err:
+                logger.warning("CapabilityExecutor error for %s: %s", fn_name, cap_err)
+                return {"success": False, "error": str(cap_err), "tool": fn_name}
 
     except Exception as ex:
         logger.warning("Tool execution error for %s: %s", fn_name, ex)
@@ -1365,7 +1375,12 @@ async def _execute_goal_pipeline(
     # only during offline automated test fixtures.
     # -------------------------------------------------------------------------
     is_fixture_mode = req.isFixtureMode is True
-    use_meta_tools = muse_spark.client.is_configured and not is_fixture_mode
+    use_meta_tools = (
+        muse_spark.client.is_configured
+        and not is_fixture_mode
+        and not (session and session.localOnlyMode)
+        and not settings.local_only_mode
+    )
 
     if use_meta_tools:
         orchestrator.transition_state(task_id, TaskStatusEnum.PLANNING)
@@ -1381,8 +1396,33 @@ async def _execute_goal_pipeline(
             browser_adapter=live_br_adapter,
         )
 
+        from sahaay_core.capabilities.registry import capability_registry
+        from sahaay_core.orchestration.task_blueprint import task_blueprint_service
+
+        blueprint = task_blueprint_service.create_blueprint(
+            task_id=str(task_id),
+            session_id=str(req.sessionId),
+            goal=req.goal,
+            context=req.context,
+        )
+
+        durable_storage.record_task_event(
+            task_id=str(task_id),
+            event_type="task.step_started",
+            stage="EXECUTING",
+            message=f"Starting autonomous ReAct loop with {len(capability_registry.list_capabilities())} registered capabilities.",
+            data={"goal": req.goal, "blueprint": blueprint.to_dict()},
+        )
+
         async def _tool_exec_callback(fn_name: str, fn_args: Dict[str, Any]) -> Dict[str, Any]:
-            return await _execute_tool_for_meta(
+            durable_storage.record_task_event(
+                task_id=str(task_id),
+                event_type="task.tool_started",
+                stage="EXECUTING",
+                message=f"Executing capability '{fn_name}'",
+                data={"tool": fn_name, "arguments": fn_args},
+            )
+            tool_res = await _execute_tool_for_meta(
                 fn_name=fn_name,
                 fn_args=fn_args,
                 session_id=req.sessionId,
@@ -1390,14 +1430,28 @@ async def _execute_goal_pipeline(
                 browser_adapter=live_br_adapter,
                 windows_adapter=live_win_adapter,
             )
+            durable_storage.record_task_event(
+                task_id=str(task_id),
+                event_type="task.tool_finished",
+                stage="EXECUTING",
+                message=f"Finished capability '{fn_name}' (success={tool_res.get('success', True)})",
+                data={"tool": fn_name, "success": tool_res.get("success", True)},
+            )
+            return tool_res
 
         try:
+            available_tools = capability_registry.to_model_tool_definitions()
+            from sahaay_core.skills.manager import skills_manager
+            matched_skills = skills_manager.get_relevant_skills(req.goal)
+            skills_prompt = skills_manager.format_skills_for_prompt(matched_skills)
+            enriched_context = (req.context or "") + ("\n\n" + skills_prompt if skills_prompt else "")
+
             meta_res = await muse_spark.execute_with_tools(
                 goal=req.goal,
-                tools=SAHAAY_TOOL_DEFINITIONS,
-                context=req.context or "",
+                tools=available_tools,
+                context=enriched_context,
                 tool_executor=_tool_exec_callback,
-                max_rounds=10,
+                max_rounds=12,
                 timeout_seconds=120.0,
                 active_grants=grants,
             )
@@ -1543,6 +1597,14 @@ async def _execute_goal_pipeline(
             summary=final_message,
         )
 
+        durable_storage.record_task_event(
+            task_id=str(task_id),
+            event_type="task.completed" if is_verified else "task.failed",
+            stage="COMPLETED" if is_verified else "FAILED",
+            message=final_message,
+            data={"isVerified": is_verified, "rounds": rounds, "toolCalls": len(tool_calls_executed)},
+        )
+
         return {
             "workflow": "execute-goal",
             "taskId": str(task_id),
@@ -1551,6 +1613,7 @@ async def _execute_goal_pipeline(
             "mode": req.workflowMode or "understand_and_act",
             "sourceSurface": req.sourceSurface or "desktop",
             "summary": final_message,
+            "blueprint": blueprint.to_dict(),
             "completedSteps": len(tool_calls_executed),
             "totalSteps": len(tool_calls_executed),
             "stepResults": step_results,

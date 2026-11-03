@@ -22,7 +22,7 @@ CREDENTIAL_REGEX = re.compile(
 PII_EMAIL_REGEX = re.compile(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+")
 PII_PHONE_REGEX = re.compile(r"\b(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b")
 
-# Configured provider allowlist for external model inference
+# Configured provider allowlist for external and local model inference
 ALLOWED_EXTERNAL_DESTINATIONS: List[str] = [
     "https://api.meta.ai/v1",
     "https://api.meta.ai",
@@ -30,6 +30,12 @@ ALLOWED_EXTERNAL_DESTINATIONS: List[str] = [
     "https://inference.baseten.co/v1",
     "https://inference.baseten.co",
     "baseten_api",
+    "http://127.0.0.1:11434/v1",
+    "http://127.0.0.1:11434",
+    "http://localhost:11434/v1",
+    "http://localhost:11434",
+    "127.0.0.1:11434",
+    "localhost:11434",
 ]
 
 
@@ -88,8 +94,9 @@ class PrivacyGateway:
                 reason="Detected credentials in payload; external transmission forbidden.",
             )
 
-        # 3. Allowlist check for external providers
-        if destination not in ALLOWED_EXTERNAL_DESTINATIONS:
+        # 3. Allowlist check for external providers (local loopback is inherently on-device)
+        is_loopback = "127.0.0.1" in destination or "localhost" in destination
+        if not is_loopback and destination not in ALLOWED_EXTERNAL_DESTINATIONS:
             return PrivacyDecision(
                 decisionId=uuid4(),
                 allowTransmission=False,

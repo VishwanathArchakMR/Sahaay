@@ -425,13 +425,23 @@ class TaskDagEngine:
                         accumulated_facts[f"{node.step_id}.{k}"] = v
                         accumulated_facts[k] = v
 
-                    # Extract grounded entities if text payload is present
+                    # Extract grounded entities if text payload or retrieved facts list is present
                     text_to_extract = (
                         exec_data.get("pageText")
                         or exec_data.get("content")
                         or exec_data.get("extractedText")
                         or exec_data.get("text")
                     )
+                    if not text_to_extract and isinstance(exec_data.get("facts"), list):
+                        facts_list = exec_data["facts"]
+                        snippets = [
+                            f["content"] for f in facts_list if isinstance(f, dict) and f.get("content")
+                        ]
+                        if snippets:
+                            text_to_extract = "\n".join(snippets)
+                            accumulated_facts["extracted_summary"] = "\n".join(snippets[:5])
+                            accumulated_facts[f"{node.step_id}_extracted_summary"] = "\n".join(snippets[:5])
+                            accumulated_facts[f"{node.step_id}.extracted_summary"] = "\n".join(snippets[:5])
                     if (
                         text_to_extract
                         and isinstance(text_to_extract, str)

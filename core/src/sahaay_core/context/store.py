@@ -73,13 +73,32 @@ class ContextStore:
         return chain
 
     def search_facts(self, query: str) -> List[ContextFact]:
-        """Search structured facts by keyword matching content and metadata."""
+        """Search structured facts by keyword, token, and domain matching content and metadata."""
         query_lower = query.strip().lower()
+        facts_to_search = list(self._facts.values())
+        if not facts_to_search:
+            db_facts = durable_storage.get_all_facts(limit=100)
+            for df in db_facts:
+                self._facts[df.factId] = df
+            facts_to_search = list(self._facts.values())
+
         if not query_lower:
-            return list(self._facts.values())
+            return facts_to_search
 
         matching: List[ContextFact] = []
-        for fact in self._facts.values():
-            if query_lower in fact.content.lower():
+        stop_words = {
+            "search", "recent", "summarize", "key", "facts", "and", "the", "for",
+            "with", "from", "what", "is", "a", "an", "to"
+        }
+        tokens = [w for w in query_lower.split() if len(w) > 2 and w not in stop_words]
+
+        if any(w in query_lower for w in ["invoice", "invoices", "bill", "utility", "statement"]):
+            tokens.extend(["bill", "amount", "due", "account", "blr", "inr"])
+
+        for fact in facts_to_search:
+            content_lower = fact.content.lower()
+            if query_lower in content_lower:
+                matching.append(fact)
+            elif tokens and any(t in content_lower for t in tokens):
                 matching.append(fact)
         return matching

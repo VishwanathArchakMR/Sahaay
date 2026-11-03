@@ -60,6 +60,7 @@ obj/
 data/logs/
 data/temp_media/*
 !data/temp_media/.gitkeep
+data/temp_artifacts/
 data/storage/*
 !data/storage/.gitkeep
 

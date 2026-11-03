@@ -5,7 +5,7 @@ backing Muse Spark Open planning, Action Gate policy evaluation, and API discove
 """
 
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from sahaay_core.capabilities.models import (
     CapabilityDescriptor,
@@ -39,6 +39,34 @@ class CapabilityRegistry:
     def list_capabilities(self) -> List[CapabilityDescriptor]:
         """List all registered capabilities."""
         return list(self._capabilities.values())
+
+    def to_model_tool_definitions(
+        self, filter_surfaces: Optional[List[str]] = None
+    ) -> List[Dict[str, Any]]:
+        """Serializes registered capabilities into OpenAI-compatible function calling tool definitions."""
+        tools = []
+        for cap in self._capabilities.values():
+            if cap.readiness_state == CapabilityReadiness.UNAVAILABLE:
+                continue
+            if filter_surfaces and not any(s in filter_surfaces for s in cap.supported_surfaces):
+                continue
+            tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": cap.capability_id,
+                        "description": cap.description,
+                        "parameters": cap.input_schema or {"type": "object", "properties": {}},
+                    },
+                }
+            )
+        return tools
+
+    def get_tool_definitions_for_task(
+        self, goal: str, context: str = ""
+    ) -> List[Dict[str, Any]]:
+        """Dynamically provides all ready system tools for autonomous planning."""
+        return self.to_model_tool_definitions()
 
     def get_catalog_for_prompt(self) -> str:
         """Serializes capabilities into a concise prompt string for planning models."""
@@ -760,8 +788,8 @@ class CapabilityRegistry:
                 input_schema={
                     "type": "object",
                     "properties": {
-                        "path": {"type": "string"},
-                        "content": {"type": "string"},
+                        "path": {"type": "string", "description": "Target file path"},
+                        "content": {"type": "string", "description": "Text content to write"},
                     },
                     "required": ["path", "content"],
                 },
@@ -782,6 +810,442 @@ class CapabilityRegistry:
                 is_idempotent=True,
                 verification_method="Readback verification: read file back, compare content and SHA-256 fingerprint.",
                 required_postconditions=["File exists on disk and content matches written text"],
+                readiness_state=CapabilityReadiness.READY,
+            )
+        )
+
+        # 23. File Read
+        self.register(
+            CapabilityDescriptor(
+                capability_id="file_read",
+                name="Read File Content",
+                description="Read content from a local file safely within permitted workspace/user boundaries.",
+                example_requests=["Read config.json", "Inspect main.py", "View report.txt"],
+                supported_surfaces=["local_store"],
+                adapter="local_file_adapter",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "Path to the file to read"},
+                        "maxLines": {"type": "integer", "description": "Maximum lines to read (default 200)"},
+                    },
+                    "required": ["path"],
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "content": {"type": "string"},
+                        "lines": {"type": "integer"},
+                        "sha256": {"type": "string"},
+                    },
+                },
+                preconditions=["File exists and is readable"],
+                required_permission_scopes=["read:local_file"],
+                risk_category=RiskCategory.LOW,
+                requires_human_confirmation=False,
+                is_reversible=True,
+                timeout_seconds=5.0,
+                is_idempotent=True,
+                verification_method="Cryptographic SHA-256 fingerprinting of read bytes.",
+                required_postconditions=["File content returned"],
+                readiness_state=CapabilityReadiness.READY,
+            )
+        )
+
+        # 24. File List Directory
+        self.register(
+            CapabilityDescriptor(
+                capability_id="file_list_directory",
+                name="List Directory Contents",
+                description="List files and subdirectories in an authorized directory with file sizes and modified dates.",
+                example_requests=["List files in my project", "Show files in downloads"],
+                supported_surfaces=["local_store"],
+                adapter="local_file_adapter",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "Directory path (defaults to current project)"},
+                        "recursive": {"type": "boolean", "description": "Whether to list subdirectories"},
+                    },
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {"items": {"type": "array"}},
+                },
+                preconditions=["Directory exists"],
+                required_permission_scopes=["read:local_file"],
+                risk_category=RiskCategory.LOW,
+                requires_human_confirmation=False,
+                is_reversible=True,
+                timeout_seconds=5.0,
+                is_idempotent=True,
+                verification_method="Directory enumeration via standard filesystem API.",
+                required_postconditions=["Directory entries returned"],
+                readiness_state=CapabilityReadiness.READY,
+            )
+        )
+
+        # 25. Document Ingestion
+        self.register(
+            CapabilityDescriptor(
+                capability_id="document_ingest_file",
+                name="Ingest and Parse Document",
+                description="Safely extract structured text, metadata, and facts from a user file (.pdf, .docx, .xlsx, .pptx, .csv, .md, .txt, code).",
+                example_requests=["Ingest invoice.pdf", "Parse quarterly_report.docx", "Load dataset.xlsx"],
+                supported_surfaces=["local_store"],
+                adapter="document_ingestion_service",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "Absolute or workspace path to document"},
+                        "title": {"type": "string", "description": "Optional human-friendly document title"},
+                    },
+                    "required": ["path"],
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "sourceId": {"type": "string"},
+                        "factsCount": {"type": "integer"},
+                        "checksum": {"type": "string"},
+                    },
+                },
+                preconditions=["File exists and is an authorized format"],
+                required_permission_scopes=["read:local_document"],
+                risk_category=RiskCategory.LOW,
+                requires_human_confirmation=False,
+                is_reversible=True,
+                timeout_seconds=10.0,
+                is_idempotent=True,
+                verification_method="Facts recorded in context store with SHA-256 provenance.",
+                required_postconditions=["Extracted facts available in context store"],
+                readiness_state=CapabilityReadiness.READY,
+            )
+        )
+
+        # 26. Document Search Knowledge
+        self.register(
+            CapabilityDescriptor(
+                capability_id="document_search_knowledge",
+                name="Search Ingested Knowledge",
+                description="Search structured facts across all ingested project documents by keywords and semantic matching with citations.",
+                example_requests=["Find payment terms in contract", "Search for warranty period in manual"],
+                supported_surfaces=["local_store"],
+                adapter="context_store_adapter",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Search keyword or question"},
+                    },
+                    "required": ["query"],
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {"facts": {"type": "array"}},
+                },
+                preconditions=["Documents ingested into context store"],
+                required_permission_scopes=["read:context_facts"],
+                risk_category=RiskCategory.LOW,
+                requires_human_confirmation=False,
+                is_reversible=True,
+                timeout_seconds=5.0,
+                is_idempotent=True,
+                verification_method="Keyword and provenance matching across ContextFacts.",
+                required_postconditions=["Matching facts returned with source IDs"],
+                readiness_state=CapabilityReadiness.READY,
+            )
+        )
+
+        # 27. Document Compare Sources
+        self.register(
+            CapabilityDescriptor(
+                capability_id="document_compare_sources",
+                name="Compare Documents and Detect Inconsistencies",
+                description="Compare statements across multiple ingested documents, identifying contradictions, price differences, or gaps.",
+                example_requests=["Find discrepancies between invoice and purchase order", "Compare specifications"],
+                supported_surfaces=["local_store"],
+                adapter="document_comparison_service",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Topic or fields to compare"},
+                        "sourcePaths": {"type": "array", "description": "List of file paths to compare"},
+                    },
+                    "required": ["query"],
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "inconsistencies": {"type": "array"},
+                        "alignedFacts": {"type": "array"},
+                    },
+                },
+                preconditions=["At least one source ingested"],
+                required_permission_scopes=["read:context_facts"],
+                risk_category=RiskCategory.LOW,
+                requires_human_confirmation=False,
+                is_reversible=True,
+                timeout_seconds=10.0,
+                is_idempotent=True,
+                verification_method="Cross-reference fact matrix comparison with source citations.",
+                required_postconditions=["Comparison matrix synthesized"],
+                readiness_state=CapabilityReadiness.READY,
+            )
+        )
+
+        # 28. Tabular Data Analysis
+        self.register(
+            CapabilityDescriptor(
+                capability_id="data_analyze_tabular",
+                name="Analyze Tabular Data",
+                description="Perform deterministic mathematical, statistical, and SQL analysis on CSV, XLSX, or JSON tables (sums, averages, grouping, filtering).",
+                example_requests=["Calculate total revenue and average margin from sales.csv", "Analyze expense spreadsheet"],
+                supported_surfaces=["local_store"],
+                adapter="data_analysis_runtime",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "source": {"type": "string", "description": "File path or CSV data string"},
+                        "query": {"type": "string", "description": "Optional SQL query over 'data_table'"},
+                    },
+                    "required": ["source"],
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "statistics": {"type": "object"},
+                        "markdownPreview": {"type": "string"},
+                    },
+                },
+                preconditions=["Source tabular data exists"],
+                required_permission_scopes=["read:local_file"],
+                risk_category=RiskCategory.LOW,
+                requires_human_confirmation=False,
+                is_reversible=True,
+                timeout_seconds=10.0,
+                is_idempotent=True,
+                verification_method="In-memory SQLite schema validation and deterministic computation.",
+                required_postconditions=["Computed numerical stats and table returned"],
+                readiness_state=CapabilityReadiness.READY,
+            )
+        )
+
+        # 29. Artifact Generate Document
+        self.register(
+            CapabilityDescriptor(
+                capability_id="artifact_generate_document",
+                name="Generate Word or Markdown Document",
+                description="Create a real editable Word (.docx) or Markdown (.md) document with title, executive summary, sections, and citations.",
+                example_requests=["Create a complete research report on my Desktop", "Prepare project audit document"],
+                supported_surfaces=["local_store"],
+                adapter="artifact_generator_service",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string", "description": "Document title"},
+                        "sections": {
+                            "type": "array",
+                            "description": "List of sections with 'heading' and 'content'",
+                        },
+                        "outputPath": {"type": "string", "description": "Target file path (e.g. '~/Desktop/report.docx')"},
+                        "format": {"type": "string", "description": "'docx' or 'md' (default 'docx')"},
+                        "sources": {"type": "array", "description": "Optional list of citation strings"},
+                    },
+                    "required": ["title", "sections", "outputPath"],
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "filePath": {"type": "string"},
+                        "fileSize": {"type": "integer"},
+                        "sha256": {"type": "string"},
+                    },
+                },
+                preconditions=["Destination directory is writable"],
+                required_permission_scopes=["write:local_file"],
+                risk_category=RiskCategory.MEDIUM,
+                requires_human_confirmation=False,
+                is_reversible=True,
+                timeout_seconds=8.0,
+                is_idempotent=True,
+                verification_method="File write and readback verification with SHA-256 fingerprinting.",
+                required_postconditions=["Document exists on disk with verified content"],
+                readiness_state=CapabilityReadiness.READY,
+            )
+        )
+
+        # 30. Artifact Generate Spreadsheet
+        self.register(
+            CapabilityDescriptor(
+                capability_id="artifact_generate_spreadsheet",
+                name="Generate Excel Workbook",
+                description="Create a real editable Excel (.xlsx) or CSV workbook with headers, rows, and mathematical formulas (e.g. SUM, AVERAGE).",
+                example_requests=["Create a product comparison sheet on Desktop", "Export financial budget.xlsx"],
+                supported_surfaces=["local_store"],
+                adapter="artifact_generator_service",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string", "description": "Workbook title"},
+                        "headers": {"type": "array", "description": "Column header names"},
+                        "rows": {"type": "array", "description": "2D list of row values"},
+                        "outputPath": {"type": "string", "description": "Target file path (e.g. '~/Desktop/budget.xlsx')"},
+                        "format": {"type": "string", "description": "'xlsx' or 'csv' (default 'xlsx')"},
+                    },
+                    "required": ["title", "headers", "rows", "outputPath"],
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "filePath": {"type": "string"},
+                        "fileSize": {"type": "integer"},
+                        "sha256": {"type": "string"},
+                    },
+                },
+                preconditions=["Destination directory is writable"],
+                required_permission_scopes=["write:local_file"],
+                risk_category=RiskCategory.MEDIUM,
+                requires_human_confirmation=False,
+                is_reversible=True,
+                timeout_seconds=8.0,
+                is_idempotent=True,
+                verification_method="File write and readback verification with SHA-256 fingerprinting.",
+                required_postconditions=["Spreadsheet exists on disk with verified rows"],
+                readiness_state=CapabilityReadiness.READY,
+            )
+        )
+
+        # 31. Multi-Hop Web Research
+        self.register(
+            CapabilityDescriptor(
+                capability_id="research_web_multihop",
+                name="Conduct Multi-Hop Web Research",
+                description="Search the web, fetch top primary sources with SSRF defense, extract factual statements, and return cited evidence.",
+                example_requests=["Research market trends in EV batteries", "Find official documentation for React 19"],
+                supported_surfaces=["internet"],
+                adapter="internet_research_manager",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Search query or research question"},
+                        "maxResults": {"type": "integer", "description": "Number of sources to retrieve (default 4)"},
+                    },
+                    "required": ["query"],
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "results": {"type": "array"},
+                        "citations": {"type": "array"},
+                    },
+                },
+                preconditions=["Internet connectivity available"],
+                required_permission_scopes=["access:public_web"],
+                risk_category=RiskCategory.LOW,
+                requires_human_confirmation=False,
+                is_reversible=True,
+                timeout_seconds=15.0,
+                is_idempotent=True,
+                verification_method="Validation of retrieved page URLs and cryptographic fingerprinting of results.",
+                required_postconditions=["Cited web research results returned"],
+                readiness_state=CapabilityReadiness.READY,
+            )
+        )
+
+        # 32. Windows Enumerate Controls
+        self.register(
+            CapabilityDescriptor(
+                capability_id="windows_enumerate_controls",
+                name="Enumerate Windows UI Controls",
+                description="Inspect the accessible UI Automation element tree of the active or target window, returning control roles, names, and IDs.",
+                example_requests=["Inspect controls in active window", "Find button in Calculator"],
+                supported_surfaces=["desktop_window"],
+                adapter="windows_native_companion",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "hwnd": {"type": "integer", "description": "Optional window handle (defaults to foreground window)"},
+                    },
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {"controls": {"type": "array"}},
+                },
+                preconditions=["Windows Controller running"],
+                required_permission_scopes=["read:desktop_window"],
+                risk_category=RiskCategory.LOW,
+                requires_human_confirmation=False,
+                is_reversible=True,
+                timeout_seconds=5.0,
+                is_idempotent=True,
+                verification_method="UI Automation tree enumeration.",
+                required_postconditions=["Control descriptors returned"],
+                readiness_state=CapabilityReadiness.READY,
+            )
+        )
+
+        # 33. Windows Invoke Control
+        self.register(
+            CapabilityDescriptor(
+                capability_id="windows_invoke_control",
+                name="Invoke Windows Control",
+                description="Click, toggle, or invoke an accessible UI Automation control by its AutomationId or Name.",
+                example_requests=["Click Equals button in Calculator", "Click Save in Notepad"],
+                supported_surfaces=["desktop_window"],
+                adapter="windows_native_companion",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "controlName": {"type": "string", "description": "Accessible name of the control"},
+                        "automationId": {"type": "string", "description": "Optional AutomationId of the control"},
+                        "hwnd": {"type": "integer", "description": "Optional target window handle"},
+                    },
+                    "required": ["controlName"],
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {"success": {"type": "boolean"}},
+                },
+                preconditions=["Target control exists in active window"],
+                required_permission_scopes=["action:desktop_window"],
+                risk_category=RiskCategory.MEDIUM,
+                requires_human_confirmation=False,
+                is_reversible=False,
+                timeout_seconds=5.0,
+                is_idempotent=False,
+                verification_method="Post-invocation observation of control state change.",
+                required_postconditions=["Control invoked"],
+                readiness_state=CapabilityReadiness.READY,
+            )
+        )
+
+        # 34. Browser Get Active Tab
+        self.register(
+            CapabilityDescriptor(
+                capability_id="browser_get_active_tab",
+                name="Get Active Browser Tab",
+                description="Inspect the active browser tab's URL, page title, and visible text content.",
+                example_requests=["Read current page", "What tab is open?"],
+                supported_surfaces=["browser_tab"],
+                adapter="browser_extension_bridge",
+                input_schema={"type": "object", "properties": {}},
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string"},
+                        "title": {"type": "string"},
+                        "textExcerpt": {"type": "string"},
+                    },
+                },
+                preconditions=["Browser extension connected"],
+                required_permission_scopes=["read:browser_tab"],
+                risk_category=RiskCategory.LOW,
+                requires_human_confirmation=False,
+                is_reversible=True,
+                timeout_seconds=5.0,
+                is_idempotent=True,
+                verification_method="Active tab query from browser extension bridge.",
+                required_postconditions=["Tab observation returned"],
                 readiness_state=CapabilityReadiness.READY,
             )
         )

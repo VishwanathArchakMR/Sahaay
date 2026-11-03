@@ -177,6 +177,44 @@ def init_persistence_schema() -> None:
                 citations_json TEXT NOT NULL DEFAULT '[]',
                 status TEXT NOT NULL DEFAULT 'COMPLETED'
             );
+
+            CREATE TABLE IF NOT EXISTS task_blueprints (
+                task_id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                original_goal TEXT NOT NULL,
+                normalized_outcome TEXT NOT NULL,
+                constraints_json TEXT NOT NULL DEFAULT '[]',
+                definition_of_done_json TEXT NOT NULL DEFAULT '[]',
+                deliverables_json TEXT NOT NULL DEFAULT '[]',
+                required_capabilities_json TEXT NOT NULL DEFAULT '[]',
+                risk_gates_json TEXT NOT NULL DEFAULT '[]',
+                verification_criteria_json TEXT NOT NULL DEFAULT '[]',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (task_id) REFERENCES tasks(task_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS task_events (
+                event_id TEXT PRIMARY KEY,
+                task_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                stage TEXT NOT NULL,
+                message TEXT NOT NULL,
+                data_json TEXT NOT NULL DEFAULT '{}',
+                timestamp TEXT NOT NULL,
+                FOREIGN KEY (task_id) REFERENCES tasks(task_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS project_memory (
+                memory_id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL DEFAULT 'default',
+                memory_key TEXT NOT NULL,
+                memory_value TEXT NOT NULL,
+                category TEXT NOT NULL DEFAULT 'fact',
+                provenance_uri TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
             """
         )
     conn.close()
@@ -397,6 +435,27 @@ class DurableStorage:
             for r in rows
         ]
 
+    def get_all_facts(self, limit: int = 200) -> List[ContextFact]:
+        conn = get_sqlite_conn()
+        rows = conn.execute(
+            "SELECT * FROM context_facts ORDER BY recorded_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        conn.close()
+        return [
+            ContextFact(
+                factId=UUID(r["fact_id"]),
+                factType=FactTypeEnum(r["fact_type"]),
+                content=r["content"],
+                sourceReferenceId=UUID(r["source_reference_id"]),
+                derivationIds=[UUID(d) for d in json.loads(r["derivation_ids_json"])],
+                confidenceScore=r["confidence_score"],
+                recordedAt=datetime.fromisoformat(r["recorded_at"]),
+                metadata=json.loads(r["metadata_json"]),
+            )
+            for r in rows
+        ]
+
     # --- Facts ---
     def save_fact(self, fact: ContextFact) -> None:
         conn = get_sqlite_conn()
@@ -470,6 +529,27 @@ class DurableStorage:
             for r in rows
         ]
 
+    def get_all_facts(self, limit: int = 200) -> List[ContextFact]:
+        conn = get_sqlite_conn()
+        rows = conn.execute(
+            "SELECT * FROM context_facts ORDER BY recorded_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        conn.close()
+        return [
+            ContextFact(
+                factId=UUID(r["fact_id"]),
+                factType=FactTypeEnum(r["fact_type"]),
+                content=r["content"],
+                sourceReferenceId=UUID(r["source_reference_id"]),
+                derivationIds=[UUID(d) for d in json.loads(r["derivation_ids_json"])],
+                confidenceScore=r["confidence_score"],
+                recordedAt=datetime.fromisoformat(r["recorded_at"]),
+                metadata=json.loads(r["metadata_json"]),
+            )
+            for r in rows
+        ]
+
     # --- Evidence ---
     def save_evidence(self, evidence: EvidenceReference) -> None:
         conn = get_sqlite_conn()
@@ -510,6 +590,27 @@ class DurableStorage:
                 verificationResultId=UUID(r["verification_result_id"]),
                 createdAt=datetime.fromisoformat(r["created_at"]),
                 narrative=r["narrative"],
+            )
+            for r in rows
+        ]
+
+    def get_all_facts(self, limit: int = 200) -> List[ContextFact]:
+        conn = get_sqlite_conn()
+        rows = conn.execute(
+            "SELECT * FROM context_facts ORDER BY recorded_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        conn.close()
+        return [
+            ContextFact(
+                factId=UUID(r["fact_id"]),
+                factType=FactTypeEnum(r["fact_type"]),
+                content=r["content"],
+                sourceReferenceId=UUID(r["source_reference_id"]),
+                derivationIds=[UUID(d) for d in json.loads(r["derivation_ids_json"])],
+                confidenceScore=r["confidence_score"],
+                recordedAt=datetime.fromisoformat(r["recorded_at"]),
+                metadata=json.loads(r["metadata_json"]),
             )
             for r in rows
         ]
@@ -831,6 +932,309 @@ class DurableStorage:
             "citations": json.loads(row["citations_json"]),
             "status": row["status"],
         }
+
+    # --- Artifacts ---
+    def save_artifact(
+        self,
+        artifact_id: str,
+        task_id: str,
+        artifact_type: str,
+        file_path: str,
+        file_size_bytes: int = 0,
+        prompt_hash: Optional[str] = None,
+    ) -> None:
+        conn = get_sqlite_conn()
+        now_str = datetime.now(timezone.utc).isoformat()
+        with conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO artifacts (
+                    artifact_id, task_id, artifact_type, file_path, prompt_hash, file_size_bytes, is_active, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+                """,
+                (
+                    artifact_id,
+                    task_id,
+                    artifact_type,
+                    file_path,
+                    prompt_hash,
+                    file_size_bytes,
+                    now_str,
+                ),
+            )
+        conn.close()
+
+    def get_artifacts_for_task(self, task_id: str) -> List[Dict[str, Any]]:
+        conn = get_sqlite_conn()
+        rows = conn.execute(
+            "SELECT * FROM artifacts WHERE task_id = ? AND is_active = 1 ORDER BY created_at DESC",
+            (task_id,),
+        ).fetchall()
+        conn.close()
+        return [
+            {
+                "artifactId": r["artifact_id"],
+                "taskId": r["task_id"],
+                "artifactType": r["artifact_type"],
+                "filePath": r["file_path"],
+                "fileSizeBytes": r["file_size_bytes"],
+                "createdAt": r["created_at"],
+            }
+            for r in rows
+        ]
+
+    def get_all_facts(self, limit: int = 200) -> List[ContextFact]:
+        conn = get_sqlite_conn()
+        rows = conn.execute(
+            "SELECT * FROM context_facts ORDER BY recorded_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        conn.close()
+        return [
+            ContextFact(
+                factId=UUID(r["fact_id"]),
+                factType=FactTypeEnum(r["fact_type"]),
+                content=r["content"],
+                sourceReferenceId=UUID(r["source_reference_id"]),
+                derivationIds=[UUID(d) for d in json.loads(r["derivation_ids_json"])],
+                confidenceScore=r["confidence_score"],
+                recordedAt=datetime.fromisoformat(r["recorded_at"]),
+                metadata=json.loads(r["metadata_json"]),
+            )
+            for r in rows
+        ]
+
+    # --- Task Blueprints ---
+    def save_task_blueprint(self, task_id: str, blueprint: Dict[str, Any]) -> None:
+        """Durable persistence for the structured Task Blueprint."""
+        conn = get_sqlite_conn()
+        now_str = datetime.now(timezone.utc).isoformat()
+        with conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO task_blueprints (
+                    task_id, session_id, original_goal, normalized_outcome,
+                    constraints_json, definition_of_done_json, deliverables_json,
+                    required_capabilities_json, risk_gates_json, verification_criteria_json,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    task_id,
+                    str(blueprint.get("sessionId", "")),
+                    str(blueprint.get("originalGoal", "")),
+                    str(blueprint.get("normalizedOutcome", "")),
+                    json.dumps(blueprint.get("constraints", [])),
+                    json.dumps(blueprint.get("definitionOfDone", [])),
+                    json.dumps(blueprint.get("deliverables", [])),
+                    json.dumps(blueprint.get("requiredCapabilities", [])),
+                    json.dumps(blueprint.get("riskGates", [])),
+                    json.dumps(blueprint.get("verificationCriteria", [])),
+                    blueprint.get("createdAt", now_str),
+                    now_str,
+                ),
+            )
+        conn.close()
+
+    def get_task_blueprint(self, task_id: str) -> Optional[Dict[str, Any]]:
+        conn = get_sqlite_conn()
+        row = conn.execute("SELECT * FROM task_blueprints WHERE task_id = ?", (task_id,)).fetchone()
+        conn.close()
+        if not row:
+            return None
+        return {
+            "taskId": row["task_id"],
+            "sessionId": row["session_id"],
+            "originalGoal": row["original_goal"],
+            "normalizedOutcome": row["normalized_outcome"],
+            "constraints": json.loads(row["constraints_json"]),
+            "definitionOfDone": json.loads(row["definition_of_done_json"]),
+            "deliverables": json.loads(row["deliverables_json"]),
+            "requiredCapabilities": json.loads(row["required_capabilities_json"]),
+            "riskGates": json.loads(row["risk_gates_json"]),
+            "verificationCriteria": json.loads(row["verification_criteria_json"]),
+            "createdAt": row["created_at"],
+            "updatedAt": row["updated_at"],
+        }
+
+    # --- Task Events & Lifecycle Stream ---
+    def record_task_event(
+        self,
+        task_id: str,
+        event_type: str,
+        stage: str,
+        message: str,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Record a structured real-time lifecycle event for a task."""
+        import uuid
+        event_id = str(uuid.uuid4())
+        now_str = datetime.now(timezone.utc).isoformat()
+        event_dict = {
+            "eventId": event_id,
+            "taskId": task_id,
+            "eventType": event_type,
+            "stage": stage,
+            "message": message,
+            "data": data or {},
+            "timestamp": now_str,
+        }
+        conn = get_sqlite_conn()
+        with conn:
+            conn.execute(
+                """
+                INSERT INTO task_events (event_id, task_id, event_type, stage, message, data_json, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event_id,
+                    task_id,
+                    event_type,
+                    stage,
+                    message,
+                    json.dumps(data or {}),
+                    now_str,
+                ),
+            )
+        conn.close()
+        return event_dict
+
+    def get_task_events(self, task_id: str, limit: int = 100) -> List[Dict[str, Any]]:
+        conn = get_sqlite_conn()
+        rows = conn.execute(
+            "SELECT * FROM task_events WHERE task_id = ? ORDER BY timestamp ASC LIMIT ?",
+            (task_id, limit),
+        ).fetchall()
+        conn.close()
+        return [
+            {
+                "eventId": r["event_id"],
+                "taskId": r["task_id"],
+                "eventType": r["event_type"],
+                "stage": r["stage"],
+                "message": r["message"],
+                "data": json.loads(r["data_json"]),
+                "timestamp": r["timestamp"],
+            }
+            for r in rows
+        ]
+
+    def get_all_facts(self, limit: int = 200) -> List[ContextFact]:
+        conn = get_sqlite_conn()
+        rows = conn.execute(
+            "SELECT * FROM context_facts ORDER BY recorded_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        conn.close()
+        return [
+            ContextFact(
+                factId=UUID(r["fact_id"]),
+                factType=FactTypeEnum(r["fact_type"]),
+                content=r["content"],
+                sourceReferenceId=UUID(r["source_reference_id"]),
+                derivationIds=[UUID(d) for d in json.loads(r["derivation_ids_json"])],
+                confidenceScore=r["confidence_score"],
+                recordedAt=datetime.fromisoformat(r["recorded_at"]),
+                metadata=json.loads(r["metadata_json"]),
+            )
+            for r in rows
+        ]
+
+    # --- Project Memory ---
+    def save_project_memory(
+        self,
+        memory_key: str,
+        memory_value: str,
+        category: str = "fact",
+        project_id: str = "default",
+        provenance_uri: Optional[str] = None,
+    ) -> None:
+        import uuid
+        memory_id = str(uuid.uuid4())
+        now_str = datetime.now(timezone.utc).isoformat()
+        conn = get_sqlite_conn()
+        with conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO project_memory (
+                    memory_id, project_id, memory_key, memory_value, category, provenance_uri, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    memory_id,
+                    project_id,
+                    memory_key,
+                    memory_value,
+                    category,
+                    provenance_uri,
+                    now_str,
+                    now_str,
+                ),
+            )
+        conn.close()
+
+    def get_project_memory(self, project_id: str = "default") -> List[Dict[str, Any]]:
+        conn = get_sqlite_conn()
+        rows = conn.execute(
+            "SELECT * FROM project_memory WHERE project_id = ? ORDER BY updated_at DESC",
+            (project_id,),
+        ).fetchall()
+        conn.close()
+        return [
+            {
+                "memoryId": r["memory_id"],
+                "projectId": r["project_id"],
+                "key": r["memory_key"],
+                "value": r["memory_value"],
+                "category": r["category"],
+                "provenanceUri": r["provenance_uri"],
+                "createdAt": r["created_at"],
+                "updatedAt": r["updated_at"],
+            }
+            for r in rows
+        ]
+
+    def get_all_facts(self, limit: int = 200) -> List[ContextFact]:
+        conn = get_sqlite_conn()
+        rows = conn.execute(
+            "SELECT * FROM context_facts ORDER BY recorded_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        conn.close()
+        return [
+            ContextFact(
+                factId=UUID(r["fact_id"]),
+                factType=FactTypeEnum(r["fact_type"]),
+                content=r["content"],
+                sourceReferenceId=UUID(r["source_reference_id"]),
+                derivationIds=[UUID(d) for d in json.loads(r["derivation_ids_json"])],
+                confidenceScore=r["confidence_score"],
+                recordedAt=datetime.fromisoformat(r["recorded_at"]),
+                metadata=json.loads(r["metadata_json"]),
+            )
+            for r in rows
+        ]
+
+    def get_all_facts(self, limit: int = 200) -> List[ContextFact]:
+        conn = get_sqlite_conn()
+        rows = conn.execute(
+            "SELECT * FROM context_facts ORDER BY recorded_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        conn.close()
+        return [
+            ContextFact(
+                factId=UUID(r["fact_id"]),
+                factType=FactTypeEnum(r["fact_type"]),
+                content=r["content"],
+                sourceReferenceId=UUID(r["source_reference_id"]),
+                derivationIds=[UUID(d) for d in json.loads(r["derivation_ids_json"])],
+                confidenceScore=r["confidence_score"],
+                recordedAt=datetime.fromisoformat(r["recorded_at"]),
+                metadata=json.loads(r["metadata_json"]),
+            )
+            for r in rows
+        ]
 
     # Backward-compatible method aliases
     save_source_reference = save_source

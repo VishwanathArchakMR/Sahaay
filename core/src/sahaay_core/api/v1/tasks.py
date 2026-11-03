@@ -272,3 +272,62 @@ async def execute_combined_retrieval_and_scroll(
         "matchedSource": matching_facts[0][0].uri,
         "status": "COMPLETED",
     }
+
+
+@router.get("/{task_id}/events")
+async def get_task_events(task_id: UUID, limit: int = 100):
+    """Retrieve recorded lifecycle events for a task."""
+    from sahaay_core.storage.persistence import durable_storage
+
+    events = durable_storage.get_task_events(str(task_id), limit=limit)
+    return {"taskId": str(task_id), "events": events, "count": len(events)}
+
+
+@router.get("/{task_id}/blueprint")
+async def get_task_blueprint(task_id: UUID):
+    """Retrieve the authoritative Task Blueprint and Definition-of-Done for a task."""
+    from sahaay_core.storage.persistence import durable_storage
+
+    bp = durable_storage.get_task_blueprint(str(task_id))
+    if not bp:
+        raise HTTPException(status_code=404, detail="Task blueprint not found")
+    return bp
+
+
+@router.get("/{task_id}/artifacts")
+async def get_task_artifacts(task_id: UUID):
+    """Retrieve all artifacts generated for this task."""
+    from sahaay_core.storage.persistence import durable_storage
+
+    artifacts = durable_storage.get_artifacts_for_task(str(task_id))
+    return {"taskId": str(task_id), "artifacts": artifacts, "count": len(artifacts)}
+
+
+@router.get("/{task_id}/stream")
+async def stream_task_events(task_id: UUID):
+    """Real-time SSE event stream for live task progress on desktop and browser."""
+    import asyncio
+    import json
+    from fastapi.responses import StreamingResponse
+    from sahaay_core.storage.persistence import durable_storage
+
+    async def event_generator():
+        last_count = 0
+        poll_interval = 0.5
+        max_duration = 180.0  # 3 minutes max stream
+        elapsed = 0.0
+
+        while elapsed < max_duration:
+            events = durable_storage.get_task_events(str(task_id), limit=200)
+            if len(events) > last_count:
+                new_events = events[last_count:]
+                for ev in new_events:
+                    yield f"data: {json.dumps(ev)}\n\n"
+                last_count = len(events)
+                # If terminal event observed, end stream
+                if any(ev.get("eventType") in ("task.completed", "task.failed", "task.cancelled") for ev in new_events):
+                    break
+            await asyncio.sleep(poll_interval)
+            elapsed += poll_interval
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
