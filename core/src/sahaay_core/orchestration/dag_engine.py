@@ -479,15 +479,18 @@ class TaskDagEngine:
                     if amt or dt:
                         bill_parts = []
                         if cust:
-                            bill_parts.append(f"Customer: {cust}")
+                            bill_parts.append(f"Entity: {cust}")
                         if acct:
                             bill_parts.append(f"Account: {acct}")
                         if amt:
                             bill_parts.append(f"Amount: {amt}")
                         if dt:
-                            bill_parts.append(f"Due: {dt}")
-                        bill_sum = "Electricity Bill Summary: " + " | ".join(bill_parts)
+                            bill_parts.append(f"Date: {dt}")
+                        bill_sum = "Extracted Summary: " + " | ".join(bill_parts)
+                        accumulated_facts["extracted_summary"] = bill_sum
                         accumulated_facts["bill_summary"] = bill_sum
+                        accumulated_facts[f"{node.step_id}_extracted_summary"] = bill_sum
+                        accumulated_facts[f"{node.step_id}.extracted_summary"] = bill_sum
                         accumulated_facts[f"{node.step_id}_bill_summary"] = bill_sum
                         accumulated_facts[f"{node.step_id}.bill_summary"] = bill_sum
 

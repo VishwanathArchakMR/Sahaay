@@ -215,6 +215,7 @@ async def execute_browser_to_desktop(req: BrowserToDesktopRequest) -> Dict[str, 
     content_hash = hashlib.sha256(bill_text.encode("utf-8")).hexdigest()
 
     # 2. RETRIEVE & GROUND
+    tab_title = (live_obs.get("title") if "live_obs" in locals() and live_obs else None) or "Active Browser Tab"
     source_ref = source_manager.register_source(
         source_type="browser_tab" if not is_fixture else "synthetic_fixture",
         uri=req.sourceTabUrl
@@ -223,7 +224,7 @@ async def execute_browser_to_desktop(req: BrowserToDesktopRequest) -> Dict[str, 
             if is_fixture
             else "browser://active_tab"
         ),
-        title="Bengaluru Electricity Supply (BESCOM) - Utility Bill",
+        title=tab_title if not is_fixture else "Utility Bill Fixture",
     )
 
     extracted = await muse_spark.extract_grounded_facts(
@@ -277,14 +278,14 @@ async def execute_browser_to_desktop(req: BrowserToDesktopRequest) -> Dict[str, 
     target_hwnd = req.targetHwnd or 0
     target_identifier = f"hwnd:{target_hwnd}:{req.targetControlId}"
 
-    summary_text = (
-        f"BESCOM BILL SUMMARY\n"
-        f"Customer: {extracted.get('consumer_name', '')}\n"
-        f"Account: {extracted.get('account_number', '')}\n"
-        f"Amount: {extracted.get('amount_due', '')}\n"
-        f"Due Date: {extracted.get('due_date', '')}\n"
-        f"Verified Source Hash: {content_hash[:16]}"
-    )
+    summary_lines = []
+    for k, v in extracted.items():
+        if v:
+            summary_lines.append(f"{k.replace('_', ' ').title()}: {v}")
+    if not summary_lines:
+        summary_lines.append(f"Content: {(bill_text[:200] if bill_text else 'N/A')}")
+    summary_lines.append(f"Verified Source Hash: {content_hash[:16]}")
+    summary_text = "EXTRACTED PAGE SUMMARY\n" + "\n".join(summary_lines)
 
     action = ActionContract(
         actionId=uuid4(),
@@ -1061,10 +1062,11 @@ async def _execute_goal_pipeline(
     # Extract summary text from accumulated facts if present
     facts = report.accumulated_facts
     summary_text = (
-        facts.get("bill_summary")
-        or facts.get("deadline_summary")
+        (f"Calculation outcome: {facts.get('calculation_result')}" if facts.get("calculation_result") is not None else None)
+        or facts.get("extracted_summary")
         or facts.get("key_findings")
-        or (f"Calculation outcome: {facts.get('calculation_result')}" if facts.get("calculation_result") else None)
+        or facts.get("deadline_summary")
+        or facts.get("bill_summary")
         or f"Task executed with {report.completed_steps_count}/{report.total_steps_count} steps completed."
     )
 

@@ -79,34 +79,6 @@
           </svg>
         </div>
       </div>
-
-      <!-- Quick Action Chips -->
-      <div class="quick-chips">
-        <button class="glass-control chip-btn" id="chip-summarize">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-            <polyline points="14 2 14 8 20 8"/>
-            <line x1="16" y1="13" x2="8" y2="13"/>
-            <line x1="16" y1="17" x2="8" y2="17"/>
-          </svg>
-          Summarize
-        </button>
-        <button class="glass-control chip-btn" id="chip-extract">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polygon points="12 2 2 7 12 12 22 7 12 2"/>
-            <polyline points="2 17 12 22 22 17"/>
-            <polyline points="2 12 12 17 22 12"/>
-          </svg>
-          Extract
-        </button>
-        <button class="glass-control chip-btn" id="chip-notepad">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-          </svg>
-          Send to Notepad
-        </button>
-      </div>
     </section>
 
     <!-- Chat & Interaction Stream -->
@@ -120,24 +92,26 @@
           <span>Sahaay Browser Assistant</span>
         </div>
         <div class="glass-surface agent-card">
-          <p>I'm your Aurora Glass browser assistant. I can summarize active articles, extract data, and bridge findings to your Windows desktop with cryptographic proof.</p>
+          <p>Ready to assist with this page or cross-surface desktop tasks. Enter a task below.</p>
         </div>
       </div>
     </main>
 
     <!-- Composer -->
     <footer class="glass-surface panel-composer">
-      <input type="text" id="composer-input" class="composer-input" placeholder="Ask anything about this page..." />
-      <button class="icon-btn" id="btn-mic" title="Voice Input">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-          <line x1="12" y1="19" x2="12" y2="23"/>
-          <line x1="8" y1="23" x2="16" y2="23"/>
+      <input type="text" id="composer-input" class="composer-input" placeholder="Ask anything about this page or task..." />
+      <button class="icon-btn" id="btn-stop" title="Stop Task" style="display: none; color: var(--sahaay-danger); border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.15);">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="4" y="4" width="16" height="16" rx="2" ry="2"/>
         </svg>
       </button>
       <button class="send-btn" id="btn-send" title="Send Task">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#041B23" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13"/>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
+      </button>
+    </footer>
           <line x1="22" y1="2" x2="11" y2="13"/>
           <polygon points="22 2 15 22 11 13 2 9 22 2"/>
         </svg>

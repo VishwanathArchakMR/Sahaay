@@ -6,7 +6,6 @@ import {
   Globe,
   Monitor,
   Folder,
-  LayoutGrid,
   Clock,
   Settings,
   PlusCircle,
@@ -15,10 +14,7 @@ import {
   RefreshCw,
   Search,
   FileText,
-  Sparkles,
   ArrowRight,
-  Camera,
-  Bell,
   Activity,
   X,
 } from "lucide-react";
@@ -143,11 +139,8 @@ interface ModelsStatusReport {
 export function App(): React.JSX.Element {
   // Navigation & View state
   const [activeNav, setActiveNav] = useState<
-    "home" | "tasks" | "computer" | "browser" | "files" | "apps" | "voice" | "history" | "settings" | "diagnostics"
+    "home" | "tasks" | "computer" | "browser" | "files" | "history" | "settings" | "diagnostics"
   >("home");
-  const [selectedContexts, setSelectedContexts] = useState<Set<string>>(
-    new Set(["Computer", "Browser", "Files", "Apps", "Voice"])
-  );
 
   // Session & Privacy
   const [sessionId, setSessionId] = useState<string>("");
@@ -446,35 +439,6 @@ export function App(): React.JSX.Element {
     }
   };
 
-  const toggleLocalOnlyMode = async () => {
-    const newMode = !localOnlyMode;
-    const headers = await getApiHeaders();
-    try {
-      const res = await safeFetch(
-        `${API_BASE}/sessions`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ localOnlyMode: newMode }),
-        },
-        2500
-      );
-      if (res.ok) {
-        const data = await res.json();
-        setSessionId(data.sessionId);
-        localStorage.setItem("sahaay_active_session_id", data.sessionId);
-        setLocalOnlyMode(data.localOnlyMode);
-        addTimelineEntry(
-          "IDLE",
-          "Privacy Mode Toggled",
-          `Local-Only Mode is now: ${newMode ? "ACTIVE" : "DISABLED"}`
-        );
-      }
-    } catch (e) {
-      console.error("Failed to toggle privacy mode:", e);
-    }
-  };
-
   const addTimelineEntry = (
     state: TaskFlowState,
     title: string,
@@ -508,15 +472,6 @@ export function App(): React.JSX.Element {
       console.warn("Could not fetch Task Passport:", err);
     }
     return null;
-  };
-
-  const toggleContext = (ctx: string) => {
-    setSelectedContexts((prev) => {
-      const next = new Set(prev);
-      if (next.has(ctx)) next.delete(ctx);
-      else next.add(ctx);
-      return next;
-    });
   };
 
   // Execution Handlers
@@ -1034,22 +989,6 @@ export function App(): React.JSX.Element {
             </button>
 
             <button
-              onClick={() => setActiveNav("apps")}
-              className={`nav-rail-item ${activeNav === "apps" ? "active" : ""}`}
-            >
-              <LayoutGrid size={16} />
-              <span>Apps</span>
-            </button>
-
-            <button
-              onClick={() => toggleRecording()}
-              className={`nav-rail-item ${isRecording ? "active" : ""}`}
-            >
-              <Mic size={16} color="var(--sahaay-mint)" />
-              <span>Voice</span>
-            </button>
-
-            <button
               onClick={() => setActiveNav("history")}
               className={`nav-rail-item ${activeNav === "history" ? "active" : ""}`}
             >
@@ -1101,24 +1040,23 @@ export function App(): React.JSX.Element {
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            {/* Local Mode Pill */}
-            <button
-              onClick={toggleLocalOnlyMode}
+            {/* Meta Cloud Connection Status Pill */}
+            <div
               className="glass-control"
               style={{ padding: "4px 12px", display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", fontWeight: 500 }}
-              title="Toggle Local-Only Privacy Mode"
+              title={modelsStatus?.metaHosted?.isConfigured ? `Meta Cloud: ${modelsStatus?.metaHosted?.modelId || "muse-spark-1.3"} (Connected)` : "Meta Cloud: Configure credentials in Settings"}
             >
               <div
                 style={{
                   width: "8px",
                   height: "8px",
                   borderRadius: "50%",
-                  backgroundColor: localOnlyMode ? "var(--sahaay-mint)" : "var(--sahaay-cyan)",
-                  boxShadow: localOnlyMode ? "0 0 8px #8AF5CF" : "none",
+                  backgroundColor: modelsStatus?.metaHosted?.isConfigured ? "var(--sahaay-mint)" : "var(--sahaay-warning)",
+                  boxShadow: modelsStatus?.metaHosted?.isConfigured ? "0 0 8px #8AF5CF" : "none",
                 }}
               />
-              <span>{localOnlyMode ? "Local Mode" : "Hosted Mode"}</span>
-            </button>
+              <span>{modelsStatus?.metaHosted?.isConfigured ? "Meta Cloud Active" : "Meta Cloud Setup"}</span>
+            </div>
 
             {/* Diagnostics toggle */}
             <button
@@ -1138,45 +1076,6 @@ export function App(): React.JSX.Element {
           <section className="hero-section">
             <h1 className="hero-title">Good Morning,</h1>
             <h2 className="hero-subtitle">How can I help you today?</h2>
-
-            {/* Quick Category Chips */}
-            <div className="chips-row">
-              <button
-                onClick={() => setUserPrompt("Search recent invoices and summarize key facts")}
-                className="glass-control chip-btn"
-              >
-                <Search size={14} color="var(--sahaay-mint)" />
-                <span>Find information</span>
-              </button>
-              <button
-                onClick={() => setUserPrompt("Read local invoice statement and extract details")}
-                className="glass-control chip-btn"
-              >
-                <CheckCircle2 size={14} color="var(--sahaay-teal)" />
-                <span>Work with files</span>
-              </button>
-              <button
-                onClick={() => setUserPrompt("Summarize active web browser tab to Notepad")}
-                className="glass-control chip-btn"
-              >
-                <Globe size={14} color="var(--sahaay-cyan)" />
-                <span>Use browser</span>
-              </button>
-              <button
-                onClick={() => setUserPrompt("Open Notepad and write project summary")}
-                className="glass-control chip-btn"
-              >
-                <LayoutGrid size={14} color="var(--sahaay-blue)" />
-                <span>Open apps</span>
-              </button>
-              <button
-                onClick={() => setUserPrompt("Transfer bill details from browser to desktop")}
-                className="glass-control chip-btn"
-              >
-                <Sparkles size={14} color="var(--sahaay-mint)" />
-                <span>Automate tasks</span>
-              </button>
-            </div>
           </section>
 
           {/* B. Main Frosted Glass Task Composer */}
@@ -1205,56 +1104,54 @@ export function App(): React.JSX.Element {
               )}
             </div>
 
-            {/* Middle Row: Waveform & Mic State */}
-            <div className="composer-bottom">
-              <div className="context-pills">
-                {["Computer", "Browser", "Files", "Apps", "Voice"].map((ctx) => {
-                  const isSelected = selectedContexts.has(ctx);
-                  return (
-                    <button
-                      key={ctx}
-                      onClick={() => toggleContext(ctx)}
-                      className={`glass-control context-pill ${isSelected ? "selected" : ""}`}
-                      style={{ opacity: isSelected ? 1 : 0.6 }}
-                    >
-                      {ctx === "Computer" && <Monitor size={12} color="var(--sahaay-cyan)" />}
-                      {ctx === "Browser" && <Globe size={12} color="var(--sahaay-teal)" />}
-                      {ctx === "Files" && <Folder size={12} color="var(--sahaay-mint)" />}
-                      {ctx === "Apps" && <LayoutGrid size={12} color="var(--sahaay-blue)" />}
-                      {ctx === "Voice" && <Mic size={12} color="var(--sahaay-mint)" />}
-                      <span>{ctx}</span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Waveform & Send Button */}
-              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                <div
-                  onClick={toggleRecording}
-                  className={`waveform-container ${isRecording ? "anim-waveform" : ""}`}
-                  style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: "4px", padding: "4px 8px", borderRadius: "8px" }}
-                  title={isRecording ? `Recording (${recordingSeconds}s)... Click to stop` : `Microphone state: ${micState}. Click to toggle.`}
-                >
+            {/* Middle Row: Prominent Voice Mic + Actions */}
+            <div className="composer-bottom" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              {/* Prominent Voice Microphone Control */}
+              <div
+                onClick={toggleRecording}
+                className={`waveform-container ${isRecording ? "anim-waveform" : ""}`}
+                style={{
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "6px 14px",
+                  borderRadius: "12px",
+                  background: isRecording ? "rgba(138, 245, 207, 0.15)" : "rgba(255, 255, 255, 0.05)",
+                  border: isRecording ? "1px solid var(--sahaay-mint)" : "1px solid rgba(255, 255, 255, 0.1)",
+                  transition: "all 0.2s ease",
+                }}
+                title={isRecording ? `Listening (${recordingSeconds}s)... Click to finish and execute` : "Click to speak your command"}
+              >
+                <Mic size={16} color={isRecording ? "var(--sahaay-mint)" : "var(--sahaay-cyan)"} />
+                <div style={{ display: "flex", alignItems: "center", gap: "3px" }}>
                   <div className="waveform-bar" style={{ height: isRecording ? "14px" : "6px" }} />
                   <div className="waveform-bar" style={{ height: isRecording ? "20px" : "8px" }} />
                   <div className="waveform-bar" style={{ height: isRecording ? "10px" : "5px" }} />
                   <div className="waveform-bar" style={{ height: isRecording ? "18px" : "7px" }} />
                   <div className="waveform-bar" style={{ height: isRecording ? "12px" : "6px" }} />
-                  {isRecording ? (
-                    <span style={{ fontSize: "10px", color: "var(--sahaay-mint)", fontFamily: "var(--font-mono)", marginLeft: "4px" }}>
-                      {recordingSeconds}s
-                    </span>
-                  ) : micState === "PROCESSING" ? (
-                    <span style={{ fontSize: "10px", color: "var(--sahaay-cyan)", fontFamily: "var(--font-mono)", marginLeft: "4px" }}>
-                      Transcribing...
-                    </span>
-                  ) : null}
                 </div>
+                <span style={{ fontSize: "11px", fontWeight: 500, color: isRecording ? "var(--sahaay-mint)" : "var(--sahaay-text)", fontFamily: "var(--font-mono)" }}>
+                  {isRecording ? `Listening (${recordingSeconds}s)... Click to execute` : micState === "PROCESSING" ? "Transcribing (Meta Voyager)..." : "Voice (16kHz WAV)"}
+                </span>
+              </div>
+
+              {/* Action Buttons: Stop & Send */}
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                {taskState !== "IDLE" && taskState !== "VERIFIED" && taskState !== "FAILED" && (
+                  <button
+                    onClick={handleStopExecution}
+                    className="btn btn-danger"
+                    style={{ padding: "6px 14px", fontSize: "12px", display: "flex", alignItems: "center", gap: "6px" }}
+                    title="Cancel active execution"
+                  >
+                    <Pause size={14} /> Stop Task
+                  </button>
+                )}
 
                 <button
                   onClick={() => triggerPromptExecution(userPrompt)}
-                  disabled={!userPrompt.trim()}
+                  disabled={!userPrompt.trim() || (taskState !== "IDLE" && taskState !== "VERIFIED" && taskState !== "FAILED")}
                   className="btn-aurora-send"
                   title="Execute Task"
                 >
@@ -1729,41 +1626,8 @@ export function App(): React.JSX.Element {
                 </p>
               </div>
             </section>
-          ) : activeNav === "apps" ? (
-            <section className="glass-surface" style={{ padding: "20px", borderRadius: "18px", display: "flex", flexDirection: "column", gap: "16px" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <div>
-                  <h3 style={{ fontSize: "16px", fontWeight: 600, color: "#fff", display: "flex", alignItems: "center", gap: "8px" }}>
-                    <LayoutGrid size={18} color="var(--sahaay-mint)" /> Capability Registry & Safety Boundaries
-                  </h3>
-                  <p style={{ fontSize: "11px", color: "var(--sahaay-text-muted)", marginTop: "2px" }}>
-                    Authoritative Registry: Centralized capability definitions, parameters, and action gates
-                  </p>
-                </div>
-                <span className="badge badge-success" style={{ fontSize: "11px" }}>Registry Synchronized</span>
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                <div style={{ background: "rgba(255,255,255,0.03)", padding: "12px", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.05)" }}>
-                  <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--sahaay-mint)" }}>windows_launch_app</span>
-                  <p style={{ fontSize: "10px", color: "var(--sahaay-text-muted)", marginTop: "4px" }}>Launch authorized application with verified top-level HWND discovery.</p>
-                </div>
-                <div style={{ background: "rgba(255,255,255,0.03)", padding: "12px", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.05)" }}>
-                  <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--sahaay-cyan)" }}>windows_set_control_text</span>
-                  <p style={{ fontSize: "10px", color: "var(--sahaay-text-muted)", marginTop: "4px" }}>Safely set text or send verified calculations to target window controls.</p>
-                </div>
-                <div style={{ background: "rgba(255,255,255,0.03)", padding: "12px", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.05)" }}>
-                  <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--sahaay-blue)" }}>browser_tab_observe</span>
-                  <p style={{ fontSize: "10px", color: "var(--sahaay-text-muted)", marginTop: "4px" }}>Inspect active web tab structure, text, and form fields via MV3 bridge.</p>
-                </div>
-                <div style={{ background: "rgba(255,255,255,0.03)", padding: "12px", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.05)" }}>
-                  <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--sahaay-warning)" }}>verify_readback</span>
-                  <p style={{ fontSize: "10px", color: "var(--sahaay-text-muted)", marginTop: "4px" }}>Independent UI automation readback verifying postconditions before completion.</p>
-                </div>
-              </div>
-            </section>
           ) : (
-            <section className="cards-grid">
+            <section className="cards-grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
               {/* Card 1: Active Tasks in Progress */}
               <div className="glass-surface grid-card">
                 <div>
@@ -1776,7 +1640,7 @@ export function App(): React.JSX.Element {
 
                   {tasksList.filter((t) => t.status !== "COMPLETED" && t.status !== "FAILED" && t.status !== "CANCELLED").length === 0 ? (
                     <div style={{ padding: "20px 10px", textAlign: "center", color: "var(--sahaay-text-subtle)", fontSize: "12px" }}>
-                      No active tasks in progress. Enter a prompt above to start an automated task.
+                      No active tasks in progress. Enter a prompt above or use voice to start an automated task.
                     </div>
                   ) : (
                     <div className="card-items-list">
@@ -1863,65 +1727,6 @@ export function App(): React.JSX.Element {
                         ))}
                     </div>
                   )}
-                </div>
-              </div>
-
-              {/* Card 3: Quick Actions */}
-              <div className="glass-surface grid-card">
-                <div>
-                  <div className="card-title-row">
-                    <h3 className="card-title">Quick Actions</h3>
-                  </div>
-
-                  <div className="card-items-list" style={{ gap: "4px" }}>
-                    <button
-                      onClick={() => triggerPromptExecution("Summarize this page and save to Notepad")}
-                      className="quick-action-btn"
-                    >
-                      <FileText size={14} color="var(--sahaay-mint)" />
-                      <span>Summarize this page</span>
-                    </button>
-
-                    <button
-                      onClick={() => triggerPromptExecution("Open Notepad and write summary of bills")}
-                      className="quick-action-btn"
-                    >
-                      <Monitor size={14} color="var(--sahaay-teal)" />
-                      <span>Open Notepad</span>
-                    </button>
-
-                    <button
-                      onClick={() => triggerPromptExecution("Read local invoice statement and extract details")}
-                      className="quick-action-btn"
-                    >
-                      <Folder size={14} color="var(--sahaay-cyan)" />
-                      <span>Analyze a file</span>
-                    </button>
-
-                    <button
-                      onClick={() => triggerPromptExecution("Take a screenshot and inspect active window")}
-                      className="quick-action-btn"
-                    >
-                      <Camera size={14} color="var(--sahaay-blue)" />
-                      <span>Take a screenshot</span>
-                    </button>
-
-                    <button
-                      onClick={() => triggerPromptExecution("Search my files for utility bill")}
-                      className="quick-action-btn"
-                    >
-                      <Search size={14} color="var(--sahaay-mint)" />
-                      <span>Search my files</span>
-                    </button>
-
-                    <button
-                      onClick={() => triggerPromptExecution("Set a reminder to review project budget at 5 PM")}
-                      className="quick-action-btn"
-                    >
-                      <Bell size={14} color="var(--sahaay-warning)" />
-                      <span>Set a reminder</span>
-                    </button>
-                  </div>
                 </div>
               </div>
             </section>
@@ -2027,9 +1832,9 @@ export function App(): React.JSX.Element {
               </div>
 
               <div style={{ padding: "10px 14px", borderRadius: "10px", background: "rgba(255, 255, 255, 0.04)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span>Privacy Mode</span>
-                <span className="badge badge-success">
-                  {localOnlyMode ? "STRICT LOCAL-ONLY" : "HOSTED PERMITTED"}
+                <span>Speech-to-Text Pipeline (Meta Voyager ASR)</span>
+                <span className={`badge ${micState === "READY" || micState === "RECORDING" || micState === "TRANSCRIBED" ? "badge-success" : "badge-neutral"}`}>
+                  {micState === "RECORDING" ? "RECORDING 16kHz WAV" : micState === "PROCESSING" ? "TRANSCRIBING..." : micState === "PERMISSION_REQUIRED" ? "MIC PERMISSION NEEDED" : "16kHz PCM WAV READY"}
                 </span>
               </div>
             </div>

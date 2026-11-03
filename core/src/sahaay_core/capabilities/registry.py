@@ -73,8 +73,8 @@ class CapabilityRegistry:
                 name="Observe Browser Tab",
                 description="Extract text, DOM content, and metadata from authorized browser tab.",
                 example_requests=[
-                    "Extract electricity bill details from active tab",
-                    "Read account balance",
+                    "Extract key structured data from active tab",
+                    "Read webpage summary",
                 ],
                 supported_surfaces=["browser_tab"],
                 adapter="browser_extension_bridge",
@@ -377,7 +377,7 @@ class CapabilityRegistry:
                 capability_id="research_web_search",
                 name="Public Internet Web Search",
                 description="Submit public search queries to a keyless search provider, normalizing results and citations.",
-                example_requests=["Search for BESCOM current electricity tariff rates"],
+                example_requests=["Search for latest developments in AI agents"],
                 supported_surfaces=["internet"],
                 adapter="internet_research_adapter",
                 input_schema={
@@ -414,7 +414,7 @@ class CapabilityRegistry:
                 capability_id="research_fetch_page",
                 name="Safe Web Page Retrieval",
                 description="Retrieve public webpage content with strict SSRF defense (blocking private/internal IPs) and size limits.",
-                example_requests=["Fetch official tariff document from electricity board website"],
+                example_requests=["Fetch official documentation from research website"],
                 supported_surfaces=["internet"],
                 adapter="safe_web_fetcher",
                 input_schema={

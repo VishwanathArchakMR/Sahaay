@@ -30,9 +30,9 @@ const btnRefreshPage = document.getElementById("btn-refresh-page") as HTMLButton
 const chatStream = document.getElementById("chat-stream") as HTMLElement;
 const composerInput = document.getElementById("composer-input") as HTMLInputElement;
 const btnSend = document.getElementById("btn-send") as HTMLButtonElement;
-const chipSummarize = document.getElementById("chip-summarize") as HTMLButtonElement;
-const chipExtract = document.getElementById("chip-extract") as HTMLButtonElement;
-const chipNotepad = document.getElementById("chip-notepad") as HTMLButtonElement;
+const btnStop = document.getElementById("btn-stop") as HTMLButtonElement | null;
+
+let activeExecutingTaskId: string | null = null;
 
 // Tab switcher buttons
 const tabs = document.querySelectorAll<HTMLButtonElement>(".tab-btn");
@@ -271,129 +271,17 @@ function appendAgentCard(htmlContent: string): HTMLElement {
   return container;
 }
 
-async function handleSummarizeAndSendToNotepad(): Promise<void> {
-  appendUserMessage("Summarize this page and save key points to my Notepad");
-
-  const agentCard = appendAgentCard(`
-    <p>Observing active page and extracting structured points...</p>
-    <div style="font-size: 11px; color: var(--sahaay-cyan); font-family: 'JetBrains Mono', monospace;">
-      Target: Windows Notepad • Authorizing...
-    </div>
-  `);
-
-  try {
-    const sessionId = await ensureSession();
-
-    // Call browser-to-desktop workflow with real tab excerpt
-    const payload = {
-      sessionId,
-      instruction: "Summarize this page and save key points to my Notepad",
-      sourceTabUrl: currentTabContext.url || "about:blank",
-      browserObservationExcerpt: currentTabContext.visibleTextExcerpt || currentTabContext.title || "Active Web Page",
-    };
-
-    const headers = await getAuthHeaders({ "Content-Type": "application/json" });
-    const res = await safeFetch(`${API_BASE}/workflows/browser-to-desktop`, {
-      method: "POST",
-      headers,
-
-      body: JSON.stringify(payload),
-    }, 12000);
-
-    const cardBody = agentCard.querySelector(".agent-card");
-    if (res.ok) {
-      const data = await res.json();
-      const extracted = data.sourceProvenance?.extractedFields || {};
-      const items = Object.entries(extracted).map(
-        ([k, v]) => `<li><strong>${k.replace(/_/g, " ")}:</strong> ${v}</li>`
-      );
-
-      // Build truthful summary - never fabricate synthetic bullets
-      let itemsHtml = "";
-      if (items.length > 0) {
-        itemsHtml = `<ul>${items.join("")}</ul>`;
-      } else if (currentTabContext.title) {
-        itemsHtml = `<p style="font-size: 12px; color: var(--sahaay-text-muted);">Extracted from: <strong>${currentTabContext.title}</strong> (${currentTabContext.url})</p>`;
-      } else {
-        itemsHtml = `<p style="font-size: 12px; color: var(--sahaay-text-muted);">Active tab contents read and summarized to Windows Notepad.</p>`;
-      }
-
-      if (cardBody) {
-        const isVerified = Boolean(data.isVerified);
-        const isFailed = data.status === "FAILED";
-
-        if (isFailed) {
-          cardBody.innerHTML = `
-            <p style="color: var(--sahaay-danger);"><strong>Execution failed:</strong> ${data.error || "Workflow step failed"}</p>
-            ${itemsHtml}
-            <div class="status-badge-card" style="border-color: rgba(239, 68, 68, 0.4);">
-              <div class="status-indicator-text" style="color: var(--sahaay-danger);">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <line x1="15" y1="9" x2="9" y2="15"></line>
-                  <line x1="9" y1="9" x2="15" y2="15"></line>
-                </svg>
-                <span>Task Failed</span>
-              </div>
-              <button class="btn-pill-subtle details-btn" data-info="Task ${data.taskId || ''} failed: ${data.error || 'Check backend logs'}">
-                Details
-              </button>
-            </div>
-          `;
-        } else {
-          cardBody.innerHTML = `
-            <p>Here is a summary of the active page:</p>
-            ${itemsHtml}
-            <p style="margin-top: 6px;">${isVerified ? "Notepad populated and verified independently via UI Automation." : "Dispatched to Windows Notepad."}</p>
-            <div class="status-badge-card">
-              <div class="status-indicator-text">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                  <polyline points="20 6 9 17 4 12"/>
-                </svg>
-                <span>${isVerified ? "Verified in Notepad" : "Completed"}</span>
-              </div>
-              <button class="btn-pill-subtle details-btn" data-info="Task verified in SQLite evidence ledger with ID: ${data.taskId}">
-                View Result
-              </button>
-            </div>
-          `;
-        }
-        const btn = cardBody.querySelector<HTMLButtonElement>(".details-btn");
-        if (btn) {
-          btn.addEventListener("click", () => {
-            alert(btn.getAttribute("data-info") || `Task ID: ${data.taskId}`);
-          });
-        }
-      }
-    } else {
-      const err = await res.json().catch(() => ({ detail: "Workflow execution failed" }));
-      const cardBody = agentCard.querySelector(".agent-card");
-      if (cardBody) {
-        cardBody.innerHTML = `
-          <p style="color: var(--sahaay-warning);">Action status: <strong>${err.detail || "Action Gate Handoff"}</strong></p>
-          <p style="font-size: 11px; color: var(--sahaay-text-muted);">Ensure Windows companion is running or check authorization in desktop workspace.</p>
-        `;
-      }
-    }
-  } catch (err: any) {
-    const cardBody = agentCard.querySelector(".agent-card");
-    if (cardBody) {
-      cardBody.innerHTML = `
-        <p style="color: var(--sahaay-danger);">Failed to execute: ${err.message}</p>
-      `;
-    }
-  }
-}
-
 async function handleGeneralPrompt(promptText: string): Promise<void> {
   if (!promptText.trim()) return;
   appendUserMessage(promptText);
   composerInput.value = "";
 
+  if (btnStop) btnStop.style.display = "inline-flex";
+
   const agentCard = appendAgentCard(`
     <p>Executing request across authorized Sahaay capabilities...</p>
     <div style="font-size: 11px; color: var(--sahaay-text-muted); font-family: 'JetBrains Mono', monospace;">
-      Page: ${currentTabContext.title.slice(0, 32)}...
+      Page: ${(currentTabContext.title || "Active Tab").slice(0, 36)}...
     </div>
   `);
 
@@ -410,14 +298,14 @@ async function handleGeneralPrompt(promptText: string): Promise<void> {
     const res = await safeFetch(`${API_BASE}/workflows/execute-goal`, {
       method: "POST",
       headers,
-
       body: JSON.stringify(payload),
-    }, 15000);
+    }, 25000);
 
     const cardBody = agentCard.querySelector(".agent-card");
     if (res.ok) {
       const data = await res.json();
       const taskId = data.taskId;
+      activeExecutingTaskId = taskId || null;
 
       // If accepted asynchronously, poll for completion
       if (data.status === "ACCEPTED" && taskId) {
@@ -449,21 +337,10 @@ async function handleGeneralPrompt(promptText: string): Promise<void> {
               if (bStatus === "COMPLETED") {
                 isCompleted = true;
                 if (cardBody) {
-                  let summary = tData.summary;
-                  try {
-                    const passHeaders = await getAuthHeaders();
-                    const pRes = await safeFetch(`${API_BASE}/tasks/${taskId}/passport`, {
-                      headers: passHeaders,
-                    }, 2000);
-                    if (pRes.ok) {
-                      const pData = await pRes.json();
-                      summary = pData.summary || summary;
-                    }
-                  } catch {}
-
+                  const summaryText = tData.summary || "Task completed successfully.";
                   cardBody.innerHTML = `
-                    <p><strong>Result (COMPLETED):</strong></p>
-                    <p style="color: var(--sahaay-text); font-size: 12px; margin-top: 4px;">${summary || "Task executed and verified successfully."}</p>
+                    <p><strong>Result:</strong></p>
+                    <p style="color: #fff; margin-top: 4px; font-size: 13px;">${summaryText}</p>
                     <div class="status-badge-card" style="margin-top: 8px;">
                       <div class="status-indicator-text">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -488,7 +365,7 @@ async function handleGeneralPrompt(promptText: string): Promise<void> {
                 isCompleted = true;
                 if (cardBody) {
                   cardBody.innerHTML = `
-                    <p style="color: var(--sahaay-danger);">Task failed verification (${tData.error || bStatus}).</p>
+                    <p style="color: var(--sahaay-danger);">Task ${bStatus.toLowerCase()} (${tData.error || bStatus}).</p>
                   `;
                 }
                 break;
@@ -516,6 +393,9 @@ async function handleGeneralPrompt(promptText: string): Promise<void> {
     if (cardBody) {
       cardBody.innerHTML = `<p style="color: var(--sahaay-danger);">Error connecting to backend (${err.message}).</p>`;
     }
+  } finally {
+    if (btnStop) btnStop.style.display = "none";
+    activeExecutingTaskId = null;
   }
 }
 
@@ -534,17 +414,25 @@ btnRetryConn.addEventListener("click", () => {
   }
 });
 
-chipSummarize.addEventListener("click", () => {
-  handleSummarizeAndSendToNotepad();
-});
-
-chipExtract.addEventListener("click", () => {
-  handleGeneralPrompt("Extract structured key data from this active web page");
-});
-
-chipNotepad.addEventListener("click", () => {
-  handleSummarizeAndSendToNotepad();
-});
+if (btnStop) {
+  btnStop.addEventListener("click", async () => {
+    if (activeExecutingTaskId) {
+      try {
+        const headers = await getAuthHeaders({ "Content-Type": "application/json" });
+        await safeFetch(`${API_BASE}/tasks/${activeExecutingTaskId}/cancel`, {
+          method: "POST",
+          headers,
+        }, 5000);
+        appendAgentCard('<p style="color: var(--sahaay-warning);">Task cancellation requested.</p>');
+      } catch (err: any) {
+        console.warn("Could not cancel task:", err);
+      } finally {
+        btnStop.style.display = "none";
+        activeExecutingTaskId = null;
+      }
+    }
+  });
+}
 
 btnSend.addEventListener("click", () => {
   handleGeneralPrompt(composerInput.value);
