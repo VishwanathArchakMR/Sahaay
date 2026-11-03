@@ -164,6 +164,47 @@ function handleNativeMessage(msg: any) {
     return;
   }
 
+  if (command === "open_tab") {
+    const targetUrl = ((payload?.url || payload?.target || "") as string).trim();
+    const cleanUrl = targetUrl.startsWith("http://") || targetUrl.startsWith("https://") ? targetUrl : "https://" + (targetUrl || "www.google.com");
+    chrome.tabs.create({ url: cleanUrl }, (newTab) => {
+      nativePort?.postMessage({
+        id,
+        success: true,
+        command,
+        data: { url: cleanUrl, tabId: newTab?.id },
+      });
+    });
+    return;
+  }
+
+  if (command === "navigate") {
+    const targetUrl = ((payload?.url || payload?.target || "") as string).trim();
+    const cleanUrl = targetUrl.startsWith("http://") || targetUrl.startsWith("https://") ? targetUrl : "https://" + (targetUrl || "www.google.com");
+    findActiveWebTab((activeTab) => {
+      if (!activeTab || !activeTab.id) {
+        chrome.tabs.create({ url: cleanUrl }, (newTab) => {
+          nativePort?.postMessage({
+            id,
+            success: true,
+            command,
+            data: { url: cleanUrl, tabId: newTab?.id },
+          });
+        });
+        return;
+      }
+      chrome.tabs.update(activeTab.id, { url: cleanUrl }, () => {
+        nativePort?.postMessage({
+          id,
+          success: true,
+          command,
+          data: { url: cleanUrl, tabId: activeTab.id },
+        });
+      });
+    });
+    return;
+  }
+
   findActiveWebTab((activeTab) => {
     if (!activeTab || !activeTab.id) {
       nativePort?.postMessage({
@@ -553,6 +594,45 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
         error: `Could not send message to native host: ${err.message}`,
       });
     }
+    return true;
+  }
+
+  if (validMsg.command === "open_tab") {
+    const targetUrl = ((validMsg.payload?.url || "") as string).trim();
+    const cleanUrl = targetUrl.startsWith("http://") || targetUrl.startsWith("https://") ? targetUrl : "https://" + (targetUrl || "www.google.com");
+    chrome.tabs.create({ url: cleanUrl }, (tab) => {
+      sendResponse({ success: true, command: "open_tab", data: { url: cleanUrl, tabId: tab?.id } });
+    });
+    return true;
+  }
+
+  if (validMsg.command === "navigate") {
+    const targetUrl = ((validMsg.payload?.url || "") as string).trim();
+    const cleanUrl = targetUrl.startsWith("http://") || targetUrl.startsWith("https://") ? targetUrl : "https://" + (targetUrl || "www.google.com");
+    findActiveWebTab((activeTab) => {
+      if (!activeTab || !activeTab.id) {
+        chrome.tabs.create({ url: cleanUrl }, (tab) => {
+          sendResponse({ success: true, command: "navigate", data: { url: cleanUrl, tabId: tab?.id } });
+        });
+        return;
+      }
+      chrome.tabs.update(activeTab.id, { url: cleanUrl }, (tab) => {
+        sendResponse({ success: true, command: "navigate", data: { url: tab?.url || cleanUrl, tabId: activeTab.id } });
+      });
+    });
+    return true;
+  }
+
+  if (validMsg.command === "search_in_tab") {
+    findActiveWebTab((activeTab) => {
+      if (!activeTab || !activeTab.id) {
+        sendResponse({ success: false, command: "search_in_tab", error: "No active tab." });
+        return;
+      }
+      sendMessageWithAutoInject(activeTab.id, { command: "search_in_tab", payload: validMsg.payload, query: validMsg.payload?.query }, (contentRes) => {
+        sendResponse({ success: true, command: "search_in_tab", data: contentRes?.data });
+      });
+    });
     return true;
   }
 

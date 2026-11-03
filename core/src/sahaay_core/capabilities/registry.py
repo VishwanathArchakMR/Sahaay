@@ -655,6 +655,137 @@ class CapabilityRegistry:
             )
         )
 
+        # 19. Browser Open Tab
+        self.register(
+            CapabilityDescriptor(
+                capability_id="browser_open_tab",
+                name="Open Browser Tab",
+                description="Open a new browser tab at a specified URL and return the tab URL and title.",
+                example_requests=["Open Amazon in my browser", "Open YouTube", "Navigate to google.com"],
+                supported_surfaces=["browser_tab"],
+                adapter="browser_extension_bridge",
+                input_schema={
+                    "type": "object",
+                    "properties": {"url": {"type": "string"}},
+                    "required": ["url"],
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {"url": {"type": "string"}, "title": {"type": "string"}, "tabId": {"type": "integer"}},
+                },
+                preconditions=["Browser extension connected"],
+                required_permission_scopes=["action:browser_tab"],
+                risk_category=RiskCategory.MEDIUM,
+                requires_human_confirmation=False,
+                is_reversible=True,
+                timeout_seconds=8.0,
+                is_idempotent=True,
+                verification_method="Actual tab URL and title returned from extension.",
+                required_postconditions=["New tab opened at requested URL"],
+                readiness_state=CapabilityReadiness.READY,
+            )
+        )
+
+        # 20. Browser Navigate
+        self.register(
+            CapabilityDescriptor(
+                capability_id="browser_navigate",
+                name="Navigate Browser Tab",
+                description="Navigate the active browser tab to a specified URL.",
+                example_requests=["Go to amazon.com", "Navigate to YouTube", "Open https://google.com"],
+                supported_surfaces=["browser_tab"],
+                adapter="browser_extension_bridge",
+                input_schema={
+                    "type": "object",
+                    "properties": {"url": {"type": "string"}},
+                    "required": ["url"],
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {"url": {"type": "string"}, "title": {"type": "string"}},
+                },
+                preconditions=["Browser extension connected", "Active browser tab exists"],
+                required_permission_scopes=["action:browser_tab"],
+                risk_category=RiskCategory.MEDIUM,
+                requires_human_confirmation=False,
+                is_reversible=True,
+                timeout_seconds=8.0,
+                is_idempotent=True,
+                verification_method="Post-navigation URL and title returned from extension.",
+                required_postconditions=["Tab URL matches requested destination"],
+                readiness_state=CapabilityReadiness.READY,
+            )
+        )
+
+        # 21. Browser Search In Tab
+        self.register(
+            CapabilityDescriptor(
+                capability_id="browser_search_in_tab",
+                name="Search In Browser Tab",
+                description="Type a search query into the active browser tab search input and submit.",
+                example_requests=["Search YouTube for AI agent tutorials", "Search Amazon for headphones"],
+                supported_surfaces=["browser_tab"],
+                adapter="browser_extension_bridge",
+                input_schema={
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                    "required": ["query"],
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}, "success": {"type": "boolean"}},
+                },
+                preconditions=["Browser extension connected", "Active browser tab with search input"],
+                required_permission_scopes=["action:browser_tab"],
+                risk_category=RiskCategory.LOW,
+                requires_human_confirmation=False,
+                is_reversible=True,
+                timeout_seconds=8.0,
+                is_idempotent=False,
+                verification_method="Search input populated and form submitted via content script.",
+                required_postconditions=["Search submitted to active tab"],
+                readiness_state=CapabilityReadiness.READY,
+            )
+        )
+
+        # 22. File Create and Write
+        self.register(
+            CapabilityDescriptor(
+                capability_id="file_create_write",
+                name="Create and Write File",
+                description="Create a file at specified path and write text content, verifying written bytes.",
+                example_requests=["Create a report on my Desktop", "Save summary to file"],
+                supported_surfaces=["local_store"],
+                adapter="local_file_adapter",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                        "content": {"type": "string"},
+                    },
+                    "required": ["path", "content"],
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                        "bytesWritten": {"type": "integer"},
+                        "sha256": {"type": "string"},
+                    },
+                },
+                preconditions=["Target directory is within user profile or workspace"],
+                required_permission_scopes=["write:local_file"],
+                risk_category=RiskCategory.MEDIUM,
+                requires_human_confirmation=False,
+                is_reversible=True,
+                timeout_seconds=5.0,
+                is_idempotent=True,
+                verification_method="Readback verification: read file back, compare content and SHA-256 fingerprint.",
+                required_postconditions=["File exists on disk and content matches written text"],
+                readiness_state=CapabilityReadiness.READY,
+            )
+        )
+
 
 # Global singleton instance
 capability_registry = CapabilityRegistry()

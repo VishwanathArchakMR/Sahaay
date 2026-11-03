@@ -20,6 +20,10 @@ export const ALLOWED_EXTENSION_COMMANDS = [
   "get_active_window",
   "list_open_windows",
   "check_authorization",
+  "open_tab",
+  "navigate",
+  "search_in_tab",
+  "click_element",
 ] as const;
 
 export type ExtensionCommand = typeof ALLOWED_EXTENSION_COMMANDS[number];

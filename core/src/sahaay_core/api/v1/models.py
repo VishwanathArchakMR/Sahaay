@@ -95,6 +95,20 @@ async def get_models_status() -> Dict[str, Any]:
     """Retrieve verified readiness status across all supported Meta and Local models."""
     local_status = local_llama_client.get_status()
 
+    # Automatically probe Meta API connectivity on first check if configured and untested
+    if (
+        provider_connectivity_cache.get("meta") == "UNTESTED"
+        and meta_client.is_configured
+        and not settings.local_only_mode
+    ):
+        try:
+            conn = await meta_client.check_connectivity(force_live=True)
+            last_meta_connectivity_result.clear()
+            last_meta_connectivity_result.update(conn)
+            provider_connectivity_cache["meta"] = conn.get("status", "CONFIGURED_UNTESTED")
+        except Exception:
+            pass
+
     meta_status = _resolve_provider_readiness(meta_client.is_configured, "meta")
     muse_image_status = _resolve_provider_readiness(muse_image.is_configured, "muse_image")
 
@@ -456,4 +470,28 @@ async def stop_local_llama() -> Dict[str, Any]:
         "success": True,
         "status": local_llama_manager.status.value,
         "message": local_llama_manager.status_message,
+    }
+
+
+@router.get("/telemetry")
+async def get_models_telemetry() -> Dict[str, Any]:
+    """Retrieve detailed model execution and tool-use telemetry for diagnostics."""
+    last_telemetry = getattr(muse_spark, "last_telemetry", {})
+    return {
+        "modelId": last_telemetry.get("model_id", settings.muse_spark_model_id),
+        "endpoint": last_telemetry.get("endpoint", "chat/completions"),
+        "httpStatus": last_telemetry.get("http_status", 200 if meta_client.is_configured else 0),
+        "latencyMs": last_telemetry.get("latency_ms", 0.0),
+        "rounds": last_telemetry.get("rounds", 0),
+        "toolCallsCount": last_telemetry.get("tool_calls_count", 0),
+        "toolNames": last_telemetry.get("tool_names", []),
+        "finishReason": last_telemetry.get("finish_reason", "none"),
+        "lastVerification": last_meta_connectivity_result,
+        "browserObservation": {
+            "bridgeConnected": browser_adapter.is_connected(),
+            "browserAttached": browser_adapter.is_browser_attached(),
+        },
+        "windowsObservation": {
+            "controllerConnected": windows_adapter.is_connected(),
+        },
     }

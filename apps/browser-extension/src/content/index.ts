@@ -219,6 +219,78 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request.command === "search_in_tab") {
+    try {
+      const query = (request.query || request.payload?.query || "") as string;
+      if (!query) {
+        sendResponse({ success: false, error: "Search query is required." });
+        return true;
+      }
+
+      const searchSelectors = [
+        "input[name='search_query']",
+        "input#search",
+        "input[name='q']",
+        "input[name='k']",
+        "input#twotabsearchtextbox",
+        "input[type='search']",
+        "input[placeholder*='search' i]",
+        "input[aria-label*='search' i]",
+        "input[data-testid*='search' i]",
+        "input[type='text']",
+      ];
+
+      let inputEl: HTMLInputElement | null = null;
+      for (const sel of searchSelectors) {
+        const found = document.querySelector(sel) as HTMLInputElement | null;
+        if (found && found.offsetParent !== null) {
+          inputEl = found;
+          break;
+        }
+      }
+
+      if (!inputEl) {
+        sendResponse({ success: false, error: "No search input found on current page." });
+        return true;
+      }
+
+      inputEl.focus();
+      inputEl.value = query;
+      inputEl.dispatchEvent(new Event("input", { bubbles: true }));
+      inputEl.dispatchEvent(new Event("change", { bubbles: true }));
+
+      const enterDown = new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true });
+      const enterUp = new KeyboardEvent("keyup", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true });
+      inputEl.dispatchEvent(enterDown);
+      inputEl.dispatchEvent(enterUp);
+
+      if (inputEl.form) {
+        try {
+          inputEl.form.submit();
+        } catch {
+          const submitBtn = inputEl.form.querySelector("button[type='submit'], input[type='submit'], button#search-icon-legacy") as HTMLElement | null;
+          if (submitBtn) submitBtn.click();
+        }
+      } else {
+        const searchBtn = document.querySelector("button#search-icon-legacy, button[aria-label*='Search' i], button[type='submit']") as HTMLElement | null;
+        if (searchBtn) searchBtn.click();
+      }
+
+      sendResponse({
+        success: true,
+        data: {
+          query,
+          inputFound: true,
+          inputSelector: inputEl.tagName.toLowerCase() + (inputEl.id ? "#" + inputEl.id : ""),
+          url: window.location.href,
+        },
+      });
+    } catch (ex: any) {
+      sendResponse({ success: false, error: ex.message || "Failed to search in tab." });
+    }
+    return true;
+  }
+
   return false;
 });
 

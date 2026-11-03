@@ -175,6 +175,126 @@ class BrowserAdapter:
                 raise ConnectionError("Browser bridge not connected.") from ce
             return {"clicked": True, "target": target_id_or_selector, "driverProvenance": "offline_simulation", "offlineSimulation": True}
 
+    def open_tab(self, url: str, session_id: Optional[str] = None) -> Dict[str, Any]:
+        """Open a new browser tab at the specified URL via Native Messaging bridge or Chrome launcher."""
+        if not url.startswith(("http://", "https://")):
+            url = "https://" + url
+        try:
+            if self.is_connected():
+                res = self.client.send_command(
+                    "open_tab",
+                    session_id=session_id,
+                    parameters={"url": url},
+                    timeout_ms=8000,
+                )
+                if res.get("success"):
+                    data = res.get("data", {})
+                    if isinstance(data, dict):
+                        data.setdefault("url", url)
+                        data.setdefault("success", True)
+                        data["driverProvenance"] = "real_browser_extension"
+                        return data
+                    return {"url": url, "success": True, "driverProvenance": "real_browser_extension"}
+        except Exception:
+            pass
+
+        # Real system launcher fallback if Chrome extension bridge is not currently active
+        import os, subprocess, webbrowser
+        chrome_exe = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+        if os.path.exists(chrome_exe):
+            try:
+                subprocess.Popen([chrome_exe, url])
+                return {
+                    "url": url,
+                    "title": f"Opened in Google Chrome: {url}",
+                    "tabId": 1,
+                    "success": True,
+                    "driverProvenance": "real_browser_launcher",
+                }
+            except Exception:
+                pass
+        try:
+            webbrowser.open(url)
+            return {
+                "url": url,
+                "title": f"Opened in system browser: {url}",
+                "tabId": 1,
+                "success": True,
+                "driverProvenance": "real_browser_launcher",
+            }
+        except Exception:
+            pass
+
+        if not self.allow_simulation:
+            raise ConnectionError(f"Browser bridge not connected and browser launcher failed for '{url}'.")
+        return {
+            "url": url,
+            "title": f"Simulated tab: {url}",
+            "tabId": -1,
+            "success": True,
+            "driverProvenance": "offline_simulation",
+            "offlineSimulation": True,
+        }
+
+    def navigate(self, url: str, session_id: Optional[str] = None) -> Dict[str, Any]:
+        """Navigate the active browser tab to the specified URL."""
+        if not url.startswith(("http://", "https://")):
+            url = "https://" + url
+        try:
+            if self.is_connected():
+                res = self.client.send_command(
+                    "navigate",
+                    session_id=session_id,
+                    parameters={"url": url},
+                    timeout_ms=8000,
+                )
+                if res.get("success"):
+                    data = res.get("data", {})
+                    if isinstance(data, dict):
+                        data.setdefault("url", url)
+                        data.setdefault("success", True)
+                        data["driverProvenance"] = "real_browser_extension"
+                        return data
+                    return {"url": url, "success": True, "driverProvenance": "real_browser_extension"}
+        except Exception:
+            pass
+
+        return self.open_tab(url, session_id=session_id)
+
+    def search_in_tab(self, query: str, session_id: Optional[str] = None) -> Dict[str, Any]:
+        """Type a search query into the active tab's search field or launch direct search URL."""
+        try:
+            if self.is_connected():
+                res = self.client.send_command(
+                    "search_in_tab",
+                    session_id=session_id,
+                    parameters={"query": query},
+                    timeout_ms=8000,
+                )
+                if res.get("success"):
+                    data = res.get("data", {})
+                    if isinstance(data, dict):
+                        data.setdefault("query", query)
+                        data.setdefault("success", True)
+                        data["driverProvenance"] = "real_browser_extension"
+                        return data
+                    return {"query": query, "success": True, "driverProvenance": "real_browser_extension"}
+        except Exception:
+            pass
+
+        # Construct destination search URL
+        import urllib.parse
+        encoded_query = urllib.parse.quote_plus(query)
+        search_url = f"https://www.youtube.com/results?search_query={encoded_query}"
+        tab_res = self.open_tab(search_url, session_id=session_id)
+        return {
+            "query": query,
+            "url": tab_res.get("url", search_url),
+            "title": f"Search Results for '{query}'",
+            "success": True,
+            "driverProvenance": tab_res.get("driverProvenance", "real_browser_launcher"),
+        }
+
     def verify_scroll_action(
         self,
         pre_scroll_y: int,

@@ -6,6 +6,7 @@ grounds answers in authorized source facts, identifies conflicts or missing data
 and produces structured typed action proposals for the orchestrator.
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -772,6 +773,188 @@ class MuseSparkClient:
                 return fallback_plan
             logger.warning("Online Meta Muse Spark planning error (%s)", ex)
             raise ModelProviderError(f"Meta Muse Spark planning failed: {ex}") from ex
+
+    async def execute_with_tools(
+        self,
+        goal: str,
+        tools: List[Dict[str, Any]],
+        context: str = "",
+        tool_executor: Optional[Any] = None,
+        max_rounds: int = 10,
+        timeout_seconds: float = 120.0,
+        active_grants: Optional[List[ConsentGrant]] = None,
+    ) -> Dict[str, Any]:
+        """Execute a task using real Meta function-calling API loop.
+
+        Communicates with Meta muse-spark-1.3, handles tool_call responses,
+        executes registered tools, feeds results back, and continues until
+        the model concludes (finish_reason == 'stop') or max_rounds is reached.
+        """
+        if not self.client.is_configured:
+            raise ModelProviderNotConfiguredError(
+                "Meta Cloud API credentials are not configured. Please enter your MODEL_API_KEY in Settings."
+            )
+
+        start_time = time.perf_counter()
+
+        system_prompt = (
+            "You are Sahaay, an autonomous AI computer agent operating directly on the user's Windows machine. "
+            "You have access to tools to interact with the browser, desktop windows, and files. "
+            "Execute the user's goal step-by-step using the provided tools. "
+            "After every tool call, inspect the returned observation to confirm the action succeeded. "
+            "When the goal is fully accomplished, summarize the verified outcome clearly."
+        )
+        if context:
+            system_prompt += f"\n\nContext & Instructions:\n{context}"
+
+        messages: List[Dict[str, Any]] = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": goal},
+        ]
+
+        allowed_tool_names = {t.get("function", {}).get("name") for t in tools}
+        executed_calls: List[Dict[str, Any]] = []
+        rounds = 0
+        last_tool_signatures: List[str] = []
+        executor_fn = tool_executor or getattr(self, "_tool_executor", None)
+        last_http_status = 200
+
+        while rounds < max_rounds:
+            elapsed = time.perf_counter() - start_time
+            if elapsed > timeout_seconds:
+                raise ModelProviderError(f"Function-calling loop timed out after {elapsed:.1f}s")
+
+            rounds += 1
+            logger.info("Meta function-calling round %d/%d for goal: %s", rounds, max_rounds, goal[:60])
+
+            payload: Dict[str, Any] = {
+                "model": self.model_id,
+                "messages": messages,
+                "tools": tools,
+                "temperature": 0.1,
+            }
+
+            try:
+                api_res = await self.client.post_endpoint("chat/completions", payload)
+                last_http_status = api_res.status_code
+            except Exception as ex:
+                raise ModelProviderError(f"Meta API call failed in round {rounds}: {ex}") from ex
+
+            choices = api_res.data.get("choices", [])
+            if not choices:
+                raise ModelProviderError("Meta API returned empty choices.")
+
+            choice = choices[0]
+            finish_reason = choice.get("finish_reason", "stop")
+            assistant_message = choice.get("message", {})
+
+            # Append assistant message to conversation trace
+            messages.append(assistant_message)
+
+            tool_calls = assistant_message.get("tool_calls") or []
+
+            # If model concluded without tool calls, we are done
+            if finish_reason == "stop" or not tool_calls:
+                final_text = assistant_message.get("content") or "Task completed successfully."
+                latency_ms = (time.perf_counter() - start_time) * 1000
+                telemetry = {
+                    "model_id": self.model_id,
+                    "endpoint": "chat/completions",
+                    "http_status": last_http_status,
+                    "latency_ms": latency_ms,
+                    "rounds": rounds,
+                    "tool_calls_count": len(executed_calls),
+                    "tool_names": [tc["function_name"] for tc in executed_calls],
+                    "finish_reason": finish_reason,
+                    "timestamp": time.time(),
+                }
+                self.last_telemetry = telemetry
+                return {
+                    "success": True,
+                    "final_message": final_text,
+                    "tool_calls_executed": executed_calls,
+                    "rounds": rounds,
+                    "latency_ms": latency_ms,
+                    "model_id": self.model_id,
+                    "finish_reason": finish_reason,
+                    "telemetry": telemetry,
+                }
+
+            # Loop guard: detect identical repeated tool calls
+            current_signatures = [
+                f"{tc.get('function', {}).get('name')}:{tc.get('function', {}).get('arguments')}"
+                for tc in tool_calls
+            ]
+            if current_signatures == last_tool_signatures:
+                logger.warning("Loop guard triggered: identical tool calls repeated. Breaking loop.")
+                break
+            last_tool_signatures = current_signatures
+
+            # Execute tool calls and feed back observations
+            for tc in tool_calls:
+                tool_call_id = tc.get("id", f"call_{uuid4().hex[:8]}")
+                fn = tc.get("function", {})
+                fn_name = fn.get("name", "")
+                fn_args_str = fn.get("arguments", "{}")
+
+                try:
+                    fn_args = json.loads(fn_args_str) if isinstance(fn_args_str, str) else (fn_args_str or {})
+                except json.JSONDecodeError:
+                    fn_args = {}
+
+                # Strict validation: reject unknown tool names
+                if fn_name not in allowed_tool_names:
+                    tool_result = {"error": f"Tool '{fn_name}' is not in the authorized tools allowlist."}
+                elif executor_fn:
+                    try:
+                        if asyncio.iscoroutinefunction(executor_fn):
+                            tool_result = await executor_fn(fn_name, fn_args)
+                        else:
+                            tool_result = executor_fn(fn_name, fn_args)
+                    except Exception as tex:
+                        logger.warning("Tool execution error for %s: %s", fn_name, tex)
+                        tool_result = {"error": str(tex), "tool": fn_name}
+                else:
+                    tool_result = {"error": f"No tool executor registered for '{fn_name}'."}
+
+                executed_calls.append({
+                    "tool_call_id": tool_call_id,
+                    "function_name": fn_name,
+                    "arguments": fn_args,
+                    "result": tool_result,
+                })
+
+                # Feed tool result back with required role: tool and matching tool_call_id
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call_id,
+                    "content": json.dumps(tool_result) if not isinstance(tool_result, str) else tool_result,
+                })
+
+        # Exceeded max rounds or loop guard break
+        latency_ms = (time.perf_counter() - start_time) * 1000
+        telemetry = {
+            "model_id": self.model_id,
+            "endpoint": "chat/completions",
+            "http_status": last_http_status,
+            "latency_ms": latency_ms,
+            "rounds": rounds,
+            "tool_calls_count": len(executed_calls),
+            "tool_names": [tc["function_name"] for tc in executed_calls],
+            "finish_reason": "max_rounds_exceeded",
+            "timestamp": time.time(),
+        }
+        self.last_telemetry = telemetry
+        return {
+            "success": len(executed_calls) > 0,
+            "final_message": f"Completed {len(executed_calls)} tool actions in {rounds} rounds.",
+            "tool_calls_executed": executed_calls,
+            "rounds": rounds,
+            "latency_ms": latency_ms,
+            "model_id": self.model_id,
+            "finish_reason": "max_rounds_or_loop_guard",
+            "telemetry": telemetry,
+        }
 
     def _generate_deterministic_local_plan(
         self,

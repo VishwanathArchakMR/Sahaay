@@ -1525,20 +1525,43 @@ export function App(): React.JSX.Element {
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
                 <div style={{ background: "rgba(255,255,255,0.03)", padding: "14px", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.06)" }}>
-                  <h4 style={{ fontSize: "13px", fontWeight: 600, color: "#fff", marginBottom: "8px" }}>Authorized Applications</h4>
+                  <h4 style={{ fontSize: "13px", fontWeight: 600, color: "#fff", marginBottom: "8px" }}>Verified Computer Capabilities</h4>
                   <p style={{ fontSize: "11px", color: "var(--sahaay-text-muted)", marginBottom: "12px" }}>
-                    Strict allowlist restricts application launching to safe system tools:
+                    Connected and verified computer execution capabilities:
                   </p>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                    <span className="badge" style={{ background: "rgba(138,245,207,0.1)", color: "var(--sahaay-mint)" }}>Browser (Chrome & Edge)</span>
                     <span className="badge" style={{ background: "rgba(138,245,207,0.1)", color: "var(--sahaay-mint)" }}>Calculator (calc.exe)</span>
                     <span className="badge" style={{ background: "rgba(138,245,207,0.1)", color: "var(--sahaay-mint)" }}>Notepad (notepad.exe)</span>
-                    <span className="badge" style={{ background: "rgba(138,245,207,0.1)", color: "var(--sahaay-mint)" }}>File Explorer (explorer.exe)</span>
+                    <span className="badge" style={{ background: "rgba(138,245,207,0.1)", color: "var(--sahaay-mint)" }}>File System & Desktop Reports</span>
+                    <span className="badge" style={{ background: "rgba(85,216,255,0.1)", color: "var(--sahaay-cyan)" }}>Screen Visual Reasoning</span>
                   </div>
                 </div>
 
                 <div style={{ background: "rgba(255,255,255,0.03)", padding: "14px", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.06)" }}>
-                  <h4 style={{ fontSize: "13px", fontWeight: 600, color: "#fff", marginBottom: "8px" }}>Direct Computer Actions</h4>
+                  <h4 style={{ fontSize: "13px", fontWeight: 600, color: "#fff", marginBottom: "8px" }}>Direct Computer & Web Actions</h4>
                   <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                    <button
+                      onClick={() => triggerPromptExecution("Open Amazon in my browser")}
+                      className="quick-action-btn"
+                    >
+                      <Globe size={14} color="var(--sahaay-mint)" />
+                      <span>Open Amazon in Browser</span>
+                    </button>
+                    <button
+                      onClick={() => triggerPromptExecution("Open YouTube and search for AI agent tutorials")}
+                      className="quick-action-btn"
+                    >
+                      <Globe size={14} color="var(--sahaay-cyan)" />
+                      <span>Search YouTube for AI Agent Tutorials</span>
+                    </button>
+                    <button
+                      onClick={() => triggerPromptExecution("Look at my screen and tell me what is open")}
+                      className="quick-action-btn"
+                    >
+                      <Activity size={14} color="var(--sahaay-mint)" />
+                      <span>Look at Screen & Describe Open Windows</span>
+                    </button>
                     <button
                       onClick={() => triggerPromptExecution("Open Calculator and calculate 125 multiplied by 48")}
                       className="quick-action-btn"
@@ -1552,6 +1575,13 @@ export function App(): React.JSX.Element {
                     >
                       <FileText size={14} color="var(--sahaay-mint)" />
                       <span>Launch Notepad & Type Note</span>
+                    </button>
+                    <button
+                      onClick={() => triggerPromptExecution("Read the current browser page and create a report on my Desktop")}
+                      className="quick-action-btn"
+                    >
+                      <FileText size={14} color="var(--sahaay-cyan)" />
+                      <span>Cross-Surface Page Report to Desktop</span>
                     </button>
                   </div>
                 </div>
