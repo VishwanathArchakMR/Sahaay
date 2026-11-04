@@ -11,12 +11,56 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.command === "get_sanitized_dom" || request.command === "get_tab_observation") {
     try {
-      // 1. Extract sanitized text without script, style, iframe, object, embed
-      const clone = document.body.cloneNode(true) as HTMLElement;
-      const strippedTags = clone.querySelectorAll("script, style, noscript, iframe, object, embed, svg");
-      strippedTags.forEach((el) => el.remove());
-      const rawText = clone.innerText || "";
-      const sanitizedExcerpt = rawText.replace(/\s+/g, " ").trim().substring(0, 15000);
+      let sanitizedExcerpt = "";
+      const hostname = window.location.hostname.toLowerCase();
+
+      if (hostname.includes("whatsapp.com")) {
+        // Targeted privacy minimization for WhatsApp Web:
+        // NEVER dump whole innerText (leaking contacts, payment history, private chats).
+        // Only observe active conversation title, composer state, and at most the last 2 messages.
+        const mainPanel = document.querySelector("#main") || document.querySelector("div[role='region']");
+        const headerEl = mainPanel?.querySelector("header") || document.querySelector("header");
+        const activeContact = headerEl?.querySelector("span[title]")?.getAttribute("title") || headerEl?.querySelector("div[role='button']")?.textContent?.trim() || "No active conversation selected";
+        const composer = document.querySelector("footer div[contenteditable='true']") || document.querySelector("footer");
+        const msgNodes = Array.from(document.querySelectorAll("#main div.message-in, #main div.message-out, #main div[data-testid='msg-container']"));
+        const recentSnippets = msgNodes.slice(-2).map((m) => {
+          const txt = (m as HTMLElement).innerText || "";
+          return txt.replace(/\s+/g, " ").trim().substring(0, 150);
+        }).filter(Boolean);
+
+        sanitizedExcerpt = [
+          `[WhatsApp Web Safe View]`,
+          `Active Conversation Contact: ${activeContact}`,
+          `Composer Ready: ${composer ? "Yes (contenteditable)" : "No"}`,
+          `Recent Conversation Tail (${recentSnippets.length} messages):`,
+          ...recentSnippets.map((s, idx) => `  - Msg ${idx + 1}: ${s}`),
+        ].join("\n");
+      } else if (hostname.includes("linkedin.com")) {
+        // Targeted extraction for LinkedIn:
+        const profileHeading = document.querySelector(".text-heading-xlarge, h1")?.textContent?.trim() || "";
+        const activeChatTitle = document.querySelector(".msg-overlay-bubble-header__title, .msg-entity-lockup__entity-title")?.textContent?.trim() || "";
+        const composer = document.querySelector(".msg-form__contenteditable, div[contenteditable='true'][role='textbox']");
+        const clone = document.body.cloneNode(true) as HTMLElement;
+        clone.querySelectorAll("script, style, noscript, iframe, object, embed, svg").forEach((el) => el.remove());
+        const rawText = clone.innerText || "";
+        const generalExcerpt = rawText.replace(/\s+/g, " ").trim().substring(0, 4000);
+
+        sanitizedExcerpt = [
+          `[LinkedIn View]`,
+          `Profile / Header: ${profileHeading || document.title}`,
+          `Active Chat Header: ${activeChatTitle || "None"}`,
+          `Composer Ready: ${composer ? "Yes" : "No"}`,
+          `Page Excerpt:`,
+          generalExcerpt,
+        ].join("\n");
+      } else {
+        // Standard sanitized text without script, style, iframe, object, embed
+        const clone = document.body.cloneNode(true) as HTMLElement;
+        const strippedTags = clone.querySelectorAll("script, style, noscript, iframe, object, embed, svg");
+        strippedTags.forEach((el) => el.remove());
+        const rawText = clone.innerText || "";
+        sanitizedExcerpt = rawText.replace(/\s+/g, " ").trim().substring(0, 15000);
+      }
 
       // 2. Discover accessible interactive controls (buttons, links, inputs, headings)
       const accessibleElements: Array<{
@@ -219,6 +263,84 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       });
     } catch (ex: any) {
       sendResponse({ success: false, error: ex.message || "Failed to click element." });
+    }
+    return true;
+  }
+
+  if (request.command === "input_text") {
+    try {
+      const text = (request.text || request.payload?.text || request.value || request.payload?.value || "") as string;
+      const selector = (request.selector || request.payload?.selector || request.target || request.payload?.target || "") as string;
+
+      let el: HTMLElement | null = null;
+      if (selector) {
+        try {
+          el = document.querySelector(selector);
+        } catch {}
+      }
+
+      if (!el) {
+        // Fallback discovery for active or focused composer/input
+        const candidates = [
+          "div[contenteditable='true'][role='textbox']",
+          "div[contenteditable='true']",
+          "footer div[contenteditable='true']",
+          "#main footer div[contenteditable='true']",
+          ".msg-form__contenteditable",
+          "textarea:focus",
+          "input:focus",
+          "textarea",
+          "input[type='text']",
+        ];
+        for (const cand of candidates) {
+          const found = document.querySelector(cand) as HTMLElement | null;
+          if (found && found.offsetParent !== null) {
+            el = found;
+            break;
+          }
+        }
+      }
+
+      if (!el) {
+        sendResponse({ success: false, error: "No editable text field or composer found on active page." });
+        return true;
+      }
+
+      el.focus();
+
+      if (el.isContentEditable || el.getAttribute("contenteditable") === "true") {
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        range.collapse(false);
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+
+        const inserted = document.execCommand("insertText", false, text);
+        if (!inserted) {
+          el.textContent = (el.textContent || "") + text;
+        }
+        el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      } else {
+        const inputEl = el as HTMLInputElement | HTMLTextAreaElement;
+        inputEl.value = text;
+        inputEl.dispatchEvent(new Event("input", { bubbles: true }));
+        inputEl.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+
+      sendResponse({
+        success: true,
+        data: {
+          success: true,
+          textTyped: text,
+          targetTag: el.tagName.toLowerCase(),
+          isContentEditable: el.isContentEditable,
+          url: window.location.href,
+        },
+      });
+    } catch (ex: any) {
+      sendResponse({ success: false, error: ex.message || "Failed to input text." });
     }
     return true;
   }

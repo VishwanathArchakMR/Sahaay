@@ -71,6 +71,21 @@ function findActiveWebTab(callback: (tab: chrome.tabs.Tab | null) => void) {
   });
 }
 
+function findAnyActiveTab(callback: (tab: chrome.tabs.Tab | null) => void) {
+  // Discovers any active tab even if on chrome://newtab or internal page (for navigation targets)
+  chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
+    const tab = tabs && tabs.length > 0 ? tabs[0] : null;
+    if (tab && tab.id) {
+      callback(tab);
+      return;
+    }
+    chrome.tabs.query({ active: true }, (allTabs) => {
+      const candidate = (allTabs || []).find((t) => t.id);
+      callback(candidate || null);
+    });
+  });
+}
+
 function sendMessageWithAutoInject(
   tabId: number,
   message: any,
@@ -181,7 +196,7 @@ function handleNativeMessage(msg: any) {
   if (command === "navigate") {
     const targetUrl = ((payload?.url || payload?.target || "") as string).trim();
     const cleanUrl = targetUrl.startsWith("http://") || targetUrl.startsWith("https://") ? targetUrl : "https://" + (targetUrl || "www.google.com");
-    findActiveWebTab((activeTab) => {
+    findAnyActiveTab((activeTab) => {
       if (!activeTab || !activeTab.id) {
         chrome.tabs.create({ url: cleanUrl }, (newTab) => {
           nativePort?.postMessage({

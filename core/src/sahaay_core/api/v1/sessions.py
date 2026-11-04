@@ -1,10 +1,13 @@
 """Session and Consent Management Endpoints."""
 
+import logging
 from typing import List, Optional
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 from sahaay_core.contracts.consent_purposes import (
     ALL_META_CLOUD_PURPOSES,
@@ -227,6 +230,93 @@ async def post_conversation_message(session_id: UUID, req: PostMessageRequest) -
         task_id=req.taskId,
         metadata=req.metadata,
     )
+
+
+class ChatRequest(BaseModel):
+    message: str
+    context: Optional[dict] = None
+
+
+@router.post("/{session_id}/chat")
+async def chat_with_assistant(session_id: UUID, req: ChatRequest) -> dict:
+    """Conversational ChatGPT-style Help assistant.
+    Answers user questions directly using Meta Muse Spark with conversation history,
+    without creating task executions, DAGs, or background automation steps.
+    """
+    user_text = req.message.strip()
+    if not user_text:
+        raise HTTPException(status_code=400, detail="Message cannot be empty.")
+
+    # 1. Save user message to durable conversation storage
+    durable_storage.save_conversation_message(
+        session_id=str(session_id),
+        role="user",
+        content=user_text,
+    )
+
+    # 2. Retrieve recent conversation history for conversational context
+    history_records = durable_storage.list_conversation_messages(str(session_id), limit=10)
+    messages_payload = [
+        {
+            "role": "system",
+            "content": (
+                "You are Sahaay Help, a conversational, helpful, privacy-preserving Windows AI assistant. "
+                "You answer user questions, explain concepts, provide clear step-by-step guidance, and clarify system capabilities. "
+                "Communicate naturally and directly in clean markdown. Do not generate code tool calls or task JSON structures."
+            ),
+        }
+    ]
+    for r in history_records[-6:]:
+        messages_payload.append({
+            "role": r.get("role", "user"),
+            "content": r.get("content", ""),
+        })
+
+    # 3. Request completion from Meta Muse Spark model
+    reply_text = ""
+    try:
+        from sahaay_core.models.meta_client import muse_spark
+        if muse_spark.client.is_configured:
+            resp = await muse_spark.client.post_endpoint(
+                "chat/completions",
+                {
+                    "model": muse_spark.model_id,
+                    "messages": messages_payload,
+                    "temperature": 0.4,
+                    "max_tokens": 800,
+                },
+            )
+            choices = resp.data.get("choices", [])
+            if choices:
+                reply_text = choices[0].get("message", {}).get("content", "").strip()
+    except Exception as exc:
+        logger.warning("Meta Muse Spark chat call failed, utilizing local guide: %s", exc)
+
+    if not reply_text:
+        # Conversational fallback guide
+        reply_text = (
+            f"I'm here to help with your computer, software, and browser queries. "
+            f"Regarding '{user_text}':\n\n"
+            f"If you'd like me to perform this action directly on your computer (open apps, browse sites, type text, or inspect files), "
+            f"switch to the **Automate** tab at the top and click Execute! "
+            f"In **Help** mode, feel free to ask questions about Windows shortcuts, browser navigation, or application features."
+        )
+
+    # 4. Save assistant reply to durable storage
+    saved_msg = durable_storage.save_conversation_message(
+        session_id=str(session_id),
+        role="assistant",
+        content=reply_text,
+    )
+
+    return {
+        "reply": reply_text,
+        "sessionId": str(session_id),
+        "role": "assistant",
+        "messageId": saved_msg.get("messageId"),
+        "createdAt": saved_msg.get("createdAt"),
+    }
+
 
 
 @router.get("/{session_id}/grants", response_model=List[ConsentGrant])

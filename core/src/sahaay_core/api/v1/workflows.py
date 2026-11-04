@@ -1017,8 +1017,9 @@ async def _execute_tool_for_meta(
             if not url.startswith(("http://", "https://")):
                 url = "https://" + url
             res = await asyncio.to_thread(browser_adapter.open_tab, url, str(session_id))
+            is_ok = bool(res.get("success", True) if res.get("state") != "FAILED" else False)
             return {
-                "success": True,
+                "success": is_ok,
                 "url": res.get("url", url),
                 "title": res.get("title", ""),
                 "tabId": res.get("tabId", -1),
@@ -1033,10 +1034,33 @@ async def _execute_tool_for_meta(
             if not url.startswith(("http://", "https://")):
                 url = "https://" + url
             res = await asyncio.to_thread(browser_adapter.navigate, url, str(session_id))
+            is_ok = bool(res.get("success", True) if res.get("state") != "FAILED" else False)
             return {
-                "success": True,
+                "success": is_ok,
                 "url": res.get("url", url),
                 "title": res.get("title", ""),
+                "driverProvenance": res.get("driverProvenance", "real_browser_extension"),
+            }
+
+        elif fn_name == "browser_input_text":
+            text = str(fn_args.get("text") or fn_args.get("value") or "")
+            selector = str(fn_args.get("selector") or fn_args.get("target") or "")
+            res = await asyncio.to_thread(browser_adapter.input_text, text, selector, str(session_id))
+            return {
+                "success": bool(res.get("success", False)),
+                "text": text,
+                "selector": selector,
+                "details": res.get("details", ""),
+                "driverProvenance": res.get("driverProvenance", "real_browser_extension"),
+            }
+
+        elif fn_name == "browser_click_element":
+            selector = str(fn_args.get("selector") or fn_args.get("target") or fn_args.get("targetId") or "")
+            res = await asyncio.to_thread(browser_adapter.click_element, selector, str(session_id))
+            return {
+                "success": bool(res.get("success", False)),
+                "target": selector,
+                "details": res.get("details", ""),
                 "driverProvenance": res.get("driverProvenance", "real_browser_extension"),
             }
 
@@ -1533,6 +1557,8 @@ async def _execute_goal_pipeline(
         "gmail": "https://mail.google.com",
         "twitter": "https://twitter.com",
         "x": "https://x.com",
+        "whatsapp": "https://web.whatsapp.com",
+        "linkedin": "https://www.linkedin.com",
     }
 
     compound_indicators = [
@@ -1555,7 +1581,7 @@ async def _execute_goal_pipeline(
     ]
     is_compound_or_complex = any(ci in goal_lower for ci in compound_indicators)
 
-    direct_launch_match = re.match(r"^(?:open|launch)\s+([a-zA-Z0-9_\-]+)(?:\.exe)?$", goal_lower)
+    direct_launch_match = re.match(r"^(?:open|launch)\s+([a-zA-Z0-9_\-\s]+?)(?:\.exe)?$", goal_lower)
     direct_url_match = re.match(r"^(?:open|navigate to|go to)\s+(https?://[^\s]+|[a-zA-Z0-9\-\.]+\.(?:com|org|io|net|edu|dev|in|ai)(?:/[^\s]*)?)$", goal_lower)
     direct_vol_match = re.match(r"^(?:set|change)\s+(?:system\s+)?volume\s+(?:to\s+)?(\d+)(?:%)?$", goal_lower)
     direct_snap_match = re.match(r"^(?:take|capture)\s+(?:a\s+)?(?:screen(?:shot)?|desktop\s+screen(?:shot)?)$", goal_lower)
@@ -2219,8 +2245,10 @@ async def _execute_goal_pipeline(
                     accumulated_facts["directory_items"] = res.get("items") or res.get("files")
                     accumulated_facts["directory_summary"] = res.get("summary")
 
-                # Media playback facts
-                if "play" in fname.lower() or res.get("media_playback"):
+                # Media playback facts - require verified active playback
+                is_play_tool = fname in ("browser_play_media", "play_youtube_video", "media_play")
+                playback_active = str(res.get("playbackState", "")).lower() in ("playing", "started", "active") or res.get("verifiedPlayback") is True
+                if (is_play_tool or res.get("media_playback")) and res.get("success", False) is True and playback_active:
                     accumulated_facts["media_playback"] = True
                     if res.get("videoTitle") or res.get("title"):
                         accumulated_facts["media_title"] = res.get("videoTitle") or res.get("title")
@@ -2559,16 +2587,20 @@ async def _execute_goal_pipeline(
         executor=executor_to_use,
     )
 
-    # Extract summary text from accumulated facts if present
+    # Extract truthful summary text from accumulated facts
     facts = report.accumulated_facts
-    summary_text = (
-        (f"Calculation outcome: {facts.get('calculation_result')}" if facts.get("calculation_result") is not None else None)
-        or facts.get("extracted_summary")
-        or facts.get("key_findings")
-        or facts.get("deadline_summary")
-        or facts.get("bill_summary")
-        or f"Task executed with {report.completed_steps_count}/{report.total_steps_count} steps completed."
-    )
+    if not report.is_success:
+        summary_text = f"Execution failed: {report.error or 'Required steps or verifications were not fulfilled.'}"
+    else:
+        summary_text = (
+            (f"Calculation outcome: {facts.get('calculation_result')}" if facts.get("calculation_result") is not None else None)
+            or facts.get("extracted_summary")
+            or facts.get("key_findings")
+            or facts.get("deadline_summary")
+            or facts.get("bill_summary")
+            or facts.get("final_message")
+            or f"Task completed successfully: all {report.completed_steps_count} steps verified."
+        )
 
     # 4. EXPLAIN & RECORD PASSPORT
     passport = register_or_update_passport(

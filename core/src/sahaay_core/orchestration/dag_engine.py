@@ -567,14 +567,15 @@ class TaskDagEngine:
                     elif "isVerified" in exec_data:
                         driver_success = bool(exec_data["isVerified"])
                     else:
-                        driver_success = True
+                        # Missing explicit success information must never mean success
+                        driver_success = False
 
                     if "verified" in exec_data and exec_data["verified"] is False:
                         driver_success = False
                     if "isVerified" in exec_data and exec_data["isVerified"] is False:
                         driver_success = False
-                elif exec_data is not None:
-                    driver_success = True
+                else:
+                    driver_success = False
 
                 exec_result = ExecutionResult(
                     executionId=uuid4(),
@@ -593,12 +594,9 @@ class TaskDagEngine:
                 )
                 node.verification_status = verification.status
 
-                if verification.status in (
-                    VerificationStatusEnum.FAILED,
-                    VerificationStatusEnum.CONFLICT,
-                ):
+                if verification.status != VerificationStatusEnum.VERIFIED:
                     node.status = TaskStatusEnum.FAILED
-                    err_msg = f"Step '{node.step_id}' verification failed: {verification.details}"
+                    err_msg = f"Step '{node.step_id}' verification failed ({verification.status.value}): {verification.details}"
                     node.error = err_msg
                     step_results[node.step_id] = {"success": False, "error": err_msg}
                     task.status = TaskStatusEnum.FAILED

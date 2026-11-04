@@ -207,31 +207,53 @@ class CapabilityExecutor:
                     elif "explorer" in combined:
                         app_name = "explorer.exe"
 
-                target_proc = (
-                    "notepad"
-                    if "notepad" in app_name.lower()
-                    else ("calc" if "calc" in app_name.lower() else "")
-                )
-                if target_proc:
-                    try:
-                        open_wins = self.windows_adapter.list_open_windows()
-                        for win in open_wins:
-                            p_name = win.get("processName", "").lower()
-                            title = win.get("title", "").lower()
-                            if (target_proc in p_name or target_proc in title) and win.get("hwnd", 0) > 0:
-                                return {
-                                    "success": True,
-                                    "isLaunched": True,
-                                    "alreadyRunning": True,
-                                    "application": app_name,
-                                    "hwnd": win["hwnd"],
-                                    "windowTitle": win.get("title", ""),
-                                    "processName": win.get("processName", ""),
-                                    "processId": win.get("processId", 0),
-                                    "driverProvenance": "real_native_driver",
-                                }
-                    except Exception:
-                        pass
+                APP_PROCESS_PATTERNS = {
+                    "code": ["code", "visual studio code"],
+                    "vscode": ["code", "visual studio code"],
+                    "vs code": ["code", "visual studio code"],
+                    "visual studio code": ["code", "visual studio code"],
+                    "notepad": ["notepad"],
+                    "calc": ["calc", "calculator", "calculatorapp"],
+                    "calculator": ["calc", "calculator", "calculatorapp"],
+                    "explorer": ["explorer", "file explorer"],
+                    "file explorer": ["explorer", "file explorer"],
+                    "chrome": ["chrome", "google chrome"],
+                    "google chrome": ["chrome", "google chrome"],
+                    "edge": ["msedge", "edge", "microsoft edge"],
+                    "msedge": ["msedge", "edge", "microsoft edge"],
+                    "terminal": ["windowsterminal", "wt", "terminal"],
+                    "wt": ["windowsterminal", "wt", "terminal"],
+                    "cmd": ["cmd", "command prompt"],
+                    "powershell": ["powershell"],
+                    "paint": ["mspaint", "paint"],
+                    "mspaint": ["mspaint", "paint"],
+                }
+                app_lower = app_name.lower().strip()
+                stem = os.path.splitext(app_lower)[0].strip()
+                search_patterns = APP_PROCESS_PATTERNS.get(app_lower) or APP_PROCESS_PATTERNS.get(stem) or [stem, app_lower]
+
+                def matches_win(win_dict: dict) -> bool:
+                    p_name = win_dict.get("processName", "").lower()
+                    title = win_dict.get("title", "").lower()
+                    return any(pat in p_name or pat in title for pat in search_patterns if pat)
+
+                try:
+                    open_wins = self.windows_adapter.list_open_windows()
+                    for win in open_wins:
+                        if matches_win(win) and win.get("hwnd", 0) > 0:
+                            return {
+                                "success": True,
+                                "isLaunched": True,
+                                "alreadyRunning": True,
+                                "application": app_name,
+                                "hwnd": win["hwnd"],
+                                "windowTitle": win.get("title", ""),
+                                "processName": win.get("processName", ""),
+                                "processId": win.get("processId", 0),
+                                "driverProvenance": "real_native_driver",
+                            }
+                except Exception:
+                    pass
                 try:
                     res = self.windows_adapter.launch_application(app_name)
                 except Exception as ex:
@@ -249,10 +271,7 @@ class CapabilityExecutor:
                         time.sleep(0.4)
                         try:
                             for win in self.windows_adapter.list_open_windows():
-                                p_name = win.get("processName", "").lower()
-                                title = win.get("title", "").lower()
-                                stem = os.path.splitext(app_name.lower())[0]
-                                if (target_proc or stem) and ((target_proc and target_proc in p_name) or stem in p_name or stem in title) and win.get("hwnd", 0) > 0:
+                                if matches_win(win) and win.get("hwnd", 0) > 0:
                                     res["hwnd"] = win["hwnd"]
                                     res["windowTitle"] = win.get("title", "")
                                     res["processName"] = win.get("processName", "")
@@ -260,8 +279,6 @@ class CapabilityExecutor:
                                     break
                         except Exception:
                             pass
-                        if res.get("hwnd", 0) > 0:
-                            break
                         if res.get("hwnd", 0) > 0:
                             break
                 return res
@@ -510,6 +527,18 @@ if ($root) {{
                 )
                 return self.browser_adapter.click_element(target_id_or_selector=str(target))
 
+            elif capability_id == "browser_input_text":
+                text = str(parameters.get("text") or parameters.get("value") or "")
+                selector = str(parameters.get("selector") or parameters.get("targetId") or parameters.get("target") or "")
+                res = self.browser_adapter.input_text(text=text, selector=selector)
+                return {
+                    "success": bool(res.get("success", False)),
+                    "text": text,
+                    "selector": selector,
+                    "details": res.get("details", ""),
+                    "driverProvenance": res.get("driverProvenance", "real_browser_extension"),
+                }
+
             elif capability_id == "browser_open_tab":
                 url = (
                     parameters.get("url")
@@ -522,11 +551,13 @@ if ($root) {{
                 if not url.startswith(("http://", "https://")):
                     url = "https://" + url
                 res = self.browser_adapter.open_tab(url)
+                is_ok = bool(res.get("success", True) if res.get("state") != "FAILED" else False)
                 return {
                     "url": res.get("url", url),
                     "title": res.get("title", ""),
                     "tabId": res.get("tabId", -1),
-                    "success": True,
+                    "success": is_ok,
+                    "state": res.get("state", "TAB_CREATED"),
                     "driverProvenance": res.get("driverProvenance", "real_browser_extension"),
                 }
 
@@ -542,10 +573,11 @@ if ($root) {{
                 if not url.startswith(("http://", "https://")):
                     url = "https://" + url
                 res = self.browser_adapter.navigate(url)
+                is_ok = bool(res.get("success", True) if res.get("state") != "FAILED" else False)
                 return {
                     "url": res.get("url", url),
                     "title": res.get("title", ""),
-                    "success": True,
+                    "success": is_ok,
                     "driverProvenance": res.get("driverProvenance", "real_browser_extension"),
                 }
 

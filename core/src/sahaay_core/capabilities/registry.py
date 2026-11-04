@@ -683,6 +683,46 @@ class CapabilityRegistry:
             )
         )
 
+        # 18b. Browser Input Text
+        self.register(
+            CapabilityDescriptor(
+                capability_id="browser_input_text",
+                name="Type Text into Browser Element",
+                description="Type text into an editable element (contenteditable composer, input, or textarea) in the active browser tab.",
+                example_requests=["Type message into LinkedIn composer", "Type message in WhatsApp Web", "Enter text into input field"],
+                supported_surfaces=["browser_tab"],
+                adapter="browser_extension_bridge",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "text": {"type": "string"},
+                        "selector": {"type": "string"},
+                    },
+                    "required": ["text"],
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "textTyped": {"type": "string"},
+                        "targetTag": {"type": "string"},
+                    },
+                },
+                preconditions=[
+                    "Active browser tab loaded",
+                    "Editable element or text field is present",
+                ],
+                required_permission_scopes=["action:browser_tab"],
+                risk_category=RiskCategory.MEDIUM,
+                requires_human_confirmation=False,
+                is_reversible=False,
+                timeout_seconds=5.0,
+                is_idempotent=False,
+                verification_method="DOM input event verification and text presence check.",
+                required_postconditions=["Text entered into element confirmed by content script"],
+                readiness_state=CapabilityReadiness.READY,
+            )
+        )
+
         # 19. Browser Open Tab
         self.register(
             CapabilityDescriptor(

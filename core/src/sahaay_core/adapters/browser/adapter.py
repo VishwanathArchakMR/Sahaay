@@ -175,6 +175,30 @@ class BrowserAdapter:
                 raise ConnectionError("Browser bridge not connected.") from ce
             return {"clicked": True, "target": target_id_or_selector, "driverProvenance": "offline_simulation", "offlineSimulation": True}
 
+    def input_text(self, text: str, selector: str = "", session_id: Optional[str] = None) -> Dict[str, Any]:
+        """Type text into an input field or contenteditable element in the active tab."""
+        try:
+            if self.is_connected():
+                res = self.client.send_command(
+                    "input_text",
+                    session_id=session_id,
+                    parameters={"text": text, "selector": selector},
+                    timeout_ms=5000,
+                )
+                if res.get("success"):
+                    data = res.get("data", {})
+                    if isinstance(data, dict):
+                        data.setdefault("success", True)
+                        data.setdefault("text", text)
+                        data["driverProvenance"] = "real_browser_extension"
+                        return data
+                    return {"success": True, "text": text, "driverProvenance": "real_browser_extension"}
+                raise RuntimeError(res.get("error", f"Input text failed for selector '{selector}'."))
+        except Exception as e:
+            if not self.allow_simulation:
+                raise ConnectionError("Browser bridge not connected or input command failed.") from e
+            return {"success": True, "text": text, "selector": selector, "driverProvenance": "offline_simulation"}
+
     def open_tab(self, url: str, session_id: Optional[str] = None) -> Dict[str, Any]:
         """Open a new browser tab at the specified URL via Native Messaging bridge or browser launcher."""
         if not url.startswith(("http://", "https://")):
@@ -199,34 +223,19 @@ class BrowserAdapter:
         except Exception:
             pass
 
-        # Prevent duplicate Chrome windows: check if Chrome is already active in user session
+        # Launch URL in Google Chrome or default system browser
         import os, subprocess, webbrowser
 
-        is_chrome_running = False
-        try:
-            tasklist_out = subprocess.check_output(
-                ["tasklist", "/fi", "imagename eq chrome.exe", "/fo", "csv", "/nh"],
-                timeout=1.5,
-            ).decode("utf-8", errors="ignore")
-            is_chrome_running = "chrome.exe" in tasklist_out.lower()
-        except Exception:
-            is_chrome_running = False
+        chrome_candidates = [
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+            os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"),
+        ]
+        target_chrome = next((c for c in chrome_candidates if os.path.exists(c)), None)
 
-        if is_chrome_running and self.is_connected():
-            return {
-                "url": url,
-                "title": f"Attached to active browser: {url}",
-                "tabId": 1,
-                "success": True,
-                "state": "ATTACHED_EXISTING",
-                "driverProvenance": "real_browser_extension",
-            }
-
-        # Real system launcher fallback if Chrome extension bridge is not currently active
-        chrome_exe = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
-        if os.path.exists(chrome_exe) and not is_chrome_running:
+        if target_chrome:
             try:
-                subprocess.Popen([chrome_exe, url])
+                subprocess.Popen([target_chrome, url])
                 return {
                     "url": url,
                     "title": f"Opened in Google Chrome: {url}",
@@ -235,21 +244,21 @@ class BrowserAdapter:
                     "state": "LAUNCHED_BROWSER",
                     "driverProvenance": "real_browser_launcher",
                 }
-            except Exception:
-                pass
-        if not is_chrome_running:
-            try:
-                webbrowser.open(url)
-                return {
-                    "url": url,
-                    "title": f"Opened in system browser: {url}",
-                    "tabId": 1,
-                    "success": True,
-                    "state": "LAUNCHED_BROWSER",
-                    "driverProvenance": "real_browser_launcher",
-                }
-            except Exception:
-                pass
+            except Exception as launch_err:
+                logger.warning("Failed to launch Chrome with URL %s: %s", url, launch_err)
+
+        try:
+            webbrowser.open(url)
+            return {
+                "url": url,
+                "title": f"Opened in system browser: {url}",
+                "tabId": 1,
+                "success": True,
+                "state": "LAUNCHED_BROWSER",
+                "driverProvenance": "real_browser_launcher",
+            }
+        except Exception as wb_err:
+            logger.warning("Failed to open URL %s in default system browser: %s", url, wb_err)
 
         if not self.allow_simulation:
             raise ConnectionError(f"Browser bridge not connected and browser launcher failed for '{url}'.")

@@ -256,6 +256,7 @@ export function App(): React.JSX.Element {
     createdAt: string;
     metadata?: any;
   }>>([]);
+  const [isHelpResponding, setIsHelpResponding] = useState<boolean>(false);
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [micState, setMicState] = useState<MicState>("READY");
   const [recordingSeconds, setRecordingSeconds] = useState<number>(0);
@@ -736,6 +737,46 @@ export function App(): React.JSX.Element {
       setTaskState("FAILED");
       setStatusNarrative("Backend connection unavailable. Please ensure Sahaay FastAPI backend is online at 127.0.0.1:8000.");
       addTimelineEntry("FAILED", "Session Error", "Could not establish valid session with backend.");
+      return;
+    }
+
+    // Direct ChatGPT-like conversational flow for Help Mode
+    if (agentMode === "help") {
+      setIsHelpResponding(true);
+      try {
+        const headers = await getApiHeaders();
+        const chatRes = await safeFetch(
+          `${API_BASE}/sessions/${activeSessionId}/chat`,
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ message: promptText }),
+          },
+          30000
+        );
+        const data = await chatRes.json();
+        if (data && data.reply) {
+          const assistantMsg = {
+            messageId: data.messageId || "resp-" + Date.now(),
+            role: "assistant",
+            content: data.reply,
+            createdAt: data.createdAt || new Date().toISOString(),
+          };
+          setMessages((prev) => [...prev, assistantMsg]);
+        }
+      } catch (chatErr: any) {
+        console.error("Help mode chat failure:", chatErr);
+        const errorMsg = {
+          messageId: "err-" + Date.now(),
+          role: "assistant",
+          content: "I'm having trouble connecting to the conversational service. Please verify that Sahaay FastAPI is running at 127.0.0.1:8000.",
+          createdAt: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, errorMsg]);
+      } finally {
+        setIsHelpResponding(false);
+        fetchConversationMessages(activeSessionId);
+      }
       return;
     }
 
@@ -1608,7 +1649,7 @@ export function App(): React.JSX.Element {
           </section>
 
           {/* C. Live Task Execution Inspector */}
-          {taskState !== "IDLE" && (
+          {agentMode === "automate" && taskState !== "IDLE" && (
             <section className="glass-surface task-inspector-box">
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -2302,7 +2343,7 @@ export function App(): React.JSX.Element {
                     Ready to assist. Ask a question, request an action in the browser or Windows, or attach files.
                   </div>
                 ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxHeight: "450px", overflowY: "auto", paddingRight: "4px" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxHeight: agentMode === "help" ? "560px" : "450px", overflowY: "auto", paddingRight: "4px" }}>
                     {messages.map((m) => (
                       <div
                         key={m.messageId}
@@ -2352,12 +2393,31 @@ export function App(): React.JSX.Element {
                         </span>
                       </div>
                     ))}
+                    {isHelpResponding && (
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "4px" }}>
+                        <div style={{
+                          padding: "10px 16px",
+                          borderRadius: "14px 14px 14px 2px",
+                          background: "rgba(255, 255, 255, 0.04)",
+                          border: "1px solid rgba(138, 245, 207, 0.3)",
+                          color: "var(--sahaay-mint)",
+                          fontSize: "12px",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px"
+                        }}>
+                          <Activity size={14} className="spin" color="var(--sahaay-mint)" />
+                          <span>Sahaay is thinking...</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </section>
 
-              {/* Responsive Cards Grid */}
-              <section className="cards-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: "16px" }}>
+              {/* Responsive Cards Grid (Automate Mode Only) */}
+              {agentMode === "automate" && (
+                <section className="cards-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: "16px" }}>
                 {/* Card 1: Active Tasks in Progress */}
                 <div className="glass-surface grid-card" style={{ minHeight: "180px" }}>
                   <div>
@@ -2492,6 +2552,7 @@ export function App(): React.JSX.Element {
                   </div>
                 </div>
               </section>
+              )}
             </div>
           )}
         </main>
