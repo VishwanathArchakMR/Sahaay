@@ -776,6 +776,45 @@ class CapabilityRegistry:
             )
         )
 
+        # 21b. Browser Play Media
+        self.register(
+            CapabilityDescriptor(
+                capability_id="browser_play_media",
+                name="Play Media in Browser",
+                description="Search, select, and initiate verified video or audio playback on YouTube or media sites.",
+                example_requests=["Play song on YouTube", "Play the most famous song in Kannada on YouTube"],
+                supported_surfaces=["browser_tab"],
+                adapter="browser_extension_bridge",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Song title, artist, or video search query"},
+                        "video_url": {"type": "string", "description": "Optional direct YouTube video URL"},
+                    },
+                    "required": ["query"],
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "success": {"type": "boolean"},
+                        "videoTitle": {"type": "string"},
+                        "url": {"type": "string"},
+                        "playbackState": {"type": "string"},
+                    },
+                },
+                preconditions=["Browser extension connected", "Active browser tab or internet access"],
+                required_permission_scopes=["action:browser_tab"],
+                risk_category=RiskCategory.LOW,
+                requires_human_confirmation=False,
+                is_reversible=True,
+                timeout_seconds=15.0,
+                is_idempotent=False,
+                verification_method="Video element identified, play command dispatched, and playback state verified.",
+                required_postconditions=["Media player initiated and playing in browser tab"],
+                readiness_state=CapabilityReadiness.READY,
+            )
+        )
+
         # 22. File Create and Write
         self.register(
             CapabilityDescriptor(

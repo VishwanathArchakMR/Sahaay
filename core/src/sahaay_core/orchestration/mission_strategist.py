@@ -40,6 +40,7 @@ class MissionStrategy(BaseModel):
     original_objective: str
     interpreted_objective: str
     depth_classification: Literal["DIRECT_OPERATION", "STRUCTURED_TASK", "COMPLEX_MISSION"]
+    strategy_source: Literal["MUSE_SPARK", "DETERMINISTIC_BLUEPRINT"] = "DETERMINISTIC_BLUEPRINT"
     definition_of_done: List[str] = Field(default_factory=list)
     available_context: Optional[str] = None
     required_information: List[str] = Field(default_factory=list)
@@ -58,6 +59,7 @@ class MissionStrategy(BaseModel):
             "STRATEGIC MISSION PLAN & DEFINITION OF DONE",
             "==================================================",
             f"Primary Mission: {self.interpreted_objective}",
+            f"Strategy Formulation: {self.strategy_source}",
             f"Depth Level: {self.depth_classification}",
             f"Execution Approach: {self.execution_approach}",
             "",
@@ -202,7 +204,8 @@ class MissionStrategist:
                         "temperature": 0.1,
                     },
                 )
-                choices = raw_resp.get("choices", [])
+                raw_data = raw_resp.data if hasattr(raw_resp, "data") else (raw_resp if isinstance(raw_resp, dict) else {})
+                choices = raw_data.get("choices", [])
                 if choices:
                     content_str = choices[0].get("message", {}).get("content", "")
                     # Extract JSON block if wrapped in markdown
@@ -223,19 +226,28 @@ class MissionStrategist:
                     if parsed.get("failure_alternatives"):
                         failure_alternatives = parsed["failure_alternatives"]
 
+                    from sahaay_core.capabilities import capability_registry
+                    valid_caps = {c.capability_id for c in capability_registry.list_capabilities()}
+
                     raw_phases = parsed.get("execution_phases", [])
                     for idx, ph in enumerate(raw_phases, 1):
+                        req_caps = ph.get("required_capabilities", [])
+                        clean_caps = [c for c in req_caps if c in valid_caps or c.startswith(("browser_", "windows_", "file_"))]
                         strategy_phases.append(
                             MissionPhase(
                                 phase_index=ph.get("phase_index", idx),
                                 name=ph.get("name", f"Phase {idx}"),
                                 description=ph.get("description", ""),
-                                required_capabilities=ph.get("required_capabilities", []),
+                                required_capabilities=clean_caps or required_caps,
                                 expected_deliverable=ph.get("expected_deliverable"),
                             )
                         )
+                    strategy_source = "MUSE_SPARK"
             except Exception as ex:
                 logger.warning("Muse Spark strategic analysis failed, using deterministic blueprint: %s", ex)
+                strategy_source = "DETERMINISTIC_BLUEPRINT"
+        else:
+            strategy_source = "DETERMINISTIC_BLUEPRINT"
 
         # Fallback to deterministic phases if model was not used or failed
         if not strategy_phases:
@@ -289,6 +301,7 @@ class MissionStrategist:
             original_objective=goal,
             interpreted_objective=interpreted_objective,
             depth_classification=depth,
+            strategy_source=strategy_source,
             definition_of_done=definition_of_done or ["Task objective fulfilled and verified."],
             available_context=context,
             required_information=["Current application/tab state", "User target parameters"],

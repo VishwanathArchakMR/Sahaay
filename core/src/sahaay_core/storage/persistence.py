@@ -257,6 +257,18 @@ def init_persistence_schema() -> None:
             )
         except Exception:
             pass
+
+        # Migrate stale in-flight or suspended authorization tasks from prior runtime sessions to CANCELLED
+        try:
+            conn.execute(
+                """
+                UPDATE tasks
+                SET status = 'CANCELLED'
+                WHERE status IN ('PLANNING', 'OBSERVING', 'EXECUTING', 'PROPOSING', 'HANDOFF_REQUESTED', 'AUTHORIZING');
+                """
+            )
+        except Exception:
+            pass
     conn.close()
 
 

@@ -16,6 +16,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
@@ -718,55 +719,35 @@ async def execute_goal(req: ExecuteGoalRequest):
 
     # 1. Authoritative Backend Intent Classification (not keyword-only from frontend)
     goal_lower = req.goal.lower().strip()
-    has_retrieval_intent = any(
-        w in goal_lower
-        for w in [
-            "summarize",
-            "find",
-            "search",
-            "what",
-            "read",
-            "extract",
-            "details",
-            "invoice",
-            "bill",
-            "status",
-            "explain",
-            "observe",
-            "active tab",
-        ]
-    )
-    has_action_intent = any(
-        w in goal_lower
-        for w in [
-            "save",
-            "write",
-            "notepad",
-            "fill",
-            "type",
-            "open",
-            "launch",
-            "calculate",
-            "scroll",
-            "haaki",
-            "daalo",
-            "likho",
-        ]
+
+    # Determine whether user objective requests an active computer operation vs pure informational retrieval
+    action_directive_indicators = [
+        "play", "listen", "watch", "stream", "open", "launch", "run", "start",
+        "type", "write", "save", "create", "generate", "fill", "click", "press",
+        "scroll", "navigate", "browse", "go to", "visit", "download", "calculate",
+        "add to cart", "add to", "cart", "shop", "checkout", "buy",
+        "haaki", "daalo", "likho", "maadi", "nodri", "nodi", "bariri"
+    ]
+    has_action_directive = any(
+        re.search(rf"\b{re.escape(w)}\b", goal_lower) or w in goal_lower
+        for w in action_directive_indicators
     )
 
-    if has_retrieval_intent and has_action_intent:
+    pure_question_indicators = [
+        "what is", "who is", "why is", "why does", "explain ", "tell me about",
+        "how does", "what are", "define ", "meaning of"
+    ]
+    is_pure_question = any(goal_lower.startswith(q) for q in pure_question_indicators) and not has_action_directive
+
+    mode = (req.workflowMode or "understand_and_act").lower().strip()
+
+    if has_action_directive:
+        # Any task requiring computer, browser, media, or file operations is combined or action
         task_type = "combined_retrieval_and_action"
-    elif has_action_intent:
-        task_type = "action_only"
-    elif has_retrieval_intent:
+    elif is_pure_question or mode == "ask":
         task_type = "retrieval_only"
     else:
-        mode = (req.workflowMode or "understand_and_act").lower().strip()
-        task_type = (
-            "retrieval_only"
-            if mode == "ask"
-            else ("action_only" if mode == "do" else "combined_retrieval_and_action")
-        )
+        task_type = "combined_retrieval_and_action"
 
     # 2. Immediate Task Creation & Durable Persistence
     task = orchestrator.create_task(
@@ -1066,16 +1047,33 @@ async def _execute_tool_for_meta(
             delta_y = int(fn_args.get("deltaY", 400))
             return await asyncio.to_thread(browser_adapter.scroll_tab, delta_y, str(session_id))
 
+        elif fn_name == "browser_play_media":
+            query = str(fn_args.get("query") or fn_args.get("search") or fn_args.get("title") or fn_args.get("song") or "").strip()
+            video_url = str(fn_args.get("video_url") or fn_args.get("url") or "").strip()
+            res = await asyncio.to_thread(browser_adapter.play_media, query or video_url, str(session_id))
+            return {
+                "success": bool(res.get("success", False)),
+                "query": query,
+                "videoUrl": res.get("url") or video_url,
+                "videoTitle": res.get("title") or query,
+                "playbackState": res.get("playbackState", "playing"),
+                "driverProvenance": res.get("driverProvenance", "real_browser_extension"),
+                "details": res.get("details", "Media playback initiated and verified in active tab."),
+            }
+
         elif fn_name == "windows_launch_app":
             app = str(fn_args.get("application") or fn_args.get("appName") or "notepad.exe").strip()
             res = await executor.execute("windows_launch_app", {"application": app})
+            has_valid_proc = res.get("hwnd", 0) > 0 or res.get("processId", 0) > 0 or res.get("pid", 0) > 0
+            is_success = bool(res.get("success", False) and has_valid_proc)
             return {
-                "success": res.get("success", True),
+                "success": is_success,
                 "application": app,
                 "hwnd": res.get("hwnd", 0),
                 "windowTitle": res.get("windowTitle", ""),
                 "processName": res.get("processName", ""),
                 "driverProvenance": res.get("driverProvenance", "real_native_driver"),
+                "error": res.get("error"),
             }
 
         elif fn_name == "windows_get_active_window":
@@ -2006,12 +2004,13 @@ async def _execute_goal_pipeline(
                 browser_adapter=live_br_adapter,
                 windows_adapter=live_win_adapter,
             )
+            is_tool_success = bool(tool_res.get("success", False))
             durable_storage.record_task_event(
                 task_id=str(task_id),
                 event_type="task.tool_finished",
                 stage="EXECUTING",
-                message=f"Finished capability '{fn_name}' (success={tool_res.get('success', True)})",
-                data={"tool": fn_name, "success": tool_res.get("success", True)},
+                message=f"Finished capability '{fn_name}' (success={is_tool_success})",
+                data={"tool": fn_name, "success": is_tool_success},
             )
             return tool_res
 

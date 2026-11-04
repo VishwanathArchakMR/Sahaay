@@ -125,6 +125,7 @@ class ActionTypeEnum(str, Enum):
     BROWSER_SCROLL_TAB = "browser_scroll_tab"
     BROWSER_CLICK_ELEMENT = "browser_click_element"
     BROWSER_NAVIGATE = "browser_navigate"
+    BROWSER_PLAY_MEDIA = "browser_play_media"
     RESEARCH_WEB_MULTIHOP = "research_web_multihop"
     STATE_MUTATION = "state_mutation"
     GENERIC_CAPABILITY_ACTION = "generic_capability_action"

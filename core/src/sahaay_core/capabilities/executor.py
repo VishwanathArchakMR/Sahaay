@@ -234,28 +234,25 @@ class CapabilityExecutor:
                         pass
                 try:
                     res = self.windows_adapter.launch_application(app_name)
-                except Exception:
-                    import subprocess
-                    proc_name = "notepad.exe" if "notepad" in app_name.lower() else ("calc.exe" if "calc" in app_name.lower() else "explorer.exe")
-                    p = subprocess.Popen([proc_name])
+                except Exception as ex:
                     res = {
-                        "success": True,
-                        "isLaunched": True,
+                        "success": False,
+                        "isLaunched": False,
                         "application": app_name,
-                        "processName": proc_name,
-                        "processId": p.pid,
-                        "hwnd": 1,
+                        "error": str(ex),
+                        "hwnd": 0,
                         "driverProvenance": "real_native_driver",
                     }
-                if res.get("hwnd", 0) <= 0:
+                if res.get("hwnd", 0) <= 0 and res.get("success", False):
                     import time
-                    for _ in range(5):
-                        time.sleep(0.3)
+                    for _ in range(6):
+                        time.sleep(0.4)
                         try:
                             for win in self.windows_adapter.list_open_windows():
                                 p_name = win.get("processName", "").lower()
                                 title = win.get("title", "").lower()
-                                if target_proc and (target_proc in p_name or target_proc in title) and win.get("hwnd", 0) > 0:
+                                stem = os.path.splitext(app_name.lower())[0]
+                                if (target_proc or stem) and ((target_proc and target_proc in p_name) or stem in p_name or stem in title) and win.get("hwnd", 0) > 0:
                                     res["hwnd"] = win["hwnd"]
                                     res["windowTitle"] = win.get("title", "")
                                     res["processName"] = win.get("processName", "")
@@ -263,6 +260,8 @@ class CapabilityExecutor:
                                     break
                         except Exception:
                             pass
+                        if res.get("hwnd", 0) > 0:
+                            break
                         if res.get("hwnd", 0) > 0:
                             break
                 return res
@@ -558,6 +557,19 @@ if ($root) {{
                 return {
                     "query": query,
                     "success": True,
+                    "driverProvenance": res.get("driverProvenance", "real_browser_extension"),
+                }
+
+            elif capability_id == "browser_play_media":
+                query = parameters.get("query") or parameters.get("search") or parameters.get("title") or parameters.get("song") or ""
+                video_url = parameters.get("video_url") or parameters.get("url") or ""
+                res = self.browser_adapter.play_media(query=query or video_url)
+                return {
+                    "success": res.get("success", True),
+                    "query": query,
+                    "videoUrl": res.get("url") or video_url,
+                    "videoTitle": res.get("title") or query,
+                    "playbackState": res.get("playbackState", "playing"),
                     "driverProvenance": res.get("driverProvenance", "real_browser_extension"),
                 }
 

@@ -225,31 +225,88 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.command === "play_media" || request.command === "play_first_video") {
     try {
-      // Find first playable video item on YouTube or media sites
-      const videoLink = (
-        document.querySelector("ytd-video-renderer a#video-title") ||
-        document.querySelector("ytd-rich-item-renderer a#video-title-link") ||
-        document.querySelector("a[href*='/watch?v=']") ||
-        document.querySelector("video")
-      ) as HTMLElement | null;
-
-      if (videoLink) {
-        if (videoLink instanceof HTMLVideoElement) {
-          videoLink.play();
-        } else {
-          videoLink.click();
+      // 1. If video element is already present on page, initiate and verify playback state
+      const videoEl = document.querySelector("video") as HTMLVideoElement | null;
+      if (videoEl && window.location.href.includes("/watch")) {
+        const playPromise = videoEl.play();
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => {
+              const isPlaying = !videoEl.paused && videoEl.readyState >= 2;
+              const titleEl = document.querySelector("h1.ytd-watch-metadata yt-formatted-string") || document.querySelector("h1");
+              sendResponse({
+                success: isPlaying,
+                data: {
+                  played: isPlaying,
+                  playbackState: isPlaying ? "PLAYING" : "BUFFERING",
+                  currentTime: videoEl.currentTime,
+                  duration: videoEl.duration,
+                  title: titleEl?.textContent?.trim() || document.title,
+                  url: window.location.href,
+                  verifiedPlayback: isPlaying,
+                },
+              });
+            })
+            .catch((err) => {
+              sendResponse({
+                success: false,
+                error: `Autoplay restricted or user gesture required: ${err.message}`,
+                data: {
+                  played: false,
+                  playbackState: "RESTRICTED",
+                  url: window.location.href,
+                },
+              });
+            });
+          return true;
         }
+      }
+
+      // 2. Otherwise locate relevant video item from search results
+      const videoCandidates = Array.from(
+        document.querySelectorAll("ytd-video-renderer a#video-title, ytd-rich-item-renderer a#video-title-link, a[href*='/watch?v=']")
+      ) as HTMLAnchorElement[];
+
+      if (videoCandidates.length > 0) {
+        const query = (request.query || request.payload?.query || "").toLowerCase();
+        let targetLink = videoCandidates[0];
+        if (query) {
+          const match = videoCandidates.find((c) => (c.getAttribute("title") || c.innerText || "").toLowerCase().includes(query));
+          if (match) targetLink = match;
+        }
+
+        const title = targetLink.getAttribute("title") || targetLink.innerText || "Media Video";
+        const targetUrl = targetLink.href;
+        targetLink.click();
+
         sendResponse({
           success: true,
           data: {
+            navigationTriggered: true,
             played: true,
-            title: videoLink.getAttribute("title") || videoLink.innerText || "Media Video",
-            url: (videoLink as HTMLAnchorElement).href || window.location.href,
+            title,
+            url: targetUrl,
+            playbackState: "NAVIGATING_TO_PLAYER",
           },
         });
         return true;
       }
-      sendResponse({ success: false, error: "No playable media found on the active page." });
+
+      if (videoEl) {
+        videoEl.play().catch(() => {});
+        sendResponse({
+          success: true,
+          data: {
+            played: !videoEl.paused,
+            title: document.title,
+            url: window.location.href,
+            playbackState: !videoEl.paused ? "PLAYING" : "PAUSED",
+          },
+        });
+        return true;
+      }
+
+      sendResponse({ success: false, error: "No playable video element or media links found on current page." });
     } catch (ex: any) {
       sendResponse({ success: false, error: ex.message || "Failed to play media." });
     }

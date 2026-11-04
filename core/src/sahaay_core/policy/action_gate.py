@@ -76,6 +76,7 @@ PERMITTED_ACTIONS = {
     ActionTypeEnum.BROWSER_SCROLL_TAB,
     ActionTypeEnum.BROWSER_CLICK_ELEMENT,
     ActionTypeEnum.BROWSER_NAVIGATE,
+    ActionTypeEnum.BROWSER_PLAY_MEDIA,
     ActionTypeEnum.RESEARCH_WEB_MULTIHOP,
     ActionTypeEnum.STATE_MUTATION,
     ActionTypeEnum.GENERIC_CAPABILITY_ACTION,
@@ -205,15 +206,31 @@ class ActionGate:
                     reason=f"Target '{action.target}' contains forbidden execution subsystem.",
                 )
 
-        # 4. Consent and scope verification: require exact structured scope or exact action type match
+        # 3b. Consequential action check: Financial commitments, checkout, and destructive operations require human confirmation
+        consequential_patterns = [
+            "checkout", "place_order", "complete_order", "submit_payment",
+            "buy_now", "pay_now", "confirm_purchase", "authorize_payment",
+            "credit_card", "rmdir /s", "delete_all", "drop database"
+        ]
+        if any(cp in target_lower for cp in consequential_patterns):
+            return PolicyDecision(
+                decisionId=uuid4(),
+                actionId=action.actionId,
+                decision=PolicyDecisionEnum.CLARIFY,
+                reason=f"Consequential financial or irreversible operation on '{action.target}' requires explicit final confirmation.",
+                requiredGrantScope=f"confirm:{action.actionType.value}",
+                clarificationPrompt=f"Confirm action '{action.actionType.value}' on target '{action.target}'?",
+            )
+
+        # 4. Consent and scope verification: require wildcard, exact structured scope, category scope, or action type match
         required_scope = f"{action.actionType.value}:{action.target}"
         has_matching_grant = any(
             (
                 not grant.isRevoked
                 and (
-                    grant.scope == required_scope
+                    grant.scope in ("*", "all")
+                    or grant.scope == required_scope
                     or grant.scope == action.actionType.value
-                    or grant.scope in ("*", "all")
                     or (grant.scope in ("computer_use", "desktop_automation") and action.actionType in (
                         ActionTypeEnum.LAUNCH_APPLICATION,
                         ActionTypeEnum.FOCUS_WINDOW,
@@ -259,6 +276,7 @@ class ActionGate:
                         ActionTypeEnum.BROWSER_FILL_FORM,
                         ActionTypeEnum.BROWSER_SCROLL_TAB,
                         ActionTypeEnum.BROWSER_SEARCH_IN_TAB,
+                        ActionTypeEnum.BROWSER_PLAY_MEDIA,
                         ActionTypeEnum.BROWSER_GET_ACTIVE_TAB,
                         ActionTypeEnum.BROWSER_GET_PAGE_CONTENT,
                         ActionTypeEnum.BROWSER_TAB_OBSERVE,

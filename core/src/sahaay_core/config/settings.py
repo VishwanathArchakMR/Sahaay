@@ -3,7 +3,8 @@
 import secrets
 from pathlib import Path
 
-from pydantic import AliasChoices, Field
+from typing import Any
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -115,6 +116,13 @@ class Settings(BaseSettings):
             "SAHAAY_MODEL_API_KEY", "MODEL_API_KEY", "META_LLAMA_API_KEY"
         ),
     )
+
+    @field_validator("model_api_key", mode="before")
+    @classmethod
+    def clean_model_api_key(cls, v: Any) -> str:
+        if isinstance(v, str):
+            return v.strip(" \"'\r\n\t")
+        return ""
     meta_api_base_url: str = Field(
         default="https://api.meta.ai/v1",
         validation_alias=AliasChoices("SAHAAY_META_API_BASE_URL", "META_API_BASE_URL"),

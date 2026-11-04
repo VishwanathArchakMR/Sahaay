@@ -390,24 +390,20 @@ async function handleGeneralPrompt(promptText: string): Promise<void> {
 
     // Dynamically determine workflowMode
     const lowerPrompt = promptText.toLowerCase().trim();
-    let workflowMode: "ask" | "do" | "combined_retrieval_and_action" = "ask";
-    const actionKeywords = [
-      "open", "click", "type", "navigate", "browse", "launch", "search for", "create",
-      "download", "fill", "press", "scroll", "edit", "write", "generate", "calc", "notepad", "tab"
+    let workflowMode: "ask" | "do" | "combined_retrieval_and_action" = "combined_retrieval_and_action";
+    const pureQuestionPrefixes = [
+      "what is", "who is", "why is", "why does", "explain ", "tell me about", "how does", "what are", "meaning of"
     ];
-    const retrievalKeywords = [
-      "what is", "explain", "summarize", "find", "who is", "why", "how does", "tell me", "extract"
-    ];
+    const hasActionWords = [
+      "play", "listen", "watch", "stream", "open", "click", "type", "navigate",
+      "browse", "launch", "search", "create", "download", "fill", "press",
+      "scroll", "edit", "write", "generate", "calc", "notepad", "tab", "add to cart", "buy", "shop"
+    ].some((w) => lowerPrompt.includes(w));
 
-    const hasAction = actionKeywords.some((kw) => lowerPrompt.includes(kw));
-    const hasRetrieval = retrievalKeywords.some((kw) => lowerPrompt.includes(kw));
-
-    if (hasAction && hasRetrieval) {
-      workflowMode = "combined_retrieval_and_action";
-    } else if (hasAction) {
-      workflowMode = "do";
-    } else {
+    if (pureQuestionPrefixes.some((p) => lowerPrompt.startsWith(p)) && !hasActionWords) {
       workflowMode = "ask";
+    } else {
+      workflowMode = "combined_retrieval_and_action";
     }
 
     const payload = {
@@ -650,8 +646,23 @@ if (btnVoice) {
         btnVoice.style.color = "var(--sahaay-danger)";
         btnVoice.style.background = "rgba(255,141,145,0.2)";
         btnVoice.title = "Recording 16kHz WAV... Click to stop";
-      } catch (err) {
-        console.warn("Microphone access denied or unavailable:", err);
+      } catch (err: any) {
+        console.warn("Microphone access denied or unavailable in sidepanel:", err);
+        // Chrome MV3 sidepanels cannot show the native mic permission prompt dialog directly.
+        // Open the dedicated permission tab page to allow the user to grant origin mic permission.
+        appendAgentCard(`
+          <div style="font-size: 12px; color: var(--sahaay-warning); margin-bottom: 6px;">
+            <strong>Microphone Access Needed</strong>
+          </div>
+          <p style="font-size: 11px; color: var(--sahaay-text-muted); margin-bottom: 4px;">
+            Chrome requires microphone permission to be granted in an open tab. A permission request tab has been opened.
+          </p>
+        `);
+        try {
+          chrome.tabs.create({ url: chrome.runtime.getURL("permission/index.html") });
+        } catch (tabErr) {
+          console.error("Failed to open permission tab:", tabErr);
+        }
       }
     } else {
       isRecording = false;
@@ -756,6 +767,19 @@ if (chrome?.windows?.onFocusChanged) {
   chrome.windows.onFocusChanged.addListener((windowId) => {
     if (windowId !== chrome.windows.WINDOW_ID_NONE) {
       refreshActiveTab();
+    }
+  });
+}
+
+// Listen for permission granted from permission tab
+if (chrome?.runtime?.onMessage) {
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg?.type === "VOICE_PERMISSION_GRANTED") {
+      appendAgentCard(`
+        <div style="font-size: 12px; color: var(--sahaay-mint);">
+          ✓ <strong>Microphone Permission Enabled</strong>. Click the microphone icon to start speaking.
+        </div>
+      `);
     }
   });
 }

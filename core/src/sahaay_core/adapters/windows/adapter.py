@@ -398,13 +398,17 @@ if ($root) {{
         "explorer.exe": "explorer.exe",
         "chrome": "chrome.exe",
         "chrome.exe": "chrome.exe",
+        "google chrome": "chrome.exe",
         "edge": "msedge.exe",
         "msedge": "msedge.exe",
         "msedge.exe": "msedge.exe",
-        "code": "code.cmd",
-        "code.exe": "code.exe",
+        "microsoft edge": "msedge.exe",
+        "code": "Code.exe",
+        "code.exe": "Code.exe",
         "code.cmd": "code.cmd",
-        "vscode": "code.cmd",
+        "vscode": "Code.exe",
+        "vs code": "Code.exe",
+        "visual studio code": "Code.exe",
         "paint": "mspaint.exe",
         "mspaint": "mspaint.exe",
         "mspaint.exe": "mspaint.exe",
@@ -421,16 +425,41 @@ if ($root) {{
     }
 
     def launch_application(self, application: str) -> Dict[str, Any]:
-        """Launch an authorized application (calc, notepad, explorer, chrome, edge, code, etc.)."""
+        """Launch an authorized application (calc, notepad, explorer, chrome, edge, code/VS Code, etc.)."""
+        import shutil
         app_norm = application.lower().strip()
         exe_name = self.AUTHORIZED_LAUNCH_APPS.get(app_norm)
         if not exe_name:
             clean_name = os.path.splitext(app_norm)[0]
             exe_name = self.AUTHORIZED_LAUNCH_APPS.get(clean_name)
+
+        # Resolve VS Code executable path on Windows if requested
+        resolved_path = None
+        if app_norm in ("code", "vscode", "vs code", "visual studio code", "code.exe"):
+            local_app_data = os.environ.get("LOCALAPPDATA", "")
+            vscode_candidates = [
+                os.path.join(local_app_data, "Programs", "Microsoft VS Code", "Code.exe"),
+                os.path.join(os.environ.get("ProgramFiles", "C:\\Program Files"), "Microsoft VS Code", "Code.exe"),
+                os.path.join(os.environ.get("ProgramFiles(x86)", "C:\\Program Files (x86)"), "Microsoft VS Code", "Code.exe"),
+            ]
+            for cand in vscode_candidates:
+                if os.path.exists(cand):
+                    resolved_path = cand
+                    exe_name = cand
+                    break
+
+        if not exe_name:
+            # Check safe system PATH for safe registered application
+            which_res = shutil.which(app_norm) or shutil.which(f"{app_norm}.exe")
+            if which_res and not any(f in which_res.lower() for f in ["powershell", "cmd.exe", "bash", "sh"]):
+                exe_name = which_res
+                resolved_path = which_res
+
         if not exe_name:
             raise RuntimeError(
-                f"Application '{application}' is not in the authorized launch allowlist."
+                f"Application '{application}' could not be located or is not in the authorized launch allowlist."
             )
+
         try:
             res = self.client.send_command(
                 "launch_application", parameters={"application": exe_name}
@@ -444,28 +473,41 @@ if ($root) {{
         except (ConnectionError, Exception):
             pass
 
-        # Native companion unavailable or rejected: safely spawn authorized executable
+        # Native companion unavailable: safely spawn verified application executable directly
         try:
             import subprocess
-            proc = subprocess.Popen([exe_name], shell=False)
-            time.sleep(0.8)
+            proc_target = resolved_path or exe_name
+            proc = subprocess.Popen([proc_target], shell=False)
+            time.sleep(1.0)
             hwnd = 0
             title = ""
+            process_name = ""
+
             try:
                 wins = self.list_open_windows()
-                stem = os.path.splitext(exe_name)[0].lower()
+                search_terms = [
+                    os.path.splitext(os.path.basename(proc_target))[0].lower(),
+                    app_norm,
+                ]
+                if "code" in app_norm:
+                    search_terms.extend(["code", "visual studio code"])
+
                 for w in wins:
-                    if stem in w.get("processName", "").lower() or stem in w.get("title", "").lower():
+                    w_proc = w.get("processName", "").lower()
+                    w_title = w.get("title", "").lower()
+                    if any(st in w_proc or st in w_title for st in search_terms) and w.get("hwnd", 0) > 0:
                         hwnd = int(w.get("hwnd", 0))
                         title = w.get("title", "")
+                        process_name = w.get("processName", "")
                         break
             except Exception:
                 pass
 
             return {
-                "success": True,
+                "success": bool(hwnd > 0 or proc.pid > 0),
                 "launched": True,
-                "application": exe_name,
+                "application": application,
+                "processName": process_name or os.path.basename(proc_target),
                 "hwnd": hwnd,
                 "title": title,
                 "pid": proc.pid,
@@ -473,6 +515,13 @@ if ($root) {{
                 "offlineSimulation": False,
             }
         except Exception as ex:
+            return {
+                "success": False,
+                "launched": False,
+                "application": application,
+                "error": f"Failed to spawn application '{application}': {ex}",
+                "hwnd": 0,
+            }
             if self.allow_simulation:
                 return {
                     "success": True,

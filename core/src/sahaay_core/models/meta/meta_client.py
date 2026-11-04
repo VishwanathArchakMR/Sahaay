@@ -55,6 +55,26 @@ class MetaApiResponse(BaseModel):
     latency_ms: float = 0.0
     is_live_call: bool = True
 
+    def get(self, key: str, default: Any = None) -> Any:
+        """Allow dict-like get for top-level attributes or delegating into data payload."""
+        if hasattr(self, key):
+            val = getattr(self, key)
+            if val is not None:
+                return val
+        if isinstance(self.data, dict) and key in self.data:
+            return self.data.get(key, default)
+        return default
+
+    def __getitem__(self, key: str) -> Any:
+        """Allow dict-like subscript access."""
+        if hasattr(self, key):
+            val = getattr(self, key)
+            if val is not None:
+                return val
+        if isinstance(self.data, dict) and key in self.data:
+            return self.data[key]
+        raise KeyError(key)
+
 
 def _generate_synthetic_pcm_wav(duration_sec: float = 0.2, freq: float = 440.0, rate: int = 16000) -> bytes:
     """Generate minimal valid 16kHz mono 16-bit PCM WAV for probe checks."""
@@ -90,14 +110,17 @@ class MetaClient:
     @property
     def api_key(self) -> str:
         """Dynamically resolve API key from explicit instance override, settings, or environment."""
+        raw_key = ""
         if self._explicit_api_key is not None:
-            return self._explicit_api_key
-        return (
-            os.environ.get("SAHAAY_MODEL_API_KEY", "")
-            or os.environ.get("MODEL_API_KEY", "")
-            or os.environ.get("META_LLAMA_API_KEY", "")
-            or settings.model_api_key
-        )
+            raw_key = self._explicit_api_key
+        else:
+            raw_key = (
+                os.environ.get("SAHAAY_MODEL_API_KEY", "")
+                or os.environ.get("MODEL_API_KEY", "")
+                or os.environ.get("META_LLAMA_API_KEY", "")
+                or settings.model_api_key
+            )
+        return raw_key.strip(" \"'\r\n\t")
 
     @api_key.setter
     def api_key(self, value: Optional[str]) -> None:

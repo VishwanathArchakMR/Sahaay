@@ -74,7 +74,14 @@ fs.copyFileSync(
   path.resolve(distOptionsDir, 'index.html')
 );
 
-// 5. Verification: Check that every file referenced in distManifest exists
+// 5. Package permission
+const distPermissionDir = path.resolve(distDir, 'permission');
+fs.mkdirSync(distPermissionDir, { recursive: true });
+let permissionHtml = fs.readFileSync(path.resolve(srcDir, 'permission/index.html'), 'utf8');
+permissionHtml = permissionHtml.replace('../../dist/permission/permission.js', './permission.js');
+fs.writeFileSync(path.resolve(distPermissionDir, 'index.html'), permissionHtml, 'utf8');
+
+// 6. Verification: Check that every file referenced in distManifest exists
 const filesToCheck = [
   distManifest.background.service_worker,
   ...distManifest.content_scripts.flatMap(cs => cs.js),

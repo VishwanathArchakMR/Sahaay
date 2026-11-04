@@ -102,20 +102,37 @@ export class RuntimeSupervisor {
 
     console.log(`[Supervisor] Spawning Core Backend using ${pythonExe}...`);
 
-    let modelApiKey = process.env.MODEL_API_KEY || "";
+    let modelApiKey = (
+      process.env.MODEL_API_KEY ||
+      process.env.SAHAAY_MODEL_API_KEY ||
+      process.env.META_LLAMA_API_KEY ||
+      ""
+    ).replace(/^["']|["']$/g, "").trim();
+
     if (!modelApiKey) {
-      const rootEnv = join(this.repoRoot, ".env");
-      if (existsSync(rootEnv)) {
-        try {
-          const lines = readFileSync(rootEnv, "utf-8").split("\n");
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (trimmed.startsWith("MODEL_API_KEY=")) {
-              modelApiKey = trimmed.substring("MODEL_API_KEY=".length).trim();
-              break;
+      const envCandidates = [
+        join(this.repoRoot, ".env"),
+        join(this.repoRoot, "core", ".env"),
+      ];
+      for (const envPath of envCandidates) {
+        if (existsSync(envPath)) {
+          try {
+            const lines = readFileSync(envPath, "utf-8").split(/\r?\n/);
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (trimmed.startsWith("#")) continue;
+              for (const prefix of ["MODEL_API_KEY=", "SAHAAY_MODEL_API_KEY=", "META_LLAMA_API_KEY="]) {
+                if (trimmed.startsWith(prefix)) {
+                  const val = trimmed.substring(prefix.length).trim();
+                  modelApiKey = val.replace(/^["']|["']$/g, "").trim();
+                  break;
+                }
+              }
+              if (modelApiKey) break;
             }
-          }
-        } catch {}
+          } catch {}
+        }
+        if (modelApiKey) break;
       }
     }
 

@@ -200,6 +200,7 @@ export function App(): React.JSX.Element {
 
   // Health & Diagnostics
   const [isBackendReachable, setIsBackendReachable] = useState<boolean>(false);
+  const [runtimeHealth, setRuntimeHealth] = useState<any>(null);
   const [modelsStatus, setModelsStatus] = useState<ModelsStatusReport | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isProbing, setIsProbing] = useState<boolean>(false);
@@ -456,6 +457,16 @@ export function App(): React.JSX.Element {
 
   const runDiagnosticsProbe = async () => {
     setIsProbing(true);
+
+    if (typeof window !== "undefined" && (window as any).sahaay?.getRuntimeHealth) {
+      try {
+        const rh = await (window as any).sahaay.getRuntimeHealth();
+        setRuntimeHealth(rh);
+      } catch (e) {
+        console.warn("Failed to fetch runtime health from supervisor:", e);
+      }
+    }
+
     const headers = await getApiHeaders();
     try {
       const res = await safeFetch(`${API_BASE}/health`, { headers }, 2000);
@@ -1294,7 +1305,9 @@ export function App(): React.JSX.Element {
               className="glass-control"
               style={{ padding: "4px 12px", display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", fontWeight: 500 }}
               title={
-                modelsStatus?.metaHosted?.generationVerified
+                !isBackendReachable
+                  ? "Sahaay Backend Offline (FastAPI at 127.0.0.1:8000 unreachable)"
+                  : modelsStatus?.metaHosted?.generationVerified
                   ? `Meta Cloud: ${modelsStatus?.metaHosted?.modelId || "muse-spark-1.3"} (Live Generation & Tools Verified)`
                   : modelsStatus?.metaHosted?.isConfigured
                   ? `Meta Cloud: ${modelsStatus?.metaHosted?.status || "Configuration Verification Pending"} - ${modelsStatus?.metaHosted?.remediationGuidance || ""}`
@@ -1306,16 +1319,20 @@ export function App(): React.JSX.Element {
                   width: "8px",
                   height: "8px",
                   borderRadius: "50%",
-                  backgroundColor: modelsStatus?.metaHosted?.generationVerified
+                  backgroundColor: !isBackendReachable
+                    ? "var(--sahaay-accent-crimson)"
+                    : modelsStatus?.metaHosted?.generationVerified
                     ? "var(--sahaay-mint)"
                     : modelsStatus?.metaHosted?.isConfigured
                     ? (modelsStatus?.metaHosted?.status === "GENERATION_UNAUTHORIZED" ? "var(--sahaay-accent-crimson)" : "var(--sahaay-warning)")
                     : "var(--sahaay-text-muted)",
-                  boxShadow: modelsStatus?.metaHosted?.generationVerified ? "0 0 8px #8AF5CF" : "none",
+                  boxShadow: isBackendReachable && modelsStatus?.metaHosted?.generationVerified ? "0 0 8px #8AF5CF" : "none",
                 }}
               />
               <span>
-                {modelsStatus?.metaHosted?.generationVerified
+                {!isBackendReachable
+                  ? "Backend Offline"
+                  : modelsStatus?.metaHosted?.generationVerified
                   ? "Meta Cloud Active"
                   : modelsStatus?.metaHosted?.status === "GENERATION_UNAUTHORIZED"
                   ? "Generation 401"
@@ -1732,7 +1749,9 @@ export function App(): React.JSX.Element {
                     </div>
                     <span
                       className={`badge ${
-                        modelsStatus?.metaHosted?.generationVerified
+                        !isBackendReachable
+                          ? "badge-danger"
+                          : modelsStatus?.metaHosted?.generationVerified
                           ? "badge-success"
                           : modelsStatus?.metaHosted?.status === "GENERATION_UNAUTHORIZED"
                           ? "badge-danger"
@@ -1740,21 +1759,23 @@ export function App(): React.JSX.Element {
                       }`}
                       style={{ fontSize: "10px" }}
                     >
-                      {modelsStatus?.metaHosted?.generationVerified
+                      {!isBackendReachable
+                        ? "BACKEND OFFLINE"
+                        : modelsStatus?.metaHosted?.generationVerified
                         ? "ALL SYSTEMS VERIFIED"
                         : modelsStatus?.metaHosted?.status || "UNTESTED"}
                     </span>
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: "8px" }}>
                     {[
-                      { label: "API Credential", val: modelsStatus?.metaHosted?.diagnostics?.credential || (modelsStatus?.metaHosted?.isConfigured ? "Configured" : "Not Configured") },
-                      { label: "TLS Connection", val: modelsStatus?.metaHosted?.diagnostics?.tlsConnection || (modelsStatus?.metaHosted?.generationVerified ? "Verified" : "Untested") },
-                      { label: "API Authentication", val: modelsStatus?.metaHosted?.diagnostics?.apiAuthentication || (modelsStatus?.metaHosted?.generationVerified ? "Verified" : "Untested") },
-                      { label: "Catalogue Availability", val: modelsStatus?.metaHosted?.diagnostics?.catalogueAvailability || (modelsStatus?.metaHosted?.catalogueVerified ? "Verified" : "Untested") },
-                      { label: "Muse Spark", val: modelsStatus?.metaHosted?.diagnostics?.museSpark || (modelsStatus?.metaHosted?.generationVerified ? "Generation Verified" : "Untested") },
-                      { label: "Muse Wonder", val: modelsStatus?.metaHosted?.diagnostics?.museWonder || (modelsStatus?.metaHosted?.generationVerified ? "Generation Verified" : "Untested") },
-                      { label: "Voice Transcription", val: modelsStatus?.metaHosted?.diagnostics?.museVoice || (modelsStatus?.metaHosted?.generationVerified ? "ASR Verified" : "Untested") },
-                      { label: "SAM 3.1 Grounding", val: modelsStatus?.metaHosted?.diagnostics?.sam || (modelsStatus?.metaHosted?.generationVerified ? "Grounding Verified" : "Untested") },
+                      { label: "API Credential", val: !isBackendReachable ? "Backend Offline" : (modelsStatus?.metaHosted?.diagnostics?.credential || (modelsStatus?.metaHosted?.isConfigured ? "Configured" : "Not Configured")) },
+                      { label: "TLS Connection", val: !isBackendReachable ? "Backend Offline" : (modelsStatus?.metaHosted?.diagnostics?.tlsConnection || (modelsStatus?.metaHosted?.generationVerified ? "Verified" : "Untested")) },
+                      { label: "API Authentication", val: !isBackendReachable ? "Backend Offline" : (modelsStatus?.metaHosted?.diagnostics?.apiAuthentication || (modelsStatus?.metaHosted?.generationVerified ? "Verified" : "Untested")) },
+                      { label: "Catalogue Availability", val: !isBackendReachable ? "Backend Offline" : (modelsStatus?.metaHosted?.diagnostics?.catalogueAvailability || (modelsStatus?.metaHosted?.catalogueVerified ? "Verified" : "Untested")) },
+                      { label: "Muse Spark", val: !isBackendReachable ? "Backend Offline" : (modelsStatus?.metaHosted?.diagnostics?.museSpark || (modelsStatus?.metaHosted?.generationVerified ? "Generation Verified" : "Untested")) },
+                      { label: "Muse Wonder", val: !isBackendReachable ? "Backend Offline" : (modelsStatus?.metaHosted?.diagnostics?.museWonder || (modelsStatus?.metaHosted?.generationVerified ? "Generation Verified" : "Untested")) },
+                      { label: "Voice Transcription", val: !isBackendReachable ? "Backend Offline" : (modelsStatus?.metaHosted?.diagnostics?.museVoice || (modelsStatus?.metaHosted?.generationVerified ? "ASR Verified" : "Untested")) },
+                      { label: "SAM 3.1 Grounding", val: !isBackendReachable ? "Backend Offline" : (modelsStatus?.metaHosted?.diagnostics?.sam || (modelsStatus?.metaHosted?.generationVerified ? "Grounding Verified" : "Untested")) },
                     ].map((diagItem) => (
                       <div
                         key={diagItem.label}
@@ -1954,8 +1975,8 @@ export function App(): React.JSX.Element {
                     Named Pipe Daemon: <code>\\.\pipe\SahaayControllerPipe</code> • Direct UI Automation (No Shell Injection)
                   </p>
                 </div>
-                <span className="badge badge-success" style={{ fontSize: "11px" }}>
-                  {modelsStatus?.systemIntegrations?.windowsCompanion || "Ready"}
+                <span className={`badge ${isBackendReachable ? "badge-success" : "badge-neutral"}`} style={{ fontSize: "11px" }}>
+                  {isBackendReachable ? (modelsStatus?.systemIntegrations?.windowsCompanion || "Ready") : "Companion Standalone"}
                 </span>
               </div>
 
@@ -2023,8 +2044,8 @@ export function App(): React.JSX.Element {
                     Native Messaging Host: <code>com.sahaay.nativehost</code> • Real MV3 Bridge via Named Pipe
                   </p>
                 </div>
-                <span className="badge badge-success" style={{ fontSize: "11px" }}>
-                  {modelsStatus?.systemIntegrations?.browserExtension || "Bridge Attached"}
+                <span className={`badge ${isBackendReachable ? "badge-success" : "badge-neutral"}`} style={{ fontSize: "11px" }}>
+                  {isBackendReachable ? (modelsStatus?.systemIntegrations?.browserExtension || "Bridge Attached") : "Extension Standalone"}
                 </span>
               </div>
 
@@ -2083,19 +2104,19 @@ export function App(): React.JSX.Element {
             </section>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-              {/* Needs Attention & Approvals Section */}
-              {tasksList.filter((t) => t.status === "HANDOFF_REQUESTED").length > 0 && (
+              {/* Security Action Confirmation (Only for consequential financial checkout or destructive actions) */}
+              {tasksList.filter((t) => (t.sessionId === sessionId || !sessionId) && t.status === "HANDOFF_REQUESTED").length > 0 && (
                 <section className="glass-surface" style={{ padding: "16px 20px", borderRadius: "16px", border: "1px solid rgba(255, 170, 0, 0.4)", background: "rgba(255, 170, 0, 0.05)" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                       <ShieldAlert size={18} color="var(--sahaay-warning)" />
-                      <h3 style={{ fontSize: "14px", fontWeight: 600, color: "#fff" }}>Tasks Awaiting Authorization</h3>
+                      <h3 style={{ fontSize: "14px", fontWeight: 600, color: "#fff" }}>Security Confirmation Required</h3>
                     </div>
-                    <span className="badge badge-warning" style={{ fontSize: "10px" }}>Human Handoff Active</span>
+                    <span className="badge badge-warning" style={{ fontSize: "10px" }}>Sensitive Operation</span>
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
                     {tasksList
-                      .filter((t) => t.status === "HANDOFF_REQUESTED")
+                      .filter((t) => (t.sessionId === sessionId || !sessionId) && t.status === "HANDOFF_REQUESTED")
                       .map((task) => (
                         <div
                           key={task.taskId}
@@ -2218,18 +2239,18 @@ export function App(): React.JSX.Element {
                     <div className="card-title-row">
                       <h3 className="card-title">Tasks in Progress</h3>
                       <span style={{ fontSize: "11px", color: "var(--sahaay-text-subtle)" }}>
-                        {tasksList.filter((t) => t.status !== "COMPLETED" && t.status !== "FAILED" && t.status !== "CANCELLED" && t.status !== "HANDOFF_REQUESTED").length} active
+                        {tasksList.filter((t) => (t.sessionId === sessionId || !sessionId) && ["EXECUTING", "PLANNING", "OBSERVING", "PROPOSING", "PAUSED"].includes(t.status)).length} active
                       </span>
                     </div>
 
-                    {tasksList.filter((t) => t.status !== "COMPLETED" && t.status !== "FAILED" && t.status !== "CANCELLED" && t.status !== "HANDOFF_REQUESTED").length === 0 ? (
+                    {tasksList.filter((t) => (t.sessionId === sessionId || !sessionId) && ["EXECUTING", "PLANNING", "OBSERVING", "PROPOSING", "PAUSED"].includes(t.status)).length === 0 ? (
                       <div style={{ padding: "20px 10px", textAlign: "center", color: "var(--sahaay-text-subtle)", fontSize: "12px" }}>
                         No active tasks in progress. Enter a prompt above or attach a project to start deep work.
                       </div>
                     ) : (
                       <div className="card-items-list" style={{ gap: "8px" }}>
                         {tasksList
-                          .filter((t) => t.status !== "COMPLETED" && t.status !== "FAILED" && t.status !== "CANCELLED" && t.status !== "HANDOFF_REQUESTED")
+                          .filter((t) => (t.sessionId === sessionId || !sessionId) && ["EXECUTING", "PLANNING", "OBSERVING", "PROPOSING", "PAUSED"].includes(t.status))
                           .slice(0, 4)
                           .map((task) => (
                             <div
@@ -2375,22 +2396,28 @@ export function App(): React.JSX.Element {
 
               <div style={{ padding: "10px 14px", borderRadius: "10px", background: "rgba(255, 255, 255, 0.04)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <span>Windows Controller Companion</span>
-                <span className="badge badge-success">
-                  {modelsStatus?.systemIntegrations?.windowsCompanion || "READY"}
+                <span className={`badge ${isBackendReachable ? "badge-success" : (runtimeHealth?.controller?.status === "ONLINE" || runtimeHealth?.controller?.status === "READY" ? "badge-warning" : "badge-neutral")}`}>
+                  {isBackendReachable
+                    ? (modelsStatus?.systemIntegrations?.windowsCompanion || "READY")
+                    : (runtimeHealth?.controller?.status || "STANDALONE")}
                 </span>
               </div>
 
               <div style={{ padding: "10px 14px", borderRadius: "10px", background: "rgba(255, 255, 255, 0.04)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <span>Browser Native Messaging Host</span>
-                <span className="badge badge-cyan">
-                  {modelsStatus?.systemIntegrations?.nativeMessaging || "REGISTERED"}
+                <span className={`badge ${isBackendReachable ? "badge-cyan" : "badge-neutral"}`}>
+                  {isBackendReachable
+                    ? (modelsStatus?.systemIntegrations?.nativeMessaging || "REGISTERED")
+                    : (runtimeHealth?.nativeHost?.status || "STANDALONE")}
                 </span>
               </div>
 
               <div style={{ padding: "10px 14px", borderRadius: "10px", background: "rgba(255, 255, 255, 0.04)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <span>Meta Model Routing</span>
-                <span className={`badge ${modelsStatus?.metaHosted?.isConfigured ? "badge-success" : "badge-neutral"}`}>
-                  {modelsStatus?.metaHosted?.isConfigured ? "META CLOUD (MUSE SPARK)" : "CREDENTIALS REQUIRED"}
+                <span className={`badge ${!isBackendReachable ? "badge-danger" : (modelsStatus?.metaHosted?.isConfigured ? "badge-success" : "badge-neutral")}`}>
+                  {!isBackendReachable
+                    ? "BACKEND OFFLINE"
+                    : (modelsStatus?.metaHosted?.isConfigured ? "META CLOUD (MUSE SPARK)" : "CREDENTIALS REQUIRED")}
                 </span>
               </div>
 
@@ -2399,7 +2426,9 @@ export function App(): React.JSX.Element {
                   <span style={{ fontWeight: 600 }}>Meta Cloud API Credentials (MODEL_API_KEY)</span>
                   <span
                     className={`badge ${
-                      modelsStatus?.metaHosted?.generationVerified
+                      !isBackendReachable
+                        ? "badge-danger"
+                        : modelsStatus?.metaHosted?.generationVerified
                         ? "badge-success"
                         : modelsStatus?.metaHosted?.status === "GENERATION_UNAUTHORIZED"
                         ? "badge-danger"
@@ -2408,7 +2437,9 @@ export function App(): React.JSX.Element {
                         : "badge-neutral"
                     }`}
                   >
-                    {modelsStatus?.metaHosted?.generationVerified
+                    {!isBackendReachable
+                      ? "BACKEND OFFLINE"
+                      : modelsStatus?.metaHosted?.generationVerified
                       ? "GENERATION AUTHENTICATED"
                       : modelsStatus?.metaHosted?.status === "GENERATION_UNAUTHORIZED"
                       ? "GENERATION 401 (UNAUTHORIZED)"
@@ -2422,8 +2453,8 @@ export function App(): React.JSX.Element {
                 </div>
                 <div style={{ fontSize: "11px", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 8px", background: "rgba(0,0,0,0.2)", borderRadius: "4px", fontFamily: "var(--font-mono)" }}>
                   <span style={{ color: "var(--sahaay-text-muted)" }}>Endpoint: {modelsStatus?.metaHosted?.endpoint || "https://api.meta.ai/v1/chat/completions"}</span>
-                  <span style={{ color: modelsStatus?.metaHosted?.generationVerified ? "var(--sahaay-green)" : (modelsStatus?.metaHosted?.status === "GENERATION_UNAUTHORIZED" ? "var(--sahaay-accent-crimson)" : "var(--sahaay-warning)") }}>
-                    {modelsStatus?.metaHosted?.httpResult || "UNTESTED"}
+                  <span style={{ color: !isBackendReachable ? "var(--sahaay-accent-crimson)" : (modelsStatus?.metaHosted?.generationVerified ? "var(--sahaay-green)" : (modelsStatus?.metaHosted?.status === "GENERATION_UNAUTHORIZED" ? "var(--sahaay-accent-crimson)" : "var(--sahaay-warning)")) }}>
+                    {!isBackendReachable ? "OFFLINE" : (modelsStatus?.metaHosted?.httpResult || "UNTESTED")}
                   </span>
                 </div>
                 {modelsStatus?.metaHosted?.remediationGuidance && (
