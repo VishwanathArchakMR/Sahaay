@@ -21,6 +21,8 @@ import {
   Paperclip,
   ShieldAlert,
   X,
+  Zap,
+  HelpCircle,
 } from "lucide-react";
 
 const API_BASE = "http://127.0.0.1:8000/api/v1";
@@ -228,7 +230,25 @@ export function App(): React.JSX.Element {
     | "TRANSCRIBED"
     | "FAILED"
     | "UNAVAILABLE";
+  const [agentMode, setAgentMode] = useState<"automate" | "help">("automate");
   const [userPrompt, setUserPrompt] = useState<string>("");
+
+  const isActionDirectivePrompt = (text: string): boolean => {
+    const l = text.toLowerCase().trim();
+    return (
+      l.startsWith("open") ||
+      l.startsWith("launch") ||
+      l.startsWith("calculate") ||
+      l.startsWith("write") ||
+      l.startsWith("type") ||
+      l.startsWith("play") ||
+      l.startsWith("show files") ||
+      l.startsWith("list files") ||
+      l.startsWith("show") ||
+      l.startsWith("list") ||
+      l.startsWith("fill")
+    );
+  };
   const [messages, setMessages] = useState<Array<{
     messageId: string;
     role: string;
@@ -681,8 +701,9 @@ export function App(): React.JSX.Element {
       setMicState("READY");
     }
 
-    // Workflow mode detection
+    // Workflow mode detection based on dual-tab selection (Automate vs Help)
     const isAskMode =
+      agentMode === "help" ||
       lower.startsWith("find") ||
       lower.startsWith("search") ||
       lower.startsWith("what") ||
@@ -690,14 +711,21 @@ export function App(): React.JSX.Element {
       lower.startsWith("read") ||
       lower.startsWith("extract") ||
       lower.startsWith("hello") ||
-      lower.startsWith("explain");
+      lower.startsWith("explain") ||
+      lower.startsWith("how to") ||
+      lower.startsWith("how do");
     const isDoMode =
-      lower.startsWith("open") ||
-      lower.startsWith("calculate") ||
-      lower.startsWith("launch") ||
-      lower.startsWith("write") ||
-      lower.startsWith("fill");
-    const workflowMode = isAskMode ? "ask" : isDoMode ? "do" : "combined_retrieval_and_action";
+      agentMode !== "help" &&
+      (lower.startsWith("open") ||
+        lower.startsWith("calculate") ||
+        lower.startsWith("launch") ||
+        lower.startsWith("write") ||
+        lower.startsWith("type") ||
+        lower.startsWith("play") ||
+        lower.startsWith("show") ||
+        lower.startsWith("list") ||
+        lower.startsWith("fill"));
+    const workflowMode = agentMode === "help" ? "ask" : (isAskMode ? "ask" : isDoMode ? "do" : "combined_retrieval_and_action");
 
     // Validate or establish session first
     let activeSessionId: string | null = sessionId;
@@ -1356,10 +1384,75 @@ export function App(): React.JSX.Element {
 
         {/* Workspace Content */}
         <main className="workspace-scrollable">
+          {/* Dual-Mode Selector: Automate vs Help */}
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px", marginTop: "4px" }}>
+            <button
+              type="button"
+              onClick={() => setAgentMode("automate")}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "8px 18px",
+                borderRadius: "20px",
+                border: agentMode === "automate" ? "1px solid var(--sahaay-cyan)" : "1px solid rgba(255,255,255,0.08)",
+                background: agentMode === "automate" ? "rgba(0, 240, 255, 0.12)" : "rgba(255,255,255,0.03)",
+                color: agentMode === "automate" ? "#FFFFFF" : "var(--sahaay-text-subtle)",
+                fontWeight: agentMode === "automate" ? 600 : 400,
+                fontSize: "13px",
+                cursor: "pointer",
+                transition: "all 0.2s ease",
+              }}
+              title="Automate: Computer & browser automation through Sahaay agent"
+            >
+              <Zap size={15} color={agentMode === "automate" ? "var(--sahaay-cyan)" : "currentColor"} />
+              <span>Automate</span>
+              {agentMode === "automate" && (
+                <span style={{ fontSize: "10px", padding: "1px 6px", borderRadius: "10px", background: "rgba(0,240,255,0.2)", color: "var(--sahaay-cyan)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  Computer Agent
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setAgentMode("help")}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "8px 18px",
+                borderRadius: "20px",
+                border: agentMode === "help" ? "1px solid var(--sahaay-mint)" : "1px solid rgba(255,255,255,0.08)",
+                background: agentMode === "help" ? "rgba(138, 245, 207, 0.12)" : "rgba(255,255,255,0.03)",
+                color: agentMode === "help" ? "#FFFFFF" : "var(--sahaay-text-subtle)",
+                fontWeight: agentMode === "help" ? 600 : 400,
+                fontSize: "13px",
+                cursor: "pointer",
+                transition: "all 0.2s ease",
+              }}
+              title="Help: Conversational assistant for step-by-step guidance without mutating your system"
+            >
+              <HelpCircle size={15} color={agentMode === "help" ? "var(--sahaay-mint)" : "currentColor"} />
+              <span>Help</span>
+              {agentMode === "help" && (
+                <span style={{ fontSize: "10px", padding: "1px 6px", borderRadius: "10px", background: "rgba(138,245,207,0.2)", color: "var(--sahaay-mint)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  Conversational Guide
+                </span>
+              )}
+            </button>
+          </div>
+
           {/* A. Hero Greeting */}
           <section className="hero-section">
-            <h1 className="hero-title">Good Morning,</h1>
-            <h2 className="hero-subtitle">How can I help you today?</h2>
+            <h1 className="hero-title">
+              {agentMode === "automate" ? "Good Morning," : "Sahaay Help Guide,"}
+            </h1>
+            <h2 className="hero-subtitle">
+              {agentMode === "automate"
+                ? "What computer task would you like me to automate today?"
+                : "Ask anything about using your computer, browser, files, or applications."}
+            </h2>
           </section>
 
           {/* B. Main Frosted Glass Task Composer */}
@@ -1398,7 +1491,11 @@ export function App(): React.JSX.Element {
                   }
                 }}
                 rows={2}
-                placeholder="Type your task here or speak... (e.g. 'Open VS Code, create hello world, and run it')"
+                placeholder={
+                  agentMode === "automate"
+                    ? "Type an automation task or speak... (e.g. 'Show me the 5 most recently modified files in my Downloads folder', 'Open YouTube and play jazz')"
+                    : "Ask any question about using your computer, files, or software... (e.g. 'How do I take a partial screenshot in Windows?')"
+                }
                 className="composer-textarea"
               />
               {userPrompt && (
@@ -1410,6 +1507,26 @@ export function App(): React.JSX.Element {
                 </button>
               )}
             </div>
+
+            {/* Help-Mode Action Directive Switch Suggestion */}
+            {agentMode === "help" && userPrompt.trim() && isActionDirectivePrompt(userPrompt) && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", background: "rgba(0, 240, 255, 0.08)", border: "1px solid rgba(0, 240, 255, 0.25)", borderRadius: "8px", margin: "6px 0 10px 0" }}>
+                <span style={{ fontSize: "12px", color: "var(--sahaay-text)" }}>
+                  💡 This looks like an operational action. Want Sahaay to execute it on your computer?
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAgentMode("automate");
+                    triggerPromptExecution(userPrompt);
+                  }}
+                  className="badge badge-cyan"
+                  style={{ cursor: "pointer", border: "none", padding: "4px 10px", display: "flex", alignItems: "center", gap: "4px", fontWeight: 600 }}
+                >
+                  <Zap size={11} /> Switch to Automate & Execute
+                </button>
+              </div>
+            )}
 
             {/* Middle Row: Prominent Voice Mic + Attachments + Actions */}
             <div className="composer-bottom" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
@@ -1604,7 +1721,15 @@ export function App(): React.JSX.Element {
                   <div>
                     <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--sahaay-text-muted)", marginBottom: "6px" }}>What Sahaay did:</div>
                     <div style={{ color: "#e2e8f0", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
-                      {taskPassport.summary}
+                      {(() => {
+                        const s = taskPassport.summary || taskPassport.summaryNotice || "";
+                        if (!s || s.includes("Illustrations are generated as visual metaphors")) {
+                          return taskPassport.verificationStatus === "VERIFIED"
+                            ? "Action successfully executed and verified on system."
+                            : (taskPassport.verificationStatus === "FAILED" ? "Task failed during execution." : "Execution completed.");
+                        }
+                        return s;
+                      })()}
                     </div>
                   </div>
 
@@ -1624,7 +1749,7 @@ export function App(): React.JSX.Element {
                   <div style={{ background: "rgba(138, 245, 207, 0.05)", padding: "10px 12px", borderRadius: "8px", border: "1px solid rgba(138, 245, 207, 0.15)" }}>
                     <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--sahaay-mint)", marginBottom: "4px" }}>Verification:</div>
                     <div style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "11px", color: "#cbd5e1" }}>
-                      <div>✓ Target surface: {taskPassport.targetAppOrUrl || "Authorized Environment"}</div>
+                      <div>✓ Target surface: {taskPassport.targetAppOrUrl && taskPassport.targetAppOrUrl !== "Authorized Environment" ? taskPassport.targetAppOrUrl : "Windows Desktop & Browser"}</div>
                       <div>✓ Objective post-conditions independently checked via {taskPassport.sourceRef || "Local Controller"}</div>
                       {taskPassport.evidenceId && (
                         <div>✓ Cryptographic evidence recorded (Ledger ID: {taskPassport.evidenceId.slice(0, 8)}...)</div>

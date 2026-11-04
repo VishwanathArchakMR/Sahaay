@@ -903,8 +903,10 @@ class CapabilityRegistry:
                 input_schema={
                     "type": "object",
                     "properties": {
-                        "path": {"type": "string", "description": "Directory path (defaults to current project)"},
+                        "path": {"type": "string", "description": "Directory path or user folder name (e.g. 'Downloads', 'Desktop', 'Documents', or path; defaults to current project)"},
                         "recursive": {"type": "boolean", "description": "Whether to list subdirectories"},
+                        "limit": {"type": "integer", "description": "Maximum number of files to return (e.g. 5, 10)"},
+                        "sort_by": {"type": "string", "description": "Sort order: 'modified', 'size', or 'name' (defaults to 'modified' descending)"},
                     },
                 },
                 output_schema={

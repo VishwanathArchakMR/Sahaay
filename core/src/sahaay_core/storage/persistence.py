@@ -131,6 +131,8 @@ def init_persistence_schema() -> None:
                 verification_status TEXT NOT NULL,
                 total_milestones INTEGER NOT NULL DEFAULT 0,
                 summary_notice TEXT,
+                summary TEXT,
+                target_app_or_url TEXT,
                 provenance_sha256 TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
@@ -237,6 +239,14 @@ def init_persistence_schema() -> None:
             pass
         try:
             conn.execute("ALTER TABLE tasks ADD COLUMN error TEXT;")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE task_passports ADD COLUMN summary TEXT;")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE task_passports ADD COLUMN target_app_or_url TEXT;")
         except Exception:
             pass
 
@@ -807,8 +817,8 @@ class DurableStorage:
         with conn:
             conn.execute(
                 """
-                INSERT OR REPLACE INTO task_passports (task_id, goal, workflow_mode, source_to_target, verification_status, total_milestones, summary_notice, provenance_sha256, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT OR REPLACE INTO task_passports (task_id, goal, workflow_mode, source_to_target, verification_status, total_milestones, summary_notice, summary, target_app_or_url, provenance_sha256, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     passport_data["taskId"],
@@ -817,7 +827,9 @@ class DurableStorage:
                     passport_data.get("sourceToTarget"),
                     passport_data.get("verificationStatus", "UNVERIFIED"),
                     passport_data.get("totalMilestones", len(passport_data.get("milestones", []))),
-                    passport_data.get("summaryNotice"),
+                    passport_data.get("summaryNotice") or passport_data.get("summary"),
+                    passport_data.get("summary") or passport_data.get("summaryNotice"),
+                    passport_data.get("targetAppOrUrl") or passport_data.get("sourceToTarget"),
                     passport_data.get("provenanceSha256"),
                     datetime.now(timezone.utc).isoformat(),
                     datetime.now(timezone.utc).isoformat(),
@@ -890,6 +902,22 @@ class DurableStorage:
                 }
             )
 
+        try:
+            summary_val = p_row["summary"]
+        except Exception:
+            summary_val = None
+        try:
+            target_val = p_row["target_app_or_url"]
+        except Exception:
+            target_val = None
+
+        raw_notice = p_row["summary_notice"]
+        # Discard obsolete generic vector illustration notice text
+        if raw_notice and "Illustrations are generated as visual metaphors" in raw_notice:
+            raw_notice = None
+
+        final_summary = summary_val or raw_notice or ""
+
         return {
             "taskId": p_row["task_id"],
             "goal": p_row["goal"],
@@ -897,7 +925,9 @@ class DurableStorage:
             "sourceToTarget": p_row["source_to_target"],
             "verificationStatus": p_row["verification_status"],
             "totalMilestones": p_row["total_milestones"],
-            "summaryNotice": p_row["summary_notice"],
+            "summaryNotice": raw_notice or final_summary,
+            "summary": final_summary,
+            "targetAppOrUrl": target_val or p_row["source_to_target"] or "",
             "provenanceSha256": p_row["provenance_sha256"],
             "milestones": milestones,
             "visualStorytellingEnabled": settings.enable_visual_storytelling,

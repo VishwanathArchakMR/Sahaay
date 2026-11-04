@@ -173,3 +173,53 @@ def test_generated_illustration_does_not_mutate_task_status(test_client, auth_he
     assert get_resp.status_code == 200
     reloaded_passport = get_resp.json()
     assert reloaded_passport["verificationStatus"] == "FAILED"
+
+
+def test_executor_resolves_downloads_folder_alias():
+    """file_list_directory must resolve 'Downloads' alias to user's real Downloads directory."""
+    import asyncio
+    from pathlib import Path
+    from sahaay_core.capabilities.executor import CapabilityExecutor
+    from sahaay_core.adapters.windows.adapter import WindowsNativeAdapter
+    from sahaay_core.adapters.browser.adapter import BrowserAdapter
+
+    executor = CapabilityExecutor(
+        windows_adapter=WindowsNativeAdapter(allow_simulation=True),
+        browser_adapter=BrowserAdapter(allow_simulation=True),
+    )
+    res = asyncio.run(executor.execute("file_list_directory", {"path": "Downloads", "limit": 5}))
+    assert res.get("success") is True
+    downloads_path = str(Path.home() / "Downloads")
+    assert res.get("directory") == downloads_path
+    assert "summary" in res
+    assert "items" in res
+    assert "count" in res
+
+
+def test_task_passport_preserves_summary_and_target_surface(test_client, auth_headers):
+    """Task passport must persist and return exact summary and target without generic illustration notice."""
+    task_id = f"task-passport-test-{uuid.uuid4().hex[:8]}"
+    summary_text = "I opened YouTube and started playing jazz."
+    passport = register_or_update_passport(
+        task_id=task_id,
+        goal="Play jazz on YouTube",
+        workflow_mode="combined_retrieval_and_action",
+        direction="Meta Muse Spark Function Calling",
+        extracted_fields={"media_playback": True},
+        verification_status="VERIFIED",
+        evidence_id="ev-youtube-123",
+        target_app_or_url="https://www.youtube.com",
+        source_ref="Meta muse-spark-1.3",
+        summary=summary_text,
+    )
+    assert passport.summary == summary_text
+    assert passport.target_app_or_url == "https://www.youtube.com"
+
+    # Fetch from API
+    get_resp = test_client.get(f"/api/v1/tasks/{task_id}/passport", headers=auth_headers)
+    assert get_resp.status_code == 200
+    data = get_resp.json()
+    assert data["summary"] == summary_text
+    assert data["targetAppOrUrl"] == "https://www.youtube.com"
+    # Ensure no generic vector illustration text
+    assert "Illustrations are generated as visual metaphors" not in str(data)

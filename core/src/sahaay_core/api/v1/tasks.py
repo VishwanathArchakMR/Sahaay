@@ -338,6 +338,8 @@ async def get_task_passport_endpoint(task_id: str):
             "workflowMode": "do",
             "verificationStatus": "VERIFIED" if task.status == TaskStatusEnum.COMPLETED else ("FAILED" if task.status == TaskStatusEnum.FAILED else "UNVERIFIED"),
             "summaryNotice": task.summary or f"Task is {task.status.value}",
+            "summary": task.summary or f"Task is {task.status.value}",
+            "targetAppOrUrl": "Windows / Browser",
             "milestones": [
                 {
                     "milestoneId": f"m-{i}",

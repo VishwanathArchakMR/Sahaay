@@ -616,26 +616,96 @@ if ($root) {{
                 }
 
             elif capability_id == "file_list_directory":
-                dir_str = parameters.get("path") or "."
-                target_dir = Path(os.path.expandvars(os.path.expanduser(dir_str))).resolve()
-                if not target_dir.is_dir():
-                    raise CapabilityExecutionError(f"Directory not found: {dir_str}")
+                dir_str = str(parameters.get("path") or parameters.get("directory") or parameters.get("target") or ".").strip()
+                clean_dir = dir_str.lower().replace("folder", "").replace("my", "").strip().strip("\"'")
+                user_home = Path.home()
+
+                target_dir: Optional[Path] = None
+                if clean_dir in ("downloads", "download"):
+                    target_dir = user_home / "Downloads"
+                elif clean_dir in ("desktop",):
+                    target_dir = user_home / "Desktop"
+                elif clean_dir in ("documents", "document", "my documents", "docs"):
+                    target_dir = user_home / "Documents"
+                elif clean_dir in ("pictures", "photos"):
+                    target_dir = user_home / "Pictures"
+                elif clean_dir in ("videos", "movies"):
+                    target_dir = user_home / "Videos"
+                elif clean_dir in (".", "workspace", "current", ""):
+                    target_dir = Path.cwd()
+                else:
+                    expanded = os.path.expandvars(os.path.expanduser(dir_str))
+                    cand = Path(expanded)
+                    if not cand.is_absolute():
+                        if (user_home / cand).is_dir():
+                            target_dir = (user_home / cand).resolve()
+                        else:
+                            target_dir = cand.resolve()
+                    else:
+                        target_dir = cand.resolve()
+
+                if not target_dir or not target_dir.is_dir():
+                    raise CapabilityExecutionError(f"Directory not found or inaccessible: {dir_str}")
+
+                sort_by = str(parameters.get("sort_by") or parameters.get("sortBy") or "modified").lower()
+                limit = parameters.get("limit")
+                limit_int = int(limit) if limit and str(limit).isdigit() else None
+
                 items = []
                 for entry in target_dir.iterdir():
                     try:
                         stat = entry.stat()
+                        sz = stat.st_size if entry.is_file() else 0
+                        if sz < 1024:
+                            sz_fmt = f"{sz} B"
+                        elif sz < 1024 * 1024:
+                            sz_fmt = f"{sz / 1024:.1f} KB"
+                        elif sz < 1024 * 1024 * 1024:
+                            sz_fmt = f"{sz / (1024 * 1024):.1f} MB"
+                        else:
+                            sz_fmt = f"{sz / (1024 * 1024 * 1024):.1f} GB"
+
+                        ext = entry.suffix.lower() if entry.is_file() else "Directory"
+                        file_type = ext.replace(".", "").upper() if ext.startswith(".") else ext
+
                         items.append({
                             "name": entry.name,
+                            "type": file_type,
+                            "extension": ext,
                             "isDir": entry.is_dir(),
-                            "size": stat.st_size if entry.is_file() else 0,
-                            "modified": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+                            "size": sz,
+                            "sizeFormatted": sz_fmt,
+                            "mtime": stat.st_mtime,
+                            "modified": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+                            "modifiedIso": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
                         })
                     except Exception:
                         pass
+
+                if "mod" in sort_by or "time" in sort_by or "recent" in sort_by:
+                    items.sort(key=lambda x: x["mtime"], reverse=True)
+                elif "size" in sort_by:
+                    items.sort(key=lambda x: x["size"], reverse=True)
+                else:
+                    items.sort(key=lambda x: (not x["isDir"], x["name"].lower()))
+
+                selected_items = items[:limit_int] if limit_int and limit_int > 0 else items
+
+                lines = [f"Inspected directory: {target_dir} ({len(items)} total entries)"]
+                for i, it in enumerate(selected_items[:10], 1):
+                    type_info = "Directory" if it["isDir"] else f"{it['type']} file, {it['sizeFormatted']}"
+                    lines.append(f"{i}. {it['name']} ({type_info}, modified: {it['modified']})")
+                if len(items) > len(selected_items):
+                    lines.append(f"(Showing {len(selected_items)} of {len(items)} entries)")
+                summary_narrative = "\n".join(lines)
+
                 return {
                     "directory": str(target_dir),
-                    "items": sorted(items, key=lambda x: (not x["isDir"], x["name"].lower())),
-                    "count": len(items),
+                    "items": selected_items,
+                    "files": selected_items,
+                    "count": len(selected_items),
+                    "totalCount": len(items),
+                    "summary": summary_narrative,
                     "success": True,
                     "driverProvenance": "real_filesystem_driver",
                 }

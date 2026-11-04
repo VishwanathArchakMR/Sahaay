@@ -465,13 +465,36 @@ async function handleGeneralPrompt(promptText: string): Promise<void> {
 
                   const deliverableUrl = tData.deliverableUrl || (tData.artifacts && tData.artifacts[0]?.filePath ? `${API_BASE}/tasks/${taskId}/artifacts` : undefined);
 
+                  // Refresh active tab so sidepanel has the latest title/URL from navigation
+                  try {
+                    await refreshActiveTab();
+                  } catch {}
+
+                  let resolvedTarget = passportData?.targetAppOrUrl;
+                  if (!resolvedTarget || resolvedTarget.includes("New Tab") || resolvedTarget === "Windows / Browser") {
+                    if (currentTabContext.title && currentTabContext.title !== "New Tab") {
+                      resolvedTarget = `Browser Tab: "${currentTabContext.title}"`;
+                    } else if (tData.accumulatedFacts?.browser_title && tData.accumulatedFacts?.browser_title !== "New Tab") {
+                      resolvedTarget = `Browser Tab: "${tData.accumulatedFacts.browser_title}"`;
+                    } else if (tData.accumulatedFacts?.browser_url) {
+                      resolvedTarget = tData.accumulatedFacts.browser_url;
+                    } else {
+                      resolvedTarget = "Browser Window";
+                    }
+                  }
+
+                  let cleanSummary = tData.summary || passportData?.summary || passportData?.summaryNotice || "";
+                  if (!cleanSummary || cleanSummary.includes("Illustrations are generated as visual metaphors")) {
+                    cleanSummary = bStatus === "COMPLETED" ? "Action successfully verified and completed on system." : (tData.error || "Task ended.");
+                  }
+
                   renderCompletionCard(cardBody, {
                     taskId,
                     goal: promptText,
                     status: bStatus,
-                    summary: tData.summary || passportData?.summaryNotice || (bStatus === "COMPLETED" ? "Action successfully verified and completed." : "Task ended."),
+                    summary: cleanSummary,
                     error: tData.error,
-                    targetSurface: currentTabContext.title ? `Browser Tab: "${currentTabContext.title}"` : "Windows Environment",
+                    targetSurface: resolvedTarget,
                     provenanceSha256: passportData?.provenanceSha256,
                     milestones: passportData?.milestones,
                     deliverableUrl,
@@ -487,12 +510,16 @@ async function handleGeneralPrompt(promptText: string): Promise<void> {
           cardBody.innerHTML = `<p style="color: var(--sahaay-warning);">Task execution timed out awaiting verification.</p>`;
         }
       } else if (cardBody) {
+        let cleanSummary = data.summary || "";
+        if (!cleanSummary || cleanSummary.includes("Illustrations are generated as visual metaphors")) {
+          cleanSummary = (data.status || "").toUpperCase() === "COMPLETED" ? "Completed successfully." : "Execution ended.";
+        }
         renderCompletionCard(cardBody, {
           taskId: taskId || "sync-exec",
           goal: promptText,
           status: (data.status || "COMPLETED").toUpperCase(),
-          summary: data.summary || `Completed ${data.completedSteps || 1} step(s).`,
-          targetSurface: currentTabContext.title ? `Browser Tab: "${currentTabContext.title}"` : "Browser Extension",
+          summary: cleanSummary,
+          targetSurface: (currentTabContext.title && currentTabContext.title !== "New Tab") ? `Browser Tab: "${currentTabContext.title}"` : (data.targetAppOrUrl || "Browser Environment"),
         });
       }
     } else {

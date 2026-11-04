@@ -55,9 +55,10 @@ class TaskPassportResponse(BaseModel):
     verification_status: str
     total_milestones: int
     milestones: List[MilestoneCard]
-    summary_notice: str
+    summary_notice: Optional[str] = None
     visual_storytelling_enabled: bool = True
     summary: Optional[str] = None
+    target_app_or_url: Optional[str] = None
 
 
 class StepIllustrateRequest(BaseModel):
@@ -223,9 +224,10 @@ def register_or_update_passport(
         verification_status=verification_status,
         total_milestones=len(milestones),
         milestones=milestones,
-        summary_notice="Illustrations are generated as visual metaphors. Exact labels, statuses, and evidence IDs are rendered independently from verified SQLite records.",
+        summary_notice=summary or f"Task execution {verification_status.lower()}.",
         visual_storytelling_enabled=settings.enable_visual_storytelling,
         summary=summary,
+        target_app_or_url=target_app_or_url,
     )
 
     task_passports[task_id] = passport

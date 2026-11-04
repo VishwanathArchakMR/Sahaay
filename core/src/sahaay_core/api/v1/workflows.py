@@ -953,6 +953,50 @@ SAHAAY_TOOL_DEFINITIONS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "file_list_directory",
+            "description": "List files and folders in an authorized directory (e.g. 'Downloads', 'Desktop', 'Documents', or workspace path) with sizes, modified timestamps, and summary.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Directory path or user folder name (e.g. 'Downloads', 'Desktop', 'Documents', '.'). Defaults to current workspace.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of files to return (e.g. 5, 10).",
+                    },
+                    "sort_by": {
+                        "type": "string",
+                        "description": "Sort order: 'modified', 'size', or 'name'. Default is 'modified' descending.",
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_play_media",
+            "description": "Play media or video in the active browser tab (e.g. on YouTube).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Title or keyword of video/media to play.",
+                    },
+                    "video_url": {
+                        "type": "string",
+                        "description": "Direct URL of video to play if available.",
+                    },
+                },
+            },
+        },
+    },
 ]
 
 
@@ -1217,6 +1261,12 @@ async def _execute_tool_for_meta(
             content = fn_args.get("content") or fn_args.get("text") or ""
             res = await executor.execute("file_create_write", {"path": path, "content": content})
             return res
+
+        elif fn_name in ("file_list_directory", "list_directory"):
+            return await executor.execute("file_list_directory", fn_args)
+
+        elif fn_name in ("file_read", "read_file"):
+            return await executor.execute("file_read", fn_args)
 
         elif fn_name == "verify_browser_url":
             expected = str(fn_args.get("expected_url_contains", "")).lower()
@@ -1636,9 +1686,12 @@ async def _execute_goal_pipeline(
             fast_action_type = ActionTypeEnum.FILE_LIST_DIRECTORY
             dir_res = await live_executor.execute("file_list_directory", {"path": target_path})
             fast_out_data = dir_res
-            items = dir_res.get("items", [])
-            items_preview = "\n".join(f"- {i.get('name')} ({i.get('type')})" for i in items[:12])
-            fast_summary = f"I listed folder '{target_path}'. Discovered {dir_res.get('count', len(items))} items:\n{items_preview}"
+            if dir_res.get("summary"):
+                fast_summary = dir_res["summary"]
+            else:
+                items = dir_res.get("items", [])
+                items_preview = "\n".join(f"- {i.get('name')} ({i.get('type')})" for i in items[:12])
+                fast_summary = f"I listed folder '{target_path}'. Discovered {dir_res.get('count', len(items))} items:\n{items_preview}"
 
         elif direct_read_match:
             file_path = direct_read_match.group(1).strip()
@@ -1663,7 +1716,7 @@ async def _execute_goal_pipeline(
             fast_out_data = snap_res
             fast_summary = f"Desktop screenshot captured successfully ({snap_res.get('filePath')})."
 
-        is_fast_success = bool(fast_out_data.get("success", True) and not fast_out_data.get("error"))
+        is_fast_success = bool(fast_out_data.get("success", False) and not fast_out_data.get("error"))
         orchestrator.transition_state(task_id, TaskStatusEnum.VERIFYING)
         target_final_state = TaskStatusEnum.COMPLETED if is_fast_success else TaskStatusEnum.FAILED
         orchestrator.transition_state(task_id, target_final_state)
@@ -1814,7 +1867,7 @@ async def _execute_goal_pipeline(
         exec_res = ExecutionResult(
             executionId=uuid4(),
             actionId=edit_action.actionId,
-            isSuccess=style_res.get("success", True),
+            isSuccess=bool(style_res.get("success", False)),
             durationMs=style_res.get("durationMs", 50.0),
             outputData=style_res,
         )
@@ -1833,7 +1886,7 @@ async def _execute_goal_pipeline(
         )
 
         styled_out_path = style_res.get("styledPath")
-        is_edit_success = bool(style_res.get("success", True) and styled_out_path and os.path.exists(styled_out_path))
+        is_edit_success = bool(style_res.get("success", False) and styled_out_path and os.path.exists(styled_out_path))
 
         creative_summary = (
             f"Image successfully edited and styled in '{style_instruction}'.\n\n"
@@ -2156,14 +2209,31 @@ async def _execute_goal_pipeline(
                     accumulated_facts["text_written"] = res.get("textWritten")
                 if res.get("hwnd"):
                     accumulated_facts["target_hwnd"] = res.get("hwnd")
+                if res.get("application") or res.get("processName"):
+                    accumulated_facts["target_app"] = res.get("application") or res.get("processName")
+
+                # File list facts
+                if fname in ("file_list_directory", "list_directory"):
+                    accumulated_facts["directory"] = res.get("directory")
+                    accumulated_facts["directory_count"] = res.get("count") or res.get("totalCount")
+                    accumulated_facts["directory_items"] = res.get("items") or res.get("files")
+                    accumulated_facts["directory_summary"] = res.get("summary")
+
+                # Media playback facts
+                if "play" in fname.lower() or res.get("media_playback"):
+                    accumulated_facts["media_playback"] = True
+                    if res.get("videoTitle") or res.get("title"):
+                        accumulated_facts["media_title"] = res.get("videoTitle") or res.get("title")
+                    if res.get("videoUrl") or res.get("url"):
+                        accumulated_facts["media_url"] = res.get("videoUrl") or res.get("url")
 
         successful_calls = [
             tc for tc in tool_calls_executed
-            if isinstance(tc.get("result"), dict) and tc["result"].get("success", True)
+            if isinstance(tc.get("result"), dict) and tc["result"].get("success", False) is True
         ]
         failed_calls = [
             tc for tc in tool_calls_executed
-            if isinstance(tc.get("result"), dict) and not tc["result"].get("success", True)
+            if not (isinstance(tc.get("result"), dict) and tc["result"].get("success", False) is True)
         ]
 
         finish_reason = meta_res.get("finish_reason", "stop")
@@ -2184,18 +2254,59 @@ async def _execute_goal_pipeline(
             except Exception as w_err:
                 logger.warning("Could not complete visual wonder escalation: %s", w_err)
 
-        if finish_reason == "stop":
-            # Concluded normally: verified if substantive calls succeeded, or was retrieval query, or completed blueprint
-            is_verified = is_success and (len(successful_calls) > 0 or ("retrieval" in str(task_type).lower()) or len(tool_calls_executed) == 0)
-        elif finish_reason in ("max_rounds_or_loop_guard", "max_rounds_exceeded"):
-            # Partial completion: verified if at least 2 substantive tools succeeded and key facts/deliverables produced
-            is_verified = is_success and len(successful_calls) >= 2 and any(
-                k in accumulated_facts for k in ("browser_url", "file_created_path", "text_written", "target_hwnd")
-            )
-        else:
-            is_verified = is_success and len(successful_calls) > 0
+        # Objective-driven verification:
+        # Determine whether user objective requested a real computer/browser/file action
+        action_indicators = [
+            "play", "listen", "watch", "stream", "open", "launch", "run", "start",
+            "type", "write", "save", "create", "generate", "fill", "click", "press",
+            "scroll", "navigate", "browse", "go to", "visit", "download", "calculate",
+            "add to cart", "add to", "cart", "shop", "checkout", "buy", "list", "show", "files", "folder", "directory"
+        ]
+        requires_physical_action = any(
+            re.search(rf"\b{re.escape(w)}\b", goal_lower) or w in goal_lower
+            for w in action_indicators
+        ) or ("action" in str(task_type).lower())
 
         error_explanation = None
+        if requires_physical_action:
+            if len(tool_calls_executed) == 0:
+                is_verified = False
+                error_explanation = "Model concluded without executing required computer tools for this operational task."
+            elif len(successful_calls) == 0:
+                is_verified = False
+                error_explanation = "All attempted computer action tools reported failure."
+            elif finish_reason in ("max_rounds_or_loop_guard", "max_rounds_exceeded"):
+                is_verified = is_success and len(successful_calls) >= 2 and any(
+                    k in accumulated_facts for k in ("browser_url", "file_created_path", "text_written", "target_hwnd", "directory")
+                )
+                if not is_verified:
+                    error_explanation = f"Execution reached round budget ({rounds} rounds) before operations could be verified."
+            else:
+                # Normal stop: verify substantive deliverables
+                if accumulated_facts.get("directory_summary") or accumulated_facts.get("directory_count") is not None:
+                    is_verified = True
+                elif accumulated_facts.get("media_playback"):
+                    is_verified = True
+                elif accumulated_facts.get("file_created_path"):
+                    is_verified = True
+                elif accumulated_facts.get("target_hwnd"):
+                    is_verified = True
+                elif accumulated_facts.get("browser_url") and not accumulated_facts.get("browser_url", "").endswith("newtab"):
+                    is_verified = True
+                else:
+                    is_verified = is_success and len(successful_calls) > 0 and len(failed_calls) == 0
+
+                if not is_verified and not error_explanation:
+                    error_explanation = "State postcondition could not be independently verified."
+        else:
+            # Informational / conversational query
+            if finish_reason == "stop":
+                is_verified = is_success
+            else:
+                is_verified = is_success and len(successful_calls) > 0
+            if not is_verified and not error_explanation:
+                error_explanation = "Informational synthesis could not be completed."
+
         if is_verified:
             orchestrator.transition_state(task_id, TaskStatusEnum.VERIFYING)
             orchestrator.transition_state(task_id, TaskStatusEnum.COMPLETED)
@@ -2203,26 +2314,41 @@ async def _execute_goal_pipeline(
         else:
             orchestrator.transition_state(task_id, TaskStatusEnum.FAILED)
             task.status = TaskStatusEnum.FAILED
-            if finish_reason in ("max_rounds_or_loop_guard", "max_rounds_exceeded"):
-                error_explanation = f"Execution reached maximum round budget ({rounds} rounds) before model could conclude all goals."
-            elif len(tool_calls_executed) == 0:
-                error_explanation = "Model concluded without executing required computer tools."
-            elif failed_calls:
-                last_failed = failed_calls[-1]
-                last_err = last_failed.get("result", {}).get("error") or "Operation failed"
-                error_explanation = f"Capability '{last_failed.get('function_name')}' reported error: {last_err}"
-            else:
-                error_explanation = final_message or "Task verification unfulfilled."
+            if not error_explanation:
+                if failed_calls:
+                    last_failed = failed_calls[-1]
+                    last_err = last_failed.get("result", {}).get("error") or "Operation failed"
+                    error_explanation = f"Capability '{last_failed.get('function_name')}' reported error: {last_err}"
+                else:
+                    error_explanation = final_message or "Task verification unfulfilled."
 
         durable_storage.save_task(task)
 
+        # Truthful target resolution
+        resolved_target = (
+            accumulated_facts.get("browser_url")
+            or accumulated_facts.get("file_created_path")
+            or accumulated_facts.get("directory")
+            or accumulated_facts.get("target_app")
+            or ("Browser" if "browser" in goal_lower or "youtube" in goal_lower or "web" in goal_lower else "Windows Desktop")
+        )
+
+        observed_postconditions = {
+            "state": "VERIFIED" if is_verified else "FAILED",
+            "isVerified": is_verified,
+            "rounds": rounds,
+            "toolCallsCount": len(successful_calls),
+            "driverProvenance": "real_system_execution",
+            **accumulated_facts,
+        }
+
         exec_action = ActionContract(
             actionId=uuid4(),
-            actionType=ActionTypeEnum.DETERMINISTIC_RETRIEVAL,
-            target="meta_function_calling",
+            actionType=ActionTypeEnum.DETERMINISTIC_RETRIEVAL if not requires_physical_action else ActionTypeEnum.BROWSER_NAVIGATE,
+            target=str(resolved_target),
             parameters={"goal": req.goal, "rounds": rounds, "tools": len(tool_calls_executed)},
             expectedPostcondition="Verified computer state updated via Meta function-calling",
-            estimatedRisk="MEDIUM",
+            estimatedRisk="LOW" if not requires_physical_action else "MEDIUM",
         )
         exec_res = ExecutionResult(
             executionId=uuid4(),
@@ -2230,11 +2356,12 @@ async def _execute_goal_pipeline(
             isSuccess=is_verified,
             durationMs=latency_ms,
             outputData=accumulated_facts,
+            driverProvenance="real_system_execution",
         )
         verifier_res = IndependentVerifier.verify_action_outcome(
             action=exec_action,
             execution_result=exec_res,
-            observed_postcondition_data={"verified": is_verified, "rounds": rounds},
+            observed_postcondition_data=observed_postconditions,
             is_model_self_attestation=False,
         )
         evidence = evidence_ledger.record_evidence(
@@ -2249,13 +2376,27 @@ async def _execute_goal_pipeline(
         for i, tc in enumerate(tool_calls_executed):
             fn_name = tc.get("function_name", f"step_{i+1}")
             step_results[f"tool_{i+1}_{fn_name}"] = {
-                "success": tc.get("result", {}).get("success", True) if isinstance(tc.get("result"), dict) else True,
+                "success": tc.get("result", {}).get("success", False) is True if isinstance(tc.get("result"), dict) else False,
                 "function": fn_name,
                 "arguments": tc.get("arguments"),
                 "result": tc.get("result"),
             }
 
-        effective_summary = final_message if is_verified else (f"{final_message} ({error_explanation})" if error_explanation and error_explanation not in final_message else (error_explanation or final_message))
+        # Format effective summary with real deliverables
+        if accumulated_facts.get("directory_summary"):
+            dir_sum = accumulated_facts["directory_summary"]
+            if dir_sum not in final_message:
+                effective_summary = f"{final_message}\n\n{dir_sum}" if final_message else dir_sum
+            else:
+                effective_summary = final_message
+        elif is_verified:
+            effective_summary = final_message
+        else:
+            effective_summary = (
+                f"{final_message} ({error_explanation})"
+                if error_explanation and error_explanation not in final_message
+                else (error_explanation or final_message)
+            )
 
         passport = register_or_update_passport(
             task_id=str(task_id),
@@ -2264,8 +2405,8 @@ async def _execute_goal_pipeline(
             direction="Meta Muse Spark Function Calling",
             extracted_fields=accumulated_facts,
             verification_status="VERIFIED" if is_verified else "FAILED",
-            evidence_id=str(evidence.evidenceId),
-            target_app_or_url=accumulated_facts.get("browser_url") or accumulated_facts.get("file_created_path") or "Windows / Browser",
+            evidence_id=str(evidence.evidenceId) if is_verified else None,
+            target_app_or_url=str(resolved_target),
             source_ref=f"Meta muse-spark-1.3 ({rounds} rounds)",
             summary=effective_summary,
         )
