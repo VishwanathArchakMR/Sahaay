@@ -1250,6 +1250,172 @@ class CapabilityRegistry:
             )
         )
 
+        # 35. Browser Get Page Content Chunked
+        self.register(
+            CapabilityDescriptor(
+                capability_id="browser_get_page_content",
+                name="Get Browser Page Content",
+                description="Read full or chunked visible text and accessible interactive controls from the active browser tab.",
+                example_requests=["Read full article from webpage", "Inspect page controls and sections", "Search webpage for terms"],
+                supported_surfaces=["browser_tab"],
+                adapter="browser_extension_bridge",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "chunkIndex": {"type": "integer", "description": "0-based chunk index to read"},
+                        "chunkSize": {"type": "integer", "description": "Characters per chunk (default 4000)"},
+                        "query": {"type": "string", "description": "Optional keyword filter to match relevant page text"},
+                    },
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string"},
+                        "title": {"type": "string"},
+                        "contentChunk": {"type": "string"},
+                        "totalTextLength": {"type": "integer"},
+                        "chunkIndex": {"type": "integer"},
+                        "hasMoreChunks": {"type": "boolean"},
+                        "interactiveControls": {"type": "array"},
+                    },
+                },
+                preconditions=["Browser extension connected", "Tab is loaded"],
+                required_permission_scopes=["read:browser_tab"],
+                risk_category=RiskCategory.LOW,
+                requires_human_confirmation=False,
+                is_reversible=True,
+                timeout_seconds=5.0,
+                is_idempotent=True,
+                verification_method="DOM observation extraction with SHA-256 fingerprinting.",
+                required_postconditions=["Page content chunk returned"],
+                readiness_state=CapabilityReadiness.READY,
+            )
+        )
+
+        # 36. Controlled Workspace Code Execution
+        self.register(
+            CapabilityDescriptor(
+                capability_id="workspace_run_code",
+                name="Run Controlled Project Code",
+                description="Execute a Python script or code snippet in an authorized workspace without arbitrary shell injection.",
+                example_requests=["Run Python script in workspace", "Execute test script and verify stdout", "Write and run hello world"],
+                supported_surfaces=["local_store"],
+                adapter="workspace_code_runner",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "scriptPath": {"type": "string", "description": "Relative or absolute path to .py script in workspace"},
+                        "code": {"type": "string", "description": "Optional inline Python code to write and execute"},
+                        "workspacePath": {"type": "string", "description": "Optional workspace root directory"},
+                        "args": {"type": "array", "items": {"type": "string"}, "description": "Command line arguments for script"},
+                        "timeoutSeconds": {"type": "number", "description": "Timeout in seconds (default 30)"},
+                    },
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "success": {"type": "boolean"},
+                        "exitCode": {"type": "integer"},
+                        "stdout": {"type": "string"},
+                        "stderr": {"type": "string"},
+                        "filePath": {"type": "string"},
+                        "scriptSha256": {"type": "string"},
+                        "durationMs": {"type": "number"},
+                    },
+                },
+                preconditions=["Script exists or code is provided", "Path is inside authorized workspace"],
+                required_permission_scopes=["execute:code"],
+                risk_category=RiskCategory.MEDIUM,
+                requires_human_confirmation=False,
+                is_reversible=True,
+                timeout_seconds=30.0,
+                is_idempotent=False,
+                verification_method="Subprocess execution exit code and stdout observation.",
+                required_postconditions=["Process exited and output captured"],
+                readiness_state=CapabilityReadiness.READY,
+            )
+        )
+
+        # 37. Project Workspace & Folder Indexing
+        self.register(
+            CapabilityDescriptor(
+                capability_id="workspace_index_directory",
+                name="Index Project Folder",
+                description="Scan and index files in an authorized project folder, computing SHA-256 hashes and directory tree.",
+                example_requests=["Index project directory", "Scan workspace folder and summarize files", "Analyze code repository"],
+                supported_surfaces=["local_store"],
+                adapter="workspace_indexer",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "directoryPath": {"type": "string", "description": "Path to local folder to index"},
+                        "maxDepth": {"type": "integer", "description": "Maximum directory depth (default 4)"},
+                        "maxFiles": {"type": "integer", "description": "Maximum files to index (default 150)"},
+                    },
+                    "required": ["directoryPath"],
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "workspacePath": {"type": "string"},
+                        "totalFilesDiscovered": {"type": "integer"},
+                        "files": {"type": "array"},
+                        "summary": {"type": "string"},
+                    },
+                },
+                preconditions=["Directory exists"],
+                required_permission_scopes=["read:local_file"],
+                risk_category=RiskCategory.LOW,
+                requires_human_confirmation=False,
+                is_reversible=True,
+                timeout_seconds=15.0,
+                is_idempotent=True,
+                verification_method="Filesystem tree enumeration and SHA-256 fingerprinting.",
+                required_postconditions=["Files indexed and stored in ledger"],
+                readiness_state=CapabilityReadiness.READY,
+            )
+        )
+
+        # 38. Creative Image Editing & Stylization
+        self.register(
+            CapabilityDescriptor(
+                capability_id="image_edit_style",
+                name="Edit and Style Image",
+                description="Apply artistic styles (retro, vintage, synthwave, neon) to user or workspace images using Meta muse-image-1.0 and vector stylizers.",
+                example_requests=["Edit the image in retro style", "Style this photo in vintage aesthetic", "Apply synthwave styling to image"],
+                supported_surfaces=["local_store", "artifact_store"],
+                adapter="meta_muse_image",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "imagePath": {"type": "string", "description": "Path to local or artifact image to style"},
+                        "styleInstruction": {"type": "string", "description": "Artistic style to apply (e.g. retro, synthwave, vintage)"},
+                    },
+                    "required": ["styleInstruction"],
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "originalPath": {"type": "string"},
+                        "styledPath": {"type": "string"},
+                        "styledUrl": {"type": "string"},
+                        "artifactId": {"type": "string"},
+                        "styleInstruction": {"type": "string"},
+                    },
+                },
+                preconditions=["Source image exists or creative instruction provided"],
+                required_permission_scopes=["write:artifact"],
+                risk_category=RiskCategory.LOW,
+                requires_human_confirmation=False,
+                is_reversible=True,
+                timeout_seconds=30.0,
+                is_idempotent=False,
+                verification_method="Generation of styled image artifact file and checksum verification.",
+                required_postconditions=["Styled image artifact generated"],
+                readiness_state=CapabilityReadiness.READY,
+            )
+        )
+
 
 # Global singleton instance
 capability_registry = CapabilityRegistry()

@@ -4,7 +4,10 @@ from pathlib import Path
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from pypdf import PdfWriter
+try:
+    from pypdf import PdfWriter
+except ImportError:
+    PdfWriter = None
 from sahaay_core.context.store import ContextStore
 from sahaay_core.main import app
 from sahaay_core.sources.document_ingestion import (
@@ -14,7 +17,7 @@ from sahaay_core.sources.document_ingestion import (
 from sahaay_core.sources.manager import SourceManager
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_ingest_markdown_file_success(tmp_path: Path):
     """Verify local Markdown document is parsed into structured facts with checksum."""
     md_file = tmp_path / "architecture_notes.md"
@@ -35,9 +38,11 @@ async def test_ingest_markdown_file_success(tmp_path: Path):
         assert data["factsCount"] >= 2
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_ingest_pdf_file_success(tmp_path: Path):
     """Verify PDF document is extracted page-by-page with page metadata."""
+    if PdfWriter is None:
+        pytest.skip("pypdf is not installed in the current environment")
     pdf_file = tmp_path / "sample_policy.pdf"
 
     # Create a small valid PDF using pypdf
@@ -57,7 +62,7 @@ async def test_ingest_pdf_file_success(tmp_path: Path):
         assert data["title"] == "Sample Policy"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_ingest_rejects_forbidden_path():
     """Verify sensitive system paths or credential files are denied."""
     sm = SourceManager()
@@ -69,7 +74,7 @@ async def test_ingest_rejects_forbidden_path():
     assert "sensitive path" in str(exc_info.value).lower()
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_ingest_rejects_unsupported_extension(tmp_path: Path):
     """Verify unsupported binary formats like .exe or .bin are rejected."""
     bin_file = tmp_path / "program.exe"
@@ -82,7 +87,7 @@ async def test_ingest_rejects_unsupported_extension(tmp_path: Path):
         assert "unsupported" in res.json()["detail"].lower()
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_search_over_ingested_document(tmp_path: Path):
     """Verify deterministic search locates exact snippet inside ingested document."""
     txt_file = tmp_path / "knowledge_base.txt"

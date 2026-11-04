@@ -295,68 +295,106 @@ class TaskDagEngine:
             try:
                 act_type_enum = ActionTypeEnum(node.action_type)
             except Exception:
-                cap_to_action = {
-                    "deterministic_retrieval": ActionTypeEnum.DETERMINISTIC_RETRIEVAL,
-                    "windows_launch_app": ActionTypeEnum.LAUNCH_APPLICATION,
-                    "windows_click_control": ActionTypeEnum.CLICK_DESKTOP_CONTROL,
-                    "windows_get_control_text": ActionTypeEnum.GET_CONTROL_TEXT,
-                    "windows_set_control_text": ActionTypeEnum.SET_CONTROL_TEXT,
-                    "windows_type_text": ActionTypeEnum.TYPE_DESKTOP_TEXT,
-                    "windows_inspect_window": ActionTypeEnum.GET_ACTIVE_WINDOW,
-                    "windows_set_volume": ActionTypeEnum.SET_SYSTEM_VOLUME,
-                    "windows_get_volume": ActionTypeEnum.GET_SYSTEM_VOLUME,
-                    "browser_tab_observe": ActionTypeEnum.GET_TAB_CONTENT,
-                    "browser_scroll": ActionTypeEnum.SCROLL_BROWSER_TAB,
-                    "browser_form_fill": ActionTypeEnum.FILL_FORM_FIELDS,
-                    "browser_click_element": ActionTypeEnum.CLICK_BROWSER_ELEMENT,
-                    "browser_input_text": ActionTypeEnum.INPUT_BROWSER_TEXT,
-                    "browser_navigate": ActionTypeEnum.NAVIGATE_BROWSER_TAB,
-                    "windows_ui_tree_inspect": ActionTypeEnum.DETERMINISTIC_RETRIEVAL,
-                    "document_ingestion": ActionTypeEnum.DOCUMENT_INGEST_CHUNK,
-                    "document_ingest_chunk": ActionTypeEnum.DOCUMENT_INGEST_CHUNK,
-                    "research_search": ActionTypeEnum.RESEARCH_WEB_SEARCH,
-                    "research_fetch": ActionTypeEnum.RESEARCH_FETCH_PAGE,
-                    "system_volume_control": ActionTypeEnum.SET_SYSTEM_VOLUME,
-                    "calculate": ActionTypeEnum.DETERMINISTIC_RETRIEVAL,
-                    "verify_readback": ActionTypeEnum.VERIFY_READBACK,
-                }
-                action_alias_map = {
-                    "windows_click_control": ActionTypeEnum.CLICK_DESKTOP_CONTROL,
-                    "windows_get_control_text": ActionTypeEnum.GET_CONTROL_TEXT,
-                    "windows_set_control_text": ActionTypeEnum.SET_CONTROL_TEXT,
-                    "windows_type_text": ActionTypeEnum.TYPE_DESKTOP_TEXT,
-                    "windows_launch_app": ActionTypeEnum.LAUNCH_APPLICATION,
-                    "click_control": ActionTypeEnum.CLICK_DESKTOP_CONTROL,
-                    "get_control_text": ActionTypeEnum.GET_CONTROL_TEXT,
-                    "set_control_text": ActionTypeEnum.SET_CONTROL_TEXT,
-                    "launch_app": ActionTypeEnum.LAUNCH_APPLICATION,
-                    "readback_verify": ActionTypeEnum.VERIFY_READBACK,
-                    "verify": ActionTypeEnum.VERIFY_READBACK,
-                }
-                if node.action_type in action_alias_map:
-                    act_type_enum = action_alias_map[node.action_type]
-                elif node.capability_id in cap_to_action:
-                    act_type_enum = cap_to_action[node.capability_id]
-                else:
-                    err_msg = f"Unsupported or unregistered action_type '{node.action_type}' for capability '{node.capability_id}' on step '{node.step_id}'."
-                    logger.error(err_msg)
-                    node.status = TaskStatusEnum.FAILED
-                    node.error = err_msg
-                    step_results[node.step_id] = {"success": False, "error": err_msg}
-                    task.status = TaskStatusEnum.FAILED
-                    durable_storage.save_task(task)
-                    return DAGExecutionReport(
-                        task_id=task_id_str,
-                        goal=task.goal,
-                        is_success=False,
-                        final_status=TaskStatusEnum.FAILED,
-                        completed_steps_count=completed_count,
-                        total_steps_count=len(nodes),
-                        step_results=step_results,
-                        accumulated_facts=accumulated_facts,
-                        evidence_ids=evidence_ids,
-                        error=err_msg,
-                    )
+                try:
+                    act_type_enum = ActionTypeEnum(node.capability_id)
+                except Exception:
+                    cap_to_action = {
+                        "deterministic_retrieval": ActionTypeEnum.DETERMINISTIC_RETRIEVAL,
+                        "windows_launch_app": ActionTypeEnum.LAUNCH_APPLICATION,
+                        "windows_click_control": ActionTypeEnum.CLICK_DESKTOP_CONTROL,
+                        "windows_get_control_text": ActionTypeEnum.GET_CONTROL_TEXT,
+                        "windows_set_control_text": ActionTypeEnum.SET_CONTROL_TEXT,
+                        "windows_type_text": ActionTypeEnum.TYPE_DESKTOP_TEXT,
+                        "windows_inspect_window": ActionTypeEnum.GET_ACTIVE_WINDOW,
+                        "windows_set_volume": ActionTypeEnum.SET_SYSTEM_VOLUME,
+                        "windows_get_volume": ActionTypeEnum.GET_SYSTEM_VOLUME,
+                        "browser_tab_observe": ActionTypeEnum.GET_TAB_CONTENT,
+                        "browser_scroll": ActionTypeEnum.SCROLL_BROWSER_TAB,
+                        "browser_scroll_tab": ActionTypeEnum.SCROLL_BROWSER_TAB,
+                        "browser_form_fill": ActionTypeEnum.FILL_FORM_FIELDS,
+                        "browser_fill_form": ActionTypeEnum.FILL_FORM_FIELDS,
+                        "browser_get_values": ActionTypeEnum.GET_FIELD_VALUES,
+                        "browser_click_element": ActionTypeEnum.CLICK_BROWSER_ELEMENT,
+                        "browser_input_text": ActionTypeEnum.INPUT_BROWSER_TEXT,
+                        "browser_navigate": ActionTypeEnum.NAVIGATE_BROWSER_TAB,
+                        "browser_open_tab": ActionTypeEnum.BROWSER_OPEN_TAB,
+                        "browser_search_in_tab": ActionTypeEnum.BROWSER_SEARCH_IN_TAB,
+                        "windows_ui_tree_inspect": ActionTypeEnum.DETERMINISTIC_RETRIEVAL,
+                        "document_ingestion": ActionTypeEnum.DOCUMENT_INGEST_CHUNK,
+                        "document_ingest_chunk": ActionTypeEnum.DOCUMENT_INGEST_CHUNK,
+                        "document_ingest_file": ActionTypeEnum.DOCUMENT_INGEST_FILE,
+                        "document_search_knowledge": ActionTypeEnum.DOCUMENT_SEARCH_KNOWLEDGE,
+                        "document_compare_sources": ActionTypeEnum.DOCUMENT_COMPARE_SOURCES,
+                        "research_search": ActionTypeEnum.RESEARCH_WEB_SEARCH,
+                        "research_fetch": ActionTypeEnum.RESEARCH_FETCH_PAGE,
+                        "research_web_search": ActionTypeEnum.RESEARCH_WEB_SEARCH,
+                        "research_fetch_page": ActionTypeEnum.RESEARCH_FETCH_PAGE,
+                        "research_web_multihop": ActionTypeEnum.RESEARCH_WEB_SEARCH,
+                        "system_volume_control": ActionTypeEnum.SET_SYSTEM_VOLUME,
+                        "calculate": ActionTypeEnum.DETERMINISTIC_RETRIEVAL,
+                        "verify_readback": ActionTypeEnum.VERIFY_READBACK,
+                        "file_list_directory": ActionTypeEnum.FILE_LIST_DIRECTORY,
+                        "file_create_write": ActionTypeEnum.FILE_CREATE_WRITE,
+                        "file_read": ActionTypeEnum.FILE_READ,
+                        "workspace_run_code": ActionTypeEnum.WORKSPACE_RUN_CODE,
+                        "workspace_index_directory": ActionTypeEnum.WORKSPACE_INDEX_DIRECTORY,
+                        "data_analyze_tabular": ActionTypeEnum.DATA_ANALYZE_TABULAR,
+                        "artifact_generate_document": ActionTypeEnum.ARTIFACT_GENERATE_DOCUMENT,
+                        "artifact_generate_spreadsheet": ActionTypeEnum.ARTIFACT_GENERATE_SPREADSHEET,
+                        "windows_enumerate_controls": ActionTypeEnum.WINDOWS_ENUMERATE_CONTROLS,
+                        "windows_invoke_control": ActionTypeEnum.WINDOWS_INVOKE_CONTROL,
+                        "browser_get_active_tab": ActionTypeEnum.BROWSER_GET_ACTIVE_TAB,
+                        "browser_get_page_content": ActionTypeEnum.BROWSER_GET_PAGE_CONTENT,
+                        "image_edit": ActionTypeEnum.IMAGE_EDIT,
+                        "image_edit_style": ActionTypeEnum.IMAGE_EDIT_STYLE,
+                    }
+                    action_alias_map = {
+                        "windows_click_control": ActionTypeEnum.CLICK_DESKTOP_CONTROL,
+                        "windows_get_control_text": ActionTypeEnum.GET_CONTROL_TEXT,
+                        "windows_set_control_text": ActionTypeEnum.SET_CONTROL_TEXT,
+                        "windows_type_text": ActionTypeEnum.TYPE_DESKTOP_TEXT,
+                        "windows_launch_app": ActionTypeEnum.LAUNCH_APPLICATION,
+                        "click_control": ActionTypeEnum.CLICK_DESKTOP_CONTROL,
+                        "get_control_text": ActionTypeEnum.GET_CONTROL_TEXT,
+                        "set_control_text": ActionTypeEnum.SET_CONTROL_TEXT,
+                        "launch_app": ActionTypeEnum.LAUNCH_APPLICATION,
+                        "readback_verify": ActionTypeEnum.VERIFY_READBACK,
+                        "verify": ActionTypeEnum.VERIFY_READBACK,
+                        "list_directory": ActionTypeEnum.FILE_LIST_DIRECTORY,
+                        "create_file": ActionTypeEnum.FILE_CREATE_WRITE,
+                        "write_file": ActionTypeEnum.FILE_CREATE_WRITE,
+                        "read_file": ActionTypeEnum.FILE_READ,
+                        "run_code": ActionTypeEnum.WORKSPACE_RUN_CODE,
+                        "index_directory": ActionTypeEnum.WORKSPACE_INDEX_DIRECTORY,
+                    }
+                    if node.action_type in action_alias_map:
+                        act_type_enum = action_alias_map[node.action_type]
+                    elif node.capability_id in cap_to_action:
+                        act_type_enum = cap_to_action[node.capability_id]
+                    elif node.action_type in cap_to_action:
+                        act_type_enum = cap_to_action[node.action_type]
+                    elif capability_registry.is_registered(node.capability_id):
+                        act_type_enum = ActionTypeEnum.GENERIC_CAPABILITY_ACTION
+                    else:
+                        err_msg = f"Unsupported or unregistered action_type '{node.action_type}' for capability '{node.capability_id}' on step '{node.step_id}'."
+                        logger.error(err_msg)
+                        node.status = TaskStatusEnum.FAILED
+                        node.error = err_msg
+                        step_results[node.step_id] = {"success": False, "error": err_msg}
+                        task.status = TaskStatusEnum.FAILED
+                        durable_storage.save_task(task)
+                        return DAGExecutionReport(
+                            task_id=task_id_str,
+                            goal=task.goal,
+                            is_success=False,
+                            final_status=TaskStatusEnum.FAILED,
+                            completed_steps_count=completed_count,
+                            total_steps_count=len(nodes),
+                            step_results=step_results,
+                            accumulated_facts=accumulated_facts,
+                            evidence_ids=evidence_ids,
+                            error=err_msg,
+                        )
 
             action_contract = ActionContract(
                 actionId=uuid4(),

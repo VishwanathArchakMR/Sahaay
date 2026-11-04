@@ -91,7 +91,23 @@
     </main>
 
     <!-- Composer -->
+    <div id="attached-chips" class="attached-chips-row" style="display: none; padding: 4px 12px; gap: 6px; flex-wrap: wrap; background: rgba(0,0,0,0.2);"></div>
+    <input type="file" id="sidepanel-file-input" multiple style="display: none;" />
+    <input type="file" id="sidepanel-folder-input" webkitdirectory style="display: none;" />
     <footer class="glass-surface panel-composer">
+      <button class="icon-btn" id="btn-attach" title="Attach File" style="color: var(--sahaay-cyan); background: rgba(85,216,255,0.1); border-color: rgba(85,216,255,0.25);">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+        </svg>
+      </button>
+      <button class="icon-btn" id="btn-voice" title="Push-to-Talk Voice Input" style="color: var(--sahaay-mint); background: rgba(138,245,207,0.1); border-color: rgba(138,245,207,0.25);">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/>
+          <line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+      </button>
       <input type="text" id="composer-input" class="composer-input" placeholder="Ask anything about this page or task..." />
       <button class="icon-btn" id="btn-stop" title="Stop Task" style="display: none; color: var(--sahaay-danger); border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.15);">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -100,11 +116,6 @@
       </button>
       <button class="send-btn" id="btn-send" title="Send Task">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#041B23" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="22" y1="2" x2="11" y2="13"/>
-          <polygon points="22 2 15 22 11 13 2 9 22 2"/>
-        </svg>
-      </button>
-    </footer>
           <line x1="22" y1="2" x2="11" y2="13"/>
           <polygon points="22 2 15 22 11 13 2 9 22 2"/>
         </svg>

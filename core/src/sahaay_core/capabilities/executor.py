@@ -33,7 +33,11 @@ logger = logging.getLogger("sahaay.capabilities.executor")
 class CapabilityExecutionError(Exception):
     """Raised when capability execution fails."""
 
-    pass
+    def __init__(self, message: str, code: str = "EXECUTION_FAILED", capability_id: Optional[str] = None):
+        super().__init__(message)
+        self.message = message
+        self.code = code
+        self.capability_id = capability_id
 
 
 class CapabilityExecutor:
@@ -561,11 +565,9 @@ if ($root) {{
                 file_path_str = parameters.get("path") or parameters.get("filePath") or parameters.get("target") or ""
                 content = parameters.get("content") or parameters.get("text") or ""
                 if not file_path_str:
-                    import os
                     desktop = os.path.join(os.path.expanduser("~"), "Desktop")
                     file_path_str = os.path.join(desktop, "sahaay_report.txt")
 
-                import os, hashlib
                 file_path = Path(os.path.expandvars(os.path.expanduser(file_path_str))).resolve()
                 file_path.parent.mkdir(parents=True, exist_ok=True)
                 file_path.write_text(content, encoding="utf-8")
@@ -798,6 +800,17 @@ if ($root) {{
                     "driverProvenance": "real_native_driver",
                 }
 
+            elif capability_id in ("image_edit_style", "image_edit"):
+                from sahaay_core.models.meta.muse_image import muse_image
+                image_path = parameters.get("imagePath") or parameters.get("path") or parameters.get("file") or ""
+                style_inst = parameters.get("styleInstruction") or parameters.get("style") or "retro vintage"
+                task_id = str(context.get("taskId") or "task_creative")
+                return await muse_image.edit_image_with_style(
+                    image_path=image_path,
+                    style_instruction=style_inst,
+                    task_id=task_id,
+                )
+
             elif capability_id == "windows_invoke_control":
                 hwnd = int(parameters.get("hwnd", 0))
                 control_name = parameters.get("controlName") or parameters.get("name")
@@ -826,6 +839,31 @@ if ($root) {{
                     "success": True,
                     "driverProvenance": obs.get("driverProvenance", "real_browser_extension"),
                 }
+
+            elif capability_id == "browser_get_page_content":
+                tab_id = parameters.get("tabId")
+                obs = self.browser_adapter.get_active_tab_observation()
+                content = obs.get("visibleTextExcerpt") or obs.get("pageText") or obs.get("textContent") or ""
+                return {
+                    "url": obs.get("url", ""),
+                    "title": obs.get("title", ""),
+                    "content": content,
+                    "pageText": content,
+                    "success": bool(obs.get("url") or content),
+                    "driverProvenance": obs.get("driverProvenance", "real_browser_extension"),
+                }
+
+            elif capability_id == "workspace_run_code":
+                from sahaay_core.capabilities.code_runner import execute_python_script
+                script_path = parameters.get("script_path") or parameters.get("scriptPath") or ""
+                args = parameters.get("args") or []
+                timeout = float(parameters.get("timeout", 30.0))
+                return execute_python_script(script_path=script_path, args=args, timeout=timeout)
+
+            elif capability_id == "workspace_index_directory":
+                from sahaay_core.sources.workspace_indexer import index_workspace_directory
+                ws_path = parameters.get("workspace_path") or parameters.get("workspacePath") or parameters.get("path") or "."
+                return index_workspace_directory(workspace_path=ws_path)
 
             elif capability_id == "deterministic_retrieval":
                 query = parameters.get("query", "")

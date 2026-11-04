@@ -263,8 +263,23 @@ async def test_voice_transcription_synthetic_audio():
 # ---------------------------------------------------------------------------
 # TEST 6: ASK VS DO VS COMBINED MODES
 # ---------------------------------------------------------------------------
-def test_ask_mode_does_not_mutate_system(test_session):
+def test_ask_mode_does_not_mutate_system(test_session, monkeypatch):
     """Test 6 — Ask mode (retrieval_only) does not trigger machine-changing actions."""
+    from unittest.mock import AsyncMock
+    from sahaay_core.models.meta.muse_spark import muse_spark
+
+    mock_exec = AsyncMock(return_value={
+        "success": True,
+        "final_message": "Electricity tariff slabs are tier-based pricing structures for power usage.",
+        "tool_calls_executed": [],
+        "rounds": 1,
+        "accumulated_facts": {"answer": "Electricity tariff slabs are tier-based pricing structures for power usage."},
+        "finish_reason": "stop",
+        "is_verified": True,
+        "latency_ms": 25.0,
+    })
+    monkeypatch.setattr(muse_spark, "execute_with_tools", mock_exec)
+
     res = client.post(
         "/api/v1/workflows/execute-goal",
         json={

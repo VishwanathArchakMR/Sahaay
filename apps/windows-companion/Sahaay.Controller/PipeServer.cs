@@ -241,6 +241,26 @@ public class PipeServer
             hwnd = parsedStrHwnd;
         }
 
+        if (hwnd <= 0)
+        {
+            var active = WindowDiscovery.GetActiveWindow();
+            if (active != null)
+            {
+                hwnd = active.Hwnd;
+            }
+        }
+
+        if (hwnd <= 0)
+        {
+            return new IpcMessageResponse(
+                Id: request.Id,
+                Command: request.Command,
+                Success: false,
+                Data: new { noExternalTarget = true },
+                Error: "No external target window available."
+            );
+        }
+
         var elements = UiAutomationInspector.InspectWindow(hwnd);
         return new IpcMessageResponse(
             Id: request.Id,
@@ -266,6 +286,26 @@ public class PipeServer
         else if (long.TryParse(hwndObj.ToString(), out long parsedStrHwnd))
         {
             hwnd = parsedStrHwnd;
+        }
+
+        if (hwnd <= 0)
+        {
+            var active = WindowDiscovery.GetActiveWindow();
+            if (active != null)
+            {
+                hwnd = active.Hwnd;
+            }
+        }
+
+        if (hwnd <= 0)
+        {
+            return new IpcMessageResponse(
+                Id: request.Id,
+                Command: request.Command,
+                Success: false,
+                Data: new { noExternalTarget = true },
+                Error: "No external target window available."
+            );
         }
 
         string outputDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "..", "data", "temp_media");
@@ -301,6 +341,26 @@ public class PipeServer
         else if (long.TryParse(hwndObj.ToString(), out long parsedStrHwnd))
         {
             hwnd = parsedStrHwnd;
+        }
+
+        if (hwnd <= 0)
+        {
+            var active = WindowDiscovery.GetActiveWindow();
+            if (active != null)
+            {
+                hwnd = active.Hwnd;
+            }
+        }
+
+        if (hwnd <= 0)
+        {
+            return new IpcMessageResponse(
+                Id: request.Id,
+                Command: request.Command,
+                Success: false,
+                Data: new { noExternalTarget = true },
+                Error: "No external target window available."
+            );
         }
 
         string? targetId = null;
@@ -346,6 +406,26 @@ public class PipeServer
             hwnd = parsedStrHwnd;
         }
 
+        if (hwnd <= 0)
+        {
+            var active = WindowDiscovery.GetActiveWindow();
+            if (active != null)
+            {
+                hwnd = active.Hwnd;
+            }
+        }
+
+        if (hwnd <= 0)
+        {
+            return new IpcMessageResponse(
+                Id: request.Id,
+                Command: request.Command,
+                Success: false,
+                Data: new { noExternalTarget = true },
+                Error: "No external target window available."
+            );
+        }
+
         string? targetId = null;
         if (request.Parameters.TryGetValue("targetId", out var targetIdObj) && targetIdObj != null)
         {
@@ -374,7 +454,23 @@ public class PipeServer
         { "notepad", "notepad.exe" },
         { "notepad.exe", "notepad.exe" },
         { "explorer", "explorer.exe" },
-        { "explorer.exe", "explorer.exe" }
+        { "explorer.exe", "explorer.exe" },
+        { "chrome", "chrome.exe" },
+        { "chrome.exe", "chrome.exe" },
+        { "edge", "msedge.exe" },
+        { "msedge", "msedge.exe" },
+        { "msedge.exe", "msedge.exe" },
+        { "code", "code.cmd" },
+        { "code.cmd", "code.cmd" },
+        { "vscode", "code.cmd" },
+        { "paint", "mspaint.exe" },
+        { "mspaint", "mspaint.exe" },
+        { "terminal", "wt.exe" },
+        { "wt", "wt.exe" },
+        { "taskmgr", "taskmgr.exe" },
+        { "control", "control.exe" },
+        { "write", "write.exe" },
+        { "wordpad", "write.exe" }
     };
 
     private static IpcMessageResponse HandleLaunchApplication(IpcMessageRequest request)
@@ -488,6 +584,26 @@ public class PipeServer
             hwnd = parsedStrHwnd;
         }
 
+        if (hwnd <= 0)
+        {
+            var active = WindowDiscovery.GetActiveWindow();
+            if (active != null)
+            {
+                hwnd = active.Hwnd;
+            }
+        }
+
+        if (hwnd <= 0)
+        {
+            return new IpcMessageResponse(
+                Id: request.Id,
+                Command: request.Command,
+                Success: false,
+                Data: new { noExternalTarget = true },
+                Error: "No external target window available."
+            );
+        }
+
         string? targetId = null;
         if (request.Parameters.TryGetValue("targetId", out var targetIdObj) && targetIdObj != null)
         {
@@ -523,6 +639,26 @@ public class PipeServer
         else if (long.TryParse(hwndObj.ToString(), out long parsedStrHwnd))
         {
             hwnd = parsedStrHwnd;
+        }
+
+        if (hwnd <= 0)
+        {
+            var active = WindowDiscovery.GetActiveWindow();
+            if (active != null)
+            {
+                hwnd = active.Hwnd;
+            }
+        }
+
+        if (hwnd <= 0)
+        {
+            return new IpcMessageResponse(
+                Id: request.Id,
+                Command: request.Command,
+                Success: false,
+                Data: new { noExternalTarget = true },
+                Error: "No external target window available."
+            );
         }
 
         bool success = WindowDiscovery.FocusWindow(hwnd);

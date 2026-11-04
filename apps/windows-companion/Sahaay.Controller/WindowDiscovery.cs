@@ -58,86 +58,52 @@ public static class WindowDiscovery
         "ShellExperienceHost",
         "SearchHost",
         "StartMenuExperienceHost",
-        "TextInputHost"
+        "TextInputHost",
+        "Taskmgr",
+        "dwm",
+        "electron",
+        "Sahaay",
+        "Sahaay.Controller",
+        "Sahaay.NativeHost",
+        "node",
+        "cmd",
+        "powershell",
+        "pwsh",
+        "conhost"
     };
 
-    public static List<WindowDescriptor> GetOpenWindows()
+    private static readonly object _syncLock = new();
+    private static WindowDescriptor? _lastExternalWindow = null;
+
+    public static bool IsExcluded(string processName, string title)
     {
-        var windows = new List<WindowDescriptor>();
-
-        EnumWindowsProc proc = (hWnd, lParam) =>
-        {
-            if (!IsWindowVisible(hWnd)) return true;
-
-            int length = GetWindowTextLength(hWnd);
-            if (length == 0) return true;
-
-            var builder = new StringBuilder(length + 1);
-            GetWindowText(hWnd, builder, builder.Capacity);
-            string title = builder.ToString().Trim();
-
-            if (string.IsNullOrWhiteSpace(title)) return true;
-
-            GetWindowThreadProcessId(hWnd, out uint processId);
-            string processName = "Unknown";
-            try
-            {
-                using var p = Process.GetProcessById((int)processId);
-                processName = p.ProcessName;
-            }
-            catch
-            {
-                // Process may have exited or have restricted access
-            }
-
-            if (ExcludedProcesses.Contains(processName)) return true;
-
-            GetWindowRect(hWnd, out RECT rect);
-            int width = rect.Right - rect.Left;
-            int height = rect.Bottom - rect.Top;
-
-            if (width < 50 || height < 50) return true; // Ignore tiny utility/tray windows
-
-            bool isMinimized = IsIconic(hWnd);
-
-            windows.Add(new WindowDescriptor(
-                Hwnd: hWnd.ToInt64(),
-                Title: title,
-                ProcessName: processName,
-                ProcessId: (int)processId,
-                Bounds: new WindowBounds(rect.Left, rect.Top, width, height),
-                IsVisible: true,
-                IsMinimized: isMinimized
-            ));
-
-            return true;
-        };
-
-        EnumWindows(proc, IntPtr.Zero);
-
-        if (windows.Count == 0)
-        {
-            IntPtr hDefault = OpenDesktop("Default", 0, false, 0x01FF);
-            if (hDefault != IntPtr.Zero)
-            {
-                try
-                {
-                    EnumDesktopWindows(hDefault, proc, IntPtr.Zero);
-                }
-                finally
-                {
-                    CloseDesktop(hDefault);
-                }
-            }
-        }
-
-        return windows;
+        if (string.IsNullOrWhiteSpace(processName)) return true;
+        if (ExcludedProcesses.Contains(processName)) return true;
+        if (title.StartsWith("Sahaay", StringComparison.OrdinalIgnoreCase)) return true;
+        if (title.Equals("Program Manager", StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
     }
 
-    public static WindowDescriptor? GetActiveWindow()
+    public static WindowDescriptor? GetLastExternalWindow()
     {
-        IntPtr hWnd = GetForegroundWindow();
-        if (hWnd == IntPtr.Zero) return null;
+        lock (_syncLock)
+        {
+            return _lastExternalWindow;
+        }
+    }
+
+    public static void RecordExternalWindow(WindowDescriptor window)
+    {
+        if (IsExcluded(window.ProcessName, window.Title)) return;
+        lock (_syncLock)
+        {
+            _lastExternalWindow = window;
+        }
+    }
+
+    public static WindowDescriptor? CreateDescriptorFromHwnd(IntPtr hWnd)
+    {
+        if (hWnd == IntPtr.Zero || !IsWindowVisible(hWnd)) return null;
 
         int length = GetWindowTextLength(hWnd);
         var builder = new StringBuilder(length + 1);
@@ -169,6 +135,124 @@ public static class WindowDiscovery
             IsVisible: true,
             IsMinimized: IsIconic(hWnd)
         );
+    }
+
+    public static List<WindowDescriptor> GetOpenWindows()
+    {
+        var windows = new List<WindowDescriptor>();
+
+        EnumWindowsProc proc = (hWnd, lParam) =>
+        {
+            if (!IsWindowVisible(hWnd)) return true;
+
+            int length = GetWindowTextLength(hWnd);
+            if (length == 0) return true;
+
+            var builder = new StringBuilder(length + 1);
+            GetWindowText(hWnd, builder, builder.Capacity);
+            string title = builder.ToString().Trim();
+
+            if (string.IsNullOrWhiteSpace(title)) return true;
+
+            GetWindowThreadProcessId(hWnd, out uint processId);
+            string processName = "Unknown";
+            try
+            {
+                using var p = Process.GetProcessById((int)processId);
+                processName = p.ProcessName;
+            }
+            catch
+            {
+                // Process may have exited or have restricted access
+            }
+
+            if (IsExcluded(processName, title)) return true;
+
+            GetWindowRect(hWnd, out RECT rect);
+            int width = rect.Right - rect.Left;
+            int height = rect.Bottom - rect.Top;
+
+            if (width < 50 || height < 50) return true; // Ignore tiny utility/tray windows
+
+            bool isMinimized = IsIconic(hWnd);
+
+            var desc = new WindowDescriptor(
+                Hwnd: hWnd.ToInt64(),
+                Title: title,
+                ProcessName: processName,
+                ProcessId: (int)processId,
+                Bounds: new WindowBounds(rect.Left, rect.Top, width, height),
+                IsVisible: true,
+                IsMinimized: isMinimized
+            );
+
+            windows.Add(desc);
+
+            return true;
+        };
+
+        EnumWindows(proc, IntPtr.Zero);
+
+        if (windows.Count == 0)
+        {
+            IntPtr hDefault = OpenDesktop("Default", 0, false, 0x01FF);
+            if (hDefault != IntPtr.Zero)
+            {
+                try
+                {
+                    EnumDesktopWindows(hDefault, proc, IntPtr.Zero);
+                }
+                finally
+                {
+                    CloseDesktop(hDefault);
+                }
+            }
+        }
+
+        return windows;
+    }
+
+    public static WindowDescriptor? GetActiveWindow()
+    {
+        IntPtr hWnd = GetForegroundWindow();
+        if (hWnd != IntPtr.Zero)
+        {
+            var descriptor = CreateDescriptorFromHwnd(hWnd);
+            if (descriptor != null && !IsExcluded(descriptor.ProcessName, descriptor.Title))
+            {
+                RecordExternalWindow(descriptor);
+                return descriptor;
+            }
+        }
+
+        // Foreground window is Sahaay or excluded system process.
+        // Fallback 1: check if _lastExternalWindow is still valid, visible, and not minimized
+        lock (_syncLock)
+        {
+            if (_lastExternalWindow != null)
+            {
+                var h = new IntPtr(_lastExternalWindow.Hwnd);
+                if (IsWindowVisible(h) && !IsIconic(h))
+                {
+                    var updated = CreateDescriptorFromHwnd(h);
+                    if (updated != null && !IsExcluded(updated.ProcessName, updated.Title))
+                    {
+                        return updated;
+                    }
+                }
+            }
+        }
+
+        // Fallback 2: Pick the topmost visible open window that is NOT excluded
+        var openWindows = GetOpenWindows();
+        var candidate = openWindows.Find(w => !w.IsMinimized && !IsExcluded(w.ProcessName, w.Title));
+        if (candidate != null)
+        {
+            RecordExternalWindow(candidate);
+            return candidate;
+        }
+
+        return null;
     }
 
     [DllImport("user32.dll")]

@@ -91,6 +91,43 @@ class ActionTypeEnum(str, Enum):
     DETERMINISTIC_RETRIEVAL = "deterministic_retrieval"
     VERIFY_READBACK = "verify_readback"
     USER_AUTHORIZATION = "user_authorization"
+    # General-Purpose Capabilities & Workspace Extension Actions
+    FILE_LIST_DIRECTORY = "file_list_directory"
+    FILE_CREATE_WRITE = "file_create_write"
+    FILE_READ = "file_read"
+    WORKSPACE_RUN_CODE = "workspace_run_code"
+    WORKSPACE_INDEX_DIRECTORY = "workspace_index_directory"
+    IMAGE_EDIT = "image_edit"
+    IMAGE_EDIT_STYLE = "image_edit_style"
+    DATA_ANALYZE_TABULAR = "data_analyze_tabular"
+    ARTIFACT_GENERATE = "artifact_generate"
+    ARTIFACT_GENERATE_DOCUMENT = "artifact_generate_document"
+    ARTIFACT_GENERATE_SPREADSHEET = "artifact_generate_spreadsheet"
+    DOCUMENT_INGEST_FILE = "document_ingest_file"
+    DOCUMENT_SEARCH_KNOWLEDGE = "document_search_knowledge"
+    DOCUMENT_COMPARE_SOURCES = "document_compare_sources"
+    BROWSER_OPEN_TAB = "browser_open_tab"
+    BROWSER_SEARCH_IN_TAB = "browser_search_in_tab"
+    WINDOWS_ENUMERATE_CONTROLS = "windows_enumerate_controls"
+    WINDOWS_INVOKE_CONTROL = "windows_invoke_control"
+    BROWSER_GET_ACTIVE_TAB = "browser_get_active_tab"
+    BROWSER_GET_PAGE_CONTENT = "browser_get_page_content"
+    BROWSER_TAB_OBSERVE = "browser_tab_observe"
+    BROWSER_FILL_FORM = "browser_fill_form"
+    BROWSER_GET_VALUES = "browser_get_values"
+    WINDOWS_SET_CONTROL_TEXT = "windows_set_control_text"
+    WINDOWS_GET_CONTROL_TEXT = "windows_get_control_text"
+    WINDOWS_INSPECT_WINDOW = "windows_inspect_window"
+    WINDOWS_LAUNCH_APP = "windows_launch_app"
+    WINDOWS_CLICK_CONTROL = "windows_click_control"
+    WINDOWS_SET_VOLUME = "windows_set_volume"
+    WINDOWS_GET_VOLUME = "windows_get_volume"
+    BROWSER_SCROLL_TAB = "browser_scroll_tab"
+    BROWSER_CLICK_ELEMENT = "browser_click_element"
+    BROWSER_NAVIGATE = "browser_navigate"
+    RESEARCH_WEB_MULTIHOP = "research_web_multihop"
+    STATE_MUTATION = "state_mutation"
+    GENERIC_CAPABILITY_ACTION = "generic_capability_action"
 
 
 class Session(BaseModel):
@@ -240,12 +277,15 @@ class TaskStep(BaseModel):
 
 
 class TaskContract(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="allow")
     taskId: UUID = Field(default_factory=uuid4)
     sessionId: UUID
     goal: str
     taskType: str = "combined_retrieval_and_action"  # retrieval_only, action_only, combined_retrieval_and_action
     status: TaskStatusEnum = TaskStatusEnum.CREATED
+    origin: str = "user"
+    summary: Optional[str] = None
+    error: Optional[str] = None
     createdAt: datetime = Field(default_factory=utc_now)
     completedAt: Optional[datetime] = None
     steps: List[TaskStep] = Field(default_factory=list)

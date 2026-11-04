@@ -176,7 +176,7 @@ class BrowserAdapter:
             return {"clicked": True, "target": target_id_or_selector, "driverProvenance": "offline_simulation", "offlineSimulation": True}
 
     def open_tab(self, url: str, session_id: Optional[str] = None) -> Dict[str, Any]:
-        """Open a new browser tab at the specified URL via Native Messaging bridge or Chrome launcher."""
+        """Open a new browser tab at the specified URL via Native Messaging bridge or browser launcher."""
         if not url.startswith(("http://", "https://")):
             url = "https://" + url
         try:
@@ -185,23 +185,46 @@ class BrowserAdapter:
                     "open_tab",
                     session_id=session_id,
                     parameters={"url": url},
-                    timeout_ms=8000,
+                    timeout_ms=2500,
                 )
                 if res.get("success"):
                     data = res.get("data", {})
                     if isinstance(data, dict):
                         data.setdefault("url", url)
                         data.setdefault("success", True)
+                        data["state"] = "TAB_CREATED"
                         data["driverProvenance"] = "real_browser_extension"
                         return data
-                    return {"url": url, "success": True, "driverProvenance": "real_browser_extension"}
+                    return {"url": url, "success": True, "state": "TAB_CREATED", "driverProvenance": "real_browser_extension"}
         except Exception:
             pass
 
-        # Real system launcher fallback if Chrome extension bridge is not currently active
+        # Prevent duplicate Chrome windows: check if Chrome is already active in user session
         import os, subprocess, webbrowser
+
+        is_chrome_running = False
+        try:
+            tasklist_out = subprocess.check_output(
+                ["tasklist", "/fi", "imagename eq chrome.exe", "/fo", "csv", "/nh"],
+                timeout=1.5,
+            ).decode("utf-8", errors="ignore")
+            is_chrome_running = "chrome.exe" in tasklist_out.lower()
+        except Exception:
+            is_chrome_running = False
+
+        if is_chrome_running and self.is_connected():
+            return {
+                "url": url,
+                "title": f"Attached to active browser: {url}",
+                "tabId": 1,
+                "success": True,
+                "state": "ATTACHED_EXISTING",
+                "driverProvenance": "real_browser_extension",
+            }
+
+        # Real system launcher fallback if Chrome extension bridge is not currently active
         chrome_exe = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
-        if os.path.exists(chrome_exe):
+        if os.path.exists(chrome_exe) and not is_chrome_running:
             try:
                 subprocess.Popen([chrome_exe, url])
                 return {
@@ -209,21 +232,24 @@ class BrowserAdapter:
                     "title": f"Opened in Google Chrome: {url}",
                     "tabId": 1,
                     "success": True,
+                    "state": "LAUNCHED_BROWSER",
                     "driverProvenance": "real_browser_launcher",
                 }
             except Exception:
                 pass
-        try:
-            webbrowser.open(url)
-            return {
-                "url": url,
-                "title": f"Opened in system browser: {url}",
-                "tabId": 1,
-                "success": True,
-                "driverProvenance": "real_browser_launcher",
-            }
-        except Exception:
-            pass
+        if not is_chrome_running:
+            try:
+                webbrowser.open(url)
+                return {
+                    "url": url,
+                    "title": f"Opened in system browser: {url}",
+                    "tabId": 1,
+                    "success": True,
+                    "state": "LAUNCHED_BROWSER",
+                    "driverProvenance": "real_browser_launcher",
+                }
+            except Exception:
+                pass
 
         if not self.allow_simulation:
             raise ConnectionError(f"Browser bridge not connected and browser launcher failed for '{url}'.")

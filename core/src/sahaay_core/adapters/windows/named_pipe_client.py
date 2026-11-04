@@ -87,15 +87,7 @@ class NamedPipeClient:
         timeout_ms: int = 3000,
     ) -> Dict[str, Any]:
         """Send a typed command to the Sahaay Windows Controller via Named Pipe with strict bounded timeout."""
-        # Fast non-blocking pre-check: verify pipe exists before creating handle
-        pipe_wait_timeout = min(timeout_ms, 50)
-        has_pipe = WaitNamedPipeW(self.pipe_path, pipe_wait_timeout)
-        if not has_pipe:
-            err = kernel32.GetLastError()
-            raise ConnectionError(
-                f"Named Pipe '{self.pipe_path}' is not reachable (Win32 Error: {err}). "
-                "Ensure native daemon is running."
-            )
+        ERROR_PIPE_BUSY = 231
 
         handle = CreateFileW(
             self.pipe_path,
@@ -107,12 +99,28 @@ class NamedPipeClient:
             None,
         )
 
-        if handle in (INVALID_HANDLE_VALUE, -1, None, 0):
-            error_code = kernel32.GetLastError()
-            raise ConnectionError(
-                f"Could not connect to Named Pipe '{self.pipe_path}' (Win32 Error: {error_code}). "
-                "Ensure native daemon is running."
-            )
+        if handle in (INVALID_HANDLE_VALUE, -1, None, 0, 18446744073709551615):
+            err = kernel32.GetLastError()
+            if err == ERROR_PIPE_BUSY:
+                # Pipe server exists but is busy; wait briefly
+                pipe_wait_timeout = min(timeout_ms, 50)
+                if WaitNamedPipeW(self.pipe_path, pipe_wait_timeout):
+                    handle = CreateFileW(
+                        self.pipe_path,
+                        GENERIC_READ | GENERIC_WRITE,
+                        0,
+                        None,
+                        OPEN_EXISTING,
+                        FILE_ATTRIBUTE_NORMAL,
+                        None,
+                    )
+
+            if handle in (INVALID_HANDLE_VALUE, -1, None, 0, 18446744073709551615):
+                err = kernel32.GetLastError()
+                raise ConnectionError(
+                    f"Named Pipe '{self.pipe_path}' is not reachable (Win32 Error: {err}). "
+                    "Ensure native daemon is running."
+                )
 
         try:
             req_payload = {

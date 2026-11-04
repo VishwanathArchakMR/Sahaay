@@ -6,9 +6,11 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from sahaay_core.adapters.windows.adapter import WindowsNativeAdapter
+from sahaay_core.perception.observation_coordinator import ObservationCoordinator
 
 router = APIRouter(prefix="/windows", tags=["Windows Controller"])
 adapter = WindowsNativeAdapter()
+observation_coordinator = ObservationCoordinator(windows_adapter=adapter)
 
 
 class InspectWindowRequest(BaseModel):
@@ -75,3 +77,39 @@ async def observe_window(req: ObserveWindowRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=503, detail=str(ce)) from ce
     except Exception as ex:
         raise HTTPException(status_code=500, detail=str(ex)) from ex
+
+
+@router.get("/live-observation", response_model=Dict[str, Any])
+async def get_live_observation() -> Dict[str, Any]:
+    """Capture a target-aware real-time observation of the active desktop surface, strictly excluding Sahaay UI."""
+    obs = observation_coordinator.observe(goal="observe active external target")
+    semantic = obs.semantic_data or {}
+    visual = obs.visual_data or {}
+    has_target = obs.freshness_status == "live"
+    active_win = None
+    target_hwnd = obs.target.hwnd or semantic.get("hwnd", 0)
+    if target_hwnd and target_hwnd > 0:
+        active_win = {
+            "hwnd": target_hwnd,
+            "title": obs.target.name or semantic.get("windowTitle", ""),
+            "processName": obs.target.process_name or semantic.get("processName", ""),
+            "bounds": obs.target.bounds or semantic.get("bounds"),
+        }
+
+    return {
+        "observationId": obs.observation_id,
+        "timestamp": obs.timestamp,
+        "mode": obs.mode.value,
+        "source": "windows_companion",
+        "isConnected": adapter.is_connected(),
+        "isStale": False,
+        "freshnessStatus": obs.freshness_status,
+        "hasExternalTarget": has_target,
+        "activeWindow": active_win,
+        "focusedControl": semantic.get("focusedElement"),
+        "elementsCount": semantic.get("elementsCount", 0),
+        "elements": semantic.get("elements", []),
+        "screenshotDataUri": visual.get("screenshotDataUri"),
+        "isSahaayExcluded": obs.is_sahaay_excluded,
+        "message": obs.message,
+    }

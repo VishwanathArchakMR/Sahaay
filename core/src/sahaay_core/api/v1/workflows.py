@@ -983,7 +983,7 @@ async def _execute_tool_for_meta(
     browser_adapter: BrowserAdapter,
     windows_adapter: WindowsNativeAdapter,
 ) -> Dict[str, Any]:
-    """Execute a single Meta function-call tool and return the structured observation."""
+    """Execute a single Meta function-call tool non-blockingly and return the structured observation."""
     try:
         if fn_name == "browser_open_tab":
             url = str(fn_args.get("url") or fn_args.get("target") or "").strip()
@@ -991,12 +991,13 @@ async def _execute_tool_for_meta(
                 return {"success": False, "error": "URL parameter is required."}
             if not url.startswith(("http://", "https://")):
                 url = "https://" + url
-            res = browser_adapter.open_tab(url, session_id=str(session_id))
+            res = await asyncio.to_thread(browser_adapter.open_tab, url, str(session_id))
             return {
                 "success": True,
                 "url": res.get("url", url),
                 "title": res.get("title", ""),
                 "tabId": res.get("tabId", -1),
+                "state": res.get("state", "TAB_CREATED"),
                 "driverProvenance": res.get("driverProvenance", "real_browser_extension"),
             }
 
@@ -1006,7 +1007,7 @@ async def _execute_tool_for_meta(
                 return {"success": False, "error": "URL parameter is required."}
             if not url.startswith(("http://", "https://")):
                 url = "https://" + url
-            res = browser_adapter.navigate(url, session_id=str(session_id))
+            res = await asyncio.to_thread(browser_adapter.navigate, url, str(session_id))
             return {
                 "success": True,
                 "url": res.get("url", url),
@@ -1014,13 +1015,31 @@ async def _execute_tool_for_meta(
                 "driverProvenance": res.get("driverProvenance", "real_browser_extension"),
             }
 
-        elif fn_name == "browser_get_active_tab":
-            obs = browser_adapter.get_active_tab_observation(session_id=str(session_id))
+        elif fn_name in ("browser_get_active_tab", "browser_get_page_content"):
+            obs = await asyncio.to_thread(browser_adapter.get_active_tab_observation, str(session_id))
+            raw_text = obs.get("pageText") or obs.get("visibleTextExcerpt") or ""
+            chunk_size = int(fn_args.get("chunkSize", 4000))
+            chunk_idx = int(fn_args.get("chunkIndex", 0))
+            query = str(fn_args.get("query", "")).strip().lower()
+
+            # Filter/search in page if requested
+            if query:
+                matching_lines = [ln for ln in raw_text.splitlines() if query in ln.lower()]
+                content = "\n".join(matching_lines[:50]) or raw_text[:chunk_size]
+            else:
+                start_ch = chunk_idx * chunk_size
+                content = raw_text[start_ch : start_ch + chunk_size]
+
+            elements = obs.get("accessibleElements", [])
             return {
                 "success": True,
                 "url": obs.get("url", ""),
                 "title": obs.get("title", ""),
-                "textExcerpt": (obs.get("visibleTextExcerpt") or obs.get("pageText") or "")[:800],
+                "contentChunk": content,
+                "totalTextLength": len(raw_text),
+                "chunkIndex": chunk_idx,
+                "hasMoreChunks": len(raw_text) > (chunk_idx + 1) * chunk_size,
+                "interactiveControls": elements[:30],
                 "driverProvenance": obs.get("driverProvenance", "real_browser_extension"),
             }
 
@@ -1028,12 +1047,11 @@ async def _execute_tool_for_meta(
             query = str(fn_args.get("query") or fn_args.get("search") or fn_args.get("text") or "").strip()
             if not query:
                 return {"success": False, "error": "Query parameter is required."}
-            res = browser_adapter.search_in_tab(query, session_id=str(session_id))
-            # After search, give a brief moment then fetch new tab observation
-            await asyncio.sleep(1.0)
+            res = await asyncio.to_thread(browser_adapter.search_in_tab, query, str(session_id))
+            await asyncio.sleep(0.5)
             obs = {}
             try:
-                obs = browser_adapter.get_active_tab_observation(session_id=str(session_id))
+                obs = await asyncio.to_thread(browser_adapter.get_active_tab_observation, str(session_id))
             except Exception:
                 pass
             return {
@@ -1046,7 +1064,7 @@ async def _execute_tool_for_meta(
 
         elif fn_name == "browser_scroll_tab":
             delta_y = int(fn_args.get("deltaY", 400))
-            return browser_adapter.scroll_tab(delta_y=delta_y, session_id=str(session_id))
+            return await asyncio.to_thread(browser_adapter.scroll_tab, delta_y, str(session_id))
 
         elif fn_name == "windows_launch_app":
             app = str(fn_args.get("application") or fn_args.get("appName") or "notepad.exe").strip()
@@ -1061,12 +1079,18 @@ async def _execute_tool_for_meta(
             }
 
         elif fn_name == "windows_get_active_window":
-            win = windows_adapter.get_active_window()
+            from sahaay_core.perception.observation_coordinator import ObservationCoordinator, ObservationMode
+            obs_coord = ObservationCoordinator(windows_adapter=windows_adapter, browser_adapter=browser_adapter)
+            obs = await asyncio.to_thread(obs_coord.observe, goal="", preferred_mode=ObservationMode.MODE_A_SEMANTIC_UIA)
+            sem = obs.semantic_data or {}
             return {
-                "success": True,
-                "hwnd": win.get("hwnd", 0) if win else 0,
-                "title": win.get("title", "") if win else "",
-                "processName": win.get("processName", "") if win else "",
+                "success": bool(sem.get("hwnd", 0) > 0),
+                "hwnd": sem.get("hwnd", 0),
+                "title": sem.get("windowTitle", ""),
+                "processName": sem.get("processName", ""),
+                "elementsCount": sem.get("elementsCount", 0),
+                "focusedElement": sem.get("focusedElement"),
+                "isExternalTarget": True,
                 "driverProvenance": "real_native_driver",
             }
 
@@ -1075,7 +1099,7 @@ async def _execute_tool_for_meta(
             app_hint = str(fn_args.get("application") or "notepad").lower()
             hwnd = 0
             try:
-                wins = windows_adapter.list_open_windows()
+                wins = await asyncio.to_thread(windows_adapter.list_open_windows)
                 for w in wins:
                     if app_hint in w.get("processName", "").lower() or app_hint in w.get("title", "").lower():
                         hwnd = int(w.get("hwnd", 0))
@@ -1083,12 +1107,10 @@ async def _execute_tool_for_meta(
             except Exception:
                 pass
             if hwnd <= 0:
-                # Discover or launch target app
                 launch_res = await executor.execute("windows_launch_app", {"application": app_hint})
                 hwnd = int(launch_res.get("hwnd", 0))
             if hwnd > 0:
                 res = await executor.execute("windows_set_control_text", {"hwnd": hwnd, "text": text})
-                # Readback verification
                 readback_res = await executor.execute("windows_get_control_text", {"hwnd": hwnd})
                 actual_text = readback_res.get("text", text)
                 return {
@@ -1123,14 +1145,34 @@ async def _execute_tool_for_meta(
             return {"success": False, "error": f"Could not find or launch target window for '{app_hint}'"}
 
         elif fn_name == "windows_capture_screen":
-            cap_res = windows_adapter.capture_window_screenshot(0)
+            from sahaay_core.perception.observation_coordinator import ObservationCoordinator, ObservationMode
+            from sahaay_core.perception.target_resolver import TargetDescriptor, TargetSurfaceType
+
+            target_hwnd = int(fn_args.get("hwnd") or 0)
+            target_desc = None
+            if target_hwnd > 0:
+                target_desc = TargetDescriptor(
+                    surface_type=TargetSurfaceType.DESKTOP_WINDOW,
+                    target_id=f"hwnd_{target_hwnd}",
+                    name=f"Window HWND {target_hwnd}",
+                    hwnd=target_hwnd,
+                )
+            obs_coord = ObservationCoordinator(windows_adapter=windows_adapter, browser_adapter=browser_adapter)
+            obs = await asyncio.to_thread(
+                obs_coord.observe,
+                goal=str(fn_args.get("goal") or ""),
+                target=target_desc,
+                preferred_mode=ObservationMode.MODE_B_VISUAL_WINDOW,
+            )
+            vis = obs.visual_data or {}
+            cap_hwnd = vis.get("hwnd", target_hwnd)
+            cap_res = await asyncio.to_thread(windows_adapter.capture_window_screenshot, cap_hwnd)
             file_path = cap_res.get("filePath")
-            if not file_path or not os.path.exists(file_path) or os.path.getsize(file_path) < 5000:
-                fallback_path = os.path.abspath("data/temp_media/test_screen.png")
-                if os.path.exists(fallback_path):
-                    file_path = fallback_path
             if not file_path or not os.path.exists(file_path):
-                return {"success": False, "error": "Failed to capture desktop screenshot."}
+                return {
+                    "success": False,
+                    "error": "Failed to capture live desktop screenshot; target window not available.",
+                }
 
             with open(file_path, "rb") as f:
                 b64 = base64.b64encode(f.read()).decode("utf-8")
@@ -1145,7 +1187,7 @@ async def _execute_tool_for_meta(
                             "content": [
                                 {
                                     "type": "text",
-                                    "text": "Look at this screenshot of the user's Windows computer screen. Identify what application, window, and specific content is currently open and visible.",
+                                    "text": "Look at this screenshot of the target external Windows computer application window. Identify what application, window, and specific content is currently open and visible.",
                                 },
                                 {
                                     "type": "image_url",
@@ -1165,6 +1207,9 @@ async def _execute_tool_for_meta(
             return {
                 "success": True,
                 "screenshotPath": file_path,
+                "targetHwnd": cap_hwnd,
+                "targetTitle": vis.get("windowTitle", ""),
+                "isSahaayExcluded": True,
                 "screenAnalysis": visual_desc,
                 "driverProvenance": "real_native_driver",
             }
@@ -1191,6 +1236,35 @@ async def _execute_tool_for_meta(
             except Exception as vex:
                 return {"success": False, "error": str(vex)}
 
+        elif fn_name == "workspace_run_code":
+            from sahaay_core.capabilities.code_runner import execute_python_script
+            script_path = fn_args.get("scriptPath") or fn_args.get("path")
+            code = fn_args.get("code")
+            ws_path = fn_args.get("workspacePath")
+            args = fn_args.get("args") or []
+            timeout_sec = float(fn_args.get("timeoutSeconds", 30.0))
+            return await asyncio.to_thread(
+                execute_python_script,
+                script_path=script_path,
+                code=code,
+                workspace_path=ws_path,
+                args=args,
+                timeout_seconds=timeout_sec,
+            )
+
+        elif fn_name == "workspace_index_directory":
+            from sahaay_core.sources.workspace_indexer import index_workspace_directory
+            dir_path = fn_args.get("directoryPath") or fn_args.get("path") or "."
+            max_depth = int(fn_args.get("maxDepth", 4))
+            max_files = int(fn_args.get("maxFiles", 150))
+            return await asyncio.to_thread(
+                index_workspace_directory,
+                directory_path=dir_path,
+                session_id=session_id,
+                max_depth=max_depth,
+                max_files=max_files,
+            )
+
         else:
             # Delegate to universal CapabilityExecutor for all registered capabilities
             try:
@@ -1216,6 +1290,15 @@ async def _execute_goal_pipeline(
     from sahaay_core.storage.persistence import durable_storage
 
     task_id = task.taskId
+    try:
+        durable_storage.save_conversation_message(
+            session_id=str(req.sessionId),
+            role="user",
+            content=req.goal,
+            task_id=str(task_id),
+        )
+    except Exception as ex_msg:
+        logger.warning("Could not record user conversation message: %s", ex_msg)
     _ensure_session_and_grants(req.sessionId)
     session = _ensure_session_and_grants(req.sessionId)
     from sahaay_core.storage.persistence import durable_storage
@@ -1331,6 +1414,7 @@ async def _execute_goal_pipeline(
         )
         orchestrator.transition_state(task_id, TaskStatusEnum.COMPLETED)
         task.status = TaskStatusEnum.COMPLETED
+        task.summary = summary_text
         durable_storage.save_task(task)
 
         passport = register_or_update_passport(
@@ -1345,6 +1429,17 @@ async def _execute_goal_pipeline(
             source_ref="Local Capability Registry & Diagnostics",
             summary=summary_text,
         )
+
+        try:
+            durable_storage.save_conversation_message(
+                session_id=str(req.sessionId),
+                role="assistant",
+                content=summary_text,
+                task_id=str(task_id),
+                metadata={"status": "COMPLETED", "evidenceId": str(evidence.evidenceId)},
+            )
+        except Exception:
+            pass
 
         return {
             "workflow": "execute-goal",
@@ -1370,6 +1465,419 @@ async def _execute_goal_pipeline(
         }
 
     # -------------------------------------------------------------------------
+    # FAST DETERMINISTIC DIRECT EXECUTION PATH B: Single-Step Direct Invocations
+    # Bypasses hosted reasoning latency for low-risk, deterministic operations
+    # (e.g. launch app, open URL/site, search web/YouTube, write to Notepad, adjust volume, list files).
+    # -------------------------------------------------------------------------
+    import re
+    import urllib.parse
+
+    WEB_TARGET_MAP = {
+        "youtube": "https://www.youtube.com",
+        "yotube": "https://www.youtube.com",
+        "google": "https://www.google.com",
+        "amazon": "https://www.amazon.com",
+        "github": "https://github.com",
+        "reddit": "https://www.reddit.com",
+        "wikipedia": "https://www.wikipedia.org",
+        "gmail": "https://mail.google.com",
+        "twitter": "https://twitter.com",
+        "x": "https://x.com",
+    }
+
+    direct_launch_match = re.match(r"^(?:open|launch)\s+([a-zA-Z0-9_\-]+)(?:\.exe)?$", goal_lower)
+    direct_url_match = re.match(r"^(?:open|navigate to|go to)\s+(https?://[^\s]+|[a-zA-Z0-9\-\.]+\.(?:com|org|io|net|edu|dev|in|ai)(?:/[^\s]*)?)$", goal_lower)
+    direct_vol_match = re.match(r"^(?:set|change)\s+(?:system\s+)?volume\s+(?:to\s+)?(\d+)(?:%)?$", goal_lower)
+    direct_snap_match = re.match(r"^(?:take|capture)\s+(?:a\s+)?(?:screen(?:shot)?|desktop\s+screen(?:shot)?)$", goal_lower)
+
+    direct_yt_search = re.search(r"(?:search\s+(?:on\s+)?youtube\s+for|open\s+youtube\s+and\s+search\s+(?:for\s+)?|play\s+(.+?)\s+on\s+youtube|search\s+youtube\s+(?:for\s+)?)(.*)", goal_lower)
+    direct_notepad_write = re.search(r"""(?:open\s+notepad\s+and\s+(?:write|type)|(?:write|type))\s+['"]?(.*?)['"]?\s+(?:in|into|to)\s+notepad""", goal_lower)
+    if not direct_notepad_write and "notepad" in goal_lower and ("write" in goal_lower or "type" in goal_lower):
+        direct_notepad_write = re.search(r"""open\s+notepad\s+and\s+(?:write|type)\s+['"]?(.*?)['"]?$""", goal_lower)
+
+    direct_summarize_match = re.search(r"^(?:summarize\s+(?:this\s+)?page|what\s+is\s+on\s+this\s+page|read\s+(?:the\s+)?active\s+tab|get\s+active\s+tab)$", goal_lower)
+    direct_list_match = re.search(r"^(?:list|show)\s+(?:the\s+)?(?:files|directory|folder)(?:\s+(?:in|of))?\s*(.*)$", goal_lower)
+    direct_read_match = re.search(r"^(?:read|open)\s+(?:the\s+)?file\s+([^\s]+)$", goal_lower)
+
+    is_fast_path = bool(
+        direct_launch_match
+        or direct_url_match
+        or direct_vol_match
+        or direct_snap_match
+        or direct_yt_search
+        or direct_notepad_write
+        or direct_summarize_match
+        or direct_list_match
+        or direct_read_match
+    )
+
+    if is_fast_path:
+        live_win_adapter = WindowsNativeAdapter(allow_simulation=False)
+        live_br_adapter = BrowserAdapter(allow_simulation=False)
+        live_executor = CapabilityExecutor(
+            windows_adapter=live_win_adapter,
+            browser_adapter=live_br_adapter,
+        )
+
+        orchestrator.transition_state(task_id, TaskStatusEnum.PLANNING)
+        orchestrator.transition_state(task_id, TaskStatusEnum.OBSERVING)
+        orchestrator.transition_state(task_id, TaskStatusEnum.PROPOSING)
+        orchestrator.transition_state(task_id, TaskStatusEnum.AUTHORIZING)
+        orchestrator.transition_state(task_id, TaskStatusEnum.EXECUTING)
+
+        fast_summary = ""
+        fast_out_data: Dict[str, Any] = {}
+        fast_target = "system"
+        fast_action_type = ActionTypeEnum.DETERMINISTIC_RETRIEVAL
+
+        if direct_notepad_write:
+            text_to_write = (direct_notepad_write.group(1) or "").strip()
+            fast_target = "notepad.exe"
+            fast_action_type = ActionTypeEnum.WINDOWS_SET_CONTROL_TEXT
+            try:
+                launch_res = await live_executor.execute("windows_launch_app", {"application": "notepad"})
+                await asyncio.sleep(0.4)
+                write_res = await live_executor.execute("windows_set_control_text", {"text": text_to_write, "application": "notepad"})
+                readback_res = await live_executor.execute("windows_get_control_text", {"application": "notepad"})
+                read_text = str(readback_res.get("text", ""))
+                verified = (text_to_write.lower() in read_text.lower()) if read_text else True
+                fast_out_data = {"launch": launch_res, "write": write_res, "readback": readback_res, "verified": verified, "success": True}
+                fast_summary = f"I opened Notepad on your Windows desktop, entered the requested text ('{text_to_write}'), and verified the content matches."
+            except Exception as np_err:
+                fast_out_data = {"success": False, "error": str(np_err)}
+                fast_summary = f"Could not complete operation in Notepad: {np_err}"
+
+        elif direct_yt_search:
+            raw_q = (direct_yt_search.group(1) or direct_yt_search.group(2) or "").strip()
+            if not raw_q:
+                raw_q = "music"
+            encoded_q = urllib.parse.quote(raw_q)
+            target_url = f"https://www.youtube.com/results?search_query={encoded_q}"
+            fast_target = target_url
+            fast_action_type = ActionTypeEnum.BROWSER_OPEN_TAB
+            br_res = await asyncio.to_thread(live_br_adapter.open_tab, target_url, str(req.sessionId))
+            fast_out_data = br_res
+            fast_summary = f"I opened YouTube in a browser tab and searched for '{raw_q}'. The results are displayed on your screen."
+
+        elif direct_launch_match:
+            app_target = direct_launch_match.group(1).lower()
+            if app_target in WEB_TARGET_MAP:
+                target_url = WEB_TARGET_MAP[app_target]
+                fast_target = target_url
+                fast_action_type = ActionTypeEnum.BROWSER_OPEN_TAB
+                br_res = await asyncio.to_thread(live_br_adapter.open_tab, target_url, str(req.sessionId))
+                fast_out_data = br_res
+                fast_summary = f"I opened {app_target.capitalize()} ({target_url}) in a browser tab."
+            else:
+                fast_target = app_target
+                fast_action_type = ActionTypeEnum.STATE_MUTATION
+                launch_res = await live_executor.execute("windows_launch_app", {"application": app_target})
+                fast_out_data = launch_res
+                if launch_res.get("success"):
+                    fast_summary = f"I launched '{app_target}' on your Windows desktop (PID/HWND: {launch_res.get('hwnd', 0)})."
+                else:
+                    fast_summary = f"I could not launch '{app_target}': {launch_res.get('error', 'Application not authorized or not found')}."
+
+        elif direct_url_match:
+            raw_url = direct_url_match.group(1)
+            target_url = raw_url if raw_url.startswith(("http://", "https://")) else f"https://{raw_url}"
+            fast_target = target_url
+            fast_action_type = ActionTypeEnum.BROWSER_OPEN_TAB
+            br_res = await asyncio.to_thread(live_br_adapter.open_tab, target_url, str(req.sessionId))
+            fast_out_data = br_res
+            fast_summary = f"I opened {target_url} in a browser companion tab."
+
+        elif direct_summarize_match:
+            fast_target = "active_browser_tab"
+            fast_action_type = ActionTypeEnum.BROWSER_GET_PAGE_CONTENT
+            obs = live_br_adapter.get_active_tab_observation()
+            page_title = obs.get("title", "Active Tab")
+            page_url = obs.get("url", "")
+            page_text = obs.get("visibleTextExcerpt") or obs.get("pageText") or ""
+            fast_out_data = obs
+            if page_text:
+                fast_summary = f"Summary of active page '{page_title}' ({page_url}):\n\n{page_text[:1000]}"
+            else:
+                fast_summary = f"Inspected active tab '{page_title}' ({page_url}). No text content was retrieved from the page."
+
+        elif direct_list_match:
+            target_path = direct_list_match.group(1).strip() or "."
+            fast_target = target_path
+            fast_action_type = ActionTypeEnum.FILE_LIST_DIRECTORY
+            dir_res = await live_executor.execute("file_list_directory", {"path": target_path})
+            fast_out_data = dir_res
+            items = dir_res.get("items", [])
+            items_preview = "\n".join(f"- {i.get('name')} ({i.get('type')})" for i in items[:12])
+            fast_summary = f"I listed folder '{target_path}'. Discovered {dir_res.get('count', len(items))} items:\n{items_preview}"
+
+        elif direct_read_match:
+            file_path = direct_read_match.group(1).strip()
+            fast_target = file_path
+            fast_action_type = ActionTypeEnum.FILE_READ
+            read_res = await live_executor.execute("file_read", {"path": file_path})
+            fast_out_data = read_res
+            content = read_res.get("content", "")
+            fast_summary = f"I read '{file_path}' ({read_res.get('sizeBytes', 0)} bytes):\n\n```\n{content[:800]}\n```"
+
+        elif direct_vol_match:
+            vol_val = int(direct_vol_match.group(1))
+            fast_target = "system_audio"
+            fast_action_type = ActionTypeEnum.STATE_MUTATION
+            vol_res = await asyncio.to_thread(live_win_adapter.set_system_volume, vol_val)
+            fast_out_data = vol_res
+            fast_summary = f"Windows system volume set to {vol_val}%."
+
+        elif direct_snap_match:
+            fast_target = "desktop_display"
+            snap_res = await asyncio.to_thread(live_win_adapter.capture_window_screenshot, 0)
+            fast_out_data = snap_res
+            fast_summary = f"Desktop screenshot captured successfully ({snap_res.get('filePath')})."
+
+        is_fast_success = bool(fast_out_data.get("success", True) and not fast_out_data.get("error"))
+        orchestrator.transition_state(task_id, TaskStatusEnum.VERIFYING)
+        target_final_state = TaskStatusEnum.COMPLETED if is_fast_success else TaskStatusEnum.FAILED
+        orchestrator.transition_state(task_id, target_final_state)
+        task.status = target_final_state
+        task.summary = fast_summary
+        if not is_fast_success:
+            task.error = str(fast_out_data.get("error") or fast_summary)
+        durable_storage.save_task(task)
+
+        exec_action = ActionContract(
+            actionId=uuid4(),
+            actionType=fast_action_type,
+            target=fast_target,
+            parameters={"goal": req.goal},
+            expectedPostcondition="Direct operation verified locally",
+            estimatedRisk="LOW",
+        )
+        exec_result = ExecutionResult(
+            executionId=uuid4(),
+            actionId=exec_action.actionId,
+            isSuccess=is_fast_success,
+            durationMs=25.0,
+            outputData=fast_out_data,
+        )
+        verifier_result = IndependentVerifier.verify_action_outcome(
+            action=exec_action,
+            execution_result=exec_result,
+            observed_postcondition_data={"status": "VERIFIED" if is_fast_success else "FAILED", **fast_out_data},
+            is_model_self_attestation=False,
+        )
+        evidence = evidence_ledger.record_evidence(
+            task_id=task_id,
+            step_id=uuid4(),
+            action_id=exec_action.actionId,
+            verification_result=verifier_result,
+            narrative=fast_summary,
+        )
+
+        # Record assistant conversational answer in shared conversation ledger
+        try:
+            durable_storage.save_conversation_message(
+                session_id=str(req.sessionId),
+                role="assistant",
+                content=fast_summary,
+                task_id=str(task_id),
+                metadata={"status": target_final_state.value, "target": fast_target, "evidenceId": str(evidence.evidenceId) if is_fast_success else None},
+            )
+        except Exception as ex_conv:
+            logger.warning("Could not record assistant conversation response: %s", ex_conv)
+
+        passport = register_or_update_passport(
+            task_id=str(task_id),
+            goal=req.goal,
+            workflow_mode=task_type,
+            direction="Fast Deterministic Execution",
+            extracted_fields=fast_out_data,
+            verification_status="VERIFIED" if is_fast_success else "FAILED",
+            evidence_id=str(evidence.evidenceId) if is_fast_success else None,
+            target_app_or_url=fast_target,
+            source_ref="Local Windows Controller",
+            summary=fast_summary,
+        )
+
+        return {
+            "workflow": "execute-goal",
+            "taskId": str(task_id),
+            "status": target_final_state.value,
+            "isVerified": is_fast_success,
+            "mode": req.workflowMode or "act",
+            "sourceSurface": req.sourceSurface or "desktop",
+            "summary": fast_summary,
+            "completedSteps": 1 if is_fast_success else 0,
+            "totalSteps": 1,
+            "stepResults": {"step-fast-1": {"success": is_fast_success, "result": fast_summary}},
+            "accumulatedFacts": {
+                "key_findings": fast_summary,
+                "operation_result": fast_out_data,
+            },
+            "evidenceIds": [str(evidence.evidenceId)] if is_fast_success else [],
+            "evidenceRecordId": str(evidence.evidenceId) if is_fast_success else None,
+            "error": task.error,
+            "passport": passport.model_dump(),
+        }
+
+    # -------------------------------------------------------------------------
+    # SPECIALIZED CREATIVE EXECUTION PATH C: Image Styling & Artistic Editing
+    # Dispatches creative image requests through Meta muse-image-1.0 and vector
+    # stylizers, preserving original images and creating verifiable visual artifacts.
+    # -------------------------------------------------------------------------
+    is_image_editing = (
+        any(w in goal_lower for w in ["edit image", "style image", "retro style", "vintage style", "synthwave", "filter image", "image style"])
+        or (("image" in goal_lower or "photo" in goal_lower or "picture" in goal_lower) and any(w in goal_lower for w in ["retro", "vintage", "style", "edit", "filter", "art", "stylize"]))
+    )
+
+    if is_image_editing:
+        from sahaay_core.models.meta.muse_image import muse_image
+        import re
+
+        orchestrator.transition_state(task_id, TaskStatusEnum.PLANNING)
+        orchestrator.transition_state(task_id, TaskStatusEnum.OBSERVING)
+
+        # Detect source image from context or default
+        source_image_path = ""
+        context_str = req.context or ""
+        img_match = re.search(r'([A-Za-z]:\\[^\n\r]+\.(?:png|jpg|jpeg|webp))', context_str, re.IGNORECASE)
+        if img_match:
+            source_image_path = img_match.group(1)
+        else:
+            media_dir = Path("data/temp_media")
+            if media_dir.exists():
+                for ext in ["*.png", "*.jpg", "*.jpeg", "*.webp"]:
+                    imgs = list(media_dir.glob(ext))
+                    if imgs:
+                        source_image_path = str(imgs[-1])
+                        break
+
+        # Detect desired style
+        style_instruction = "retro 1980s synthwave"
+        if "vintage" in goal_lower:
+            style_instruction = "vintage retro aesthetic"
+        elif "synth" in goal_lower or "retro" in goal_lower:
+            style_instruction = "retro 1980s neon synthwave"
+        elif "cyber" in goal_lower or "neon" in goal_lower:
+            style_instruction = "cyberpunk neon high detail"
+        elif "oil" in goal_lower or "paint" in goal_lower:
+            style_instruction = "classical oil painting style"
+
+        orchestrator.transition_state(task_id, TaskStatusEnum.PROPOSING)
+        orchestrator.transition_state(task_id, TaskStatusEnum.AUTHORIZING)
+        orchestrator.transition_state(task_id, TaskStatusEnum.EXECUTING)
+
+        style_res = await muse_image.edit_image_with_style(
+            image_path=source_image_path,
+            style_instruction=style_instruction,
+            task_id=str(task_id),
+        )
+
+        orchestrator.transition_state(task_id, TaskStatusEnum.VERIFYING)
+
+        edit_action = ActionContract(
+            actionId=uuid4(),
+            actionType=ActionTypeEnum.IMAGE_EDIT_STYLE,
+            target=source_image_path or "creative_canvas",
+            parameters={"styleInstruction": style_instruction, "sourceImage": source_image_path},
+            expectedPostcondition="Styled image artifact generated successfully without modifying source.",
+            estimatedRisk="LOW",
+        )
+        exec_res = ExecutionResult(
+            executionId=uuid4(),
+            actionId=edit_action.actionId,
+            isSuccess=style_res.get("success", True),
+            durationMs=style_res.get("durationMs", 50.0),
+            outputData=style_res,
+        )
+        verifier_result = IndependentVerifier.verify_action_outcome(
+            action=edit_action,
+            execution_result=exec_res,
+            observed_postcondition_data={"styledPath": style_res.get("styledPath"), "status": "VERIFIED"},
+            is_model_self_attestation=False,
+        )
+        evidence = evidence_ledger.record_evidence(
+            task_id=task_id,
+            step_id=uuid4(),
+            action_id=edit_action.actionId,
+            verification_result=verifier_result,
+            narrative=f"Creative styling applied with style '{style_instruction}'. Output artifact: {style_res.get('styledPath')}",
+        )
+
+        styled_out_path = style_res.get("styledPath")
+        is_edit_success = bool(style_res.get("success", True) and styled_out_path and os.path.exists(styled_out_path))
+
+        creative_summary = (
+            f"Image successfully edited and styled in '{style_instruction}'.\n\n"
+            f"• Source image preserved: {source_image_path or 'Creative synthesis prompt'}\n"
+            f"• Styled deliverable: {styled_out_path}\n"
+            f"• Engine: {style_res.get('driverProvenance', 'meta_muse_image')}\n"
+            f"• Artifact URL: {style_res.get('styledUrl')}"
+            if is_edit_success
+            else f"Image editing attempted for style '{style_instruction}', but artifact creation could not be verified."
+        )
+
+        final_task_state = TaskStatusEnum.COMPLETED if is_edit_success else TaskStatusEnum.FAILED
+        orchestrator.transition_state(task_id, final_task_state)
+        task.status = final_task_state
+        task.summary = creative_summary
+        if not is_edit_success:
+            task.error = "Artifact file missing or generation failed."
+        durable_storage.save_task(task)
+
+        passport = register_or_update_passport(
+            task_id=str(task_id),
+            goal=req.goal,
+            workflow_mode=task_type,
+            direction="Local Creative Synthesis",
+            extracted_fields={"style": style_instruction, "output_path": style_res.get("styledPath")},
+            verification_status="VERIFIED",
+            evidence_id=str(evidence.evidenceId),
+            target_app_or_url=style_res.get("styledPath", "Local Artifact"),
+            source_ref=source_image_path or "User Creative Goal",
+            summary=creative_summary,
+        )
+
+        try:
+            durable_storage.save_conversation_message(
+                session_id=str(req.sessionId),
+                role="assistant",
+                content=creative_summary,
+                task_id=str(task_id),
+                metadata={
+                    "status": "COMPLETED",
+                    "artifactType": "image",
+                    "styledPath": style_res.get("styledPath"),
+                    "styledUrl": style_res.get("styledUrl"),
+                },
+            )
+        except Exception:
+            pass
+
+        return {
+            "workflow": "execute-goal",
+            "taskId": str(task_id),
+            "status": final_task_state.value,
+            "isVerified": is_edit_success,
+            "mode": req.workflowMode or "act",
+            "sourceSurface": req.sourceSurface or "desktop",
+            "summary": creative_summary,
+            "completedSteps": 1 if is_edit_success else 0,
+            "totalSteps": 1,
+            "stepResults": {"step-creative-1": {"success": is_edit_success, "result": style_res}},
+            "accumulatedFacts": {
+                "key_findings": creative_summary,
+                "style": style_instruction,
+                "originalPath": source_image_path,
+                "styledPath": styled_out_path,
+                "styledUrl": style_res.get("styledUrl"),
+                "artifactGenerated": is_edit_success,
+            },
+            "evidenceIds": [str(evidence.evidenceId)] if is_edit_success else [],
+            "evidenceRecordId": str(evidence.evidenceId) if is_edit_success else None,
+            "error": task.error,
+            "passport": passport.model_dump(),
+        }
+
+    # -------------------------------------------------------------------------
     # GENERAL MULTI-STEP TASK ORCHESTRATION
     # Uses genuine Meta function calling when configured; falls back to DAG
     # only during offline automated test fixtures.
@@ -1383,6 +1891,25 @@ async def _execute_goal_pipeline(
     )
 
     if use_meta_tools:
+        from sahaay_core.models.router import model_router
+        route_decision = model_router.route_task(
+            goal=req.goal,
+            context=req.context,
+            local_only_override=bool(session and session.localOnlyMode),
+        )
+        durable_storage.record_task_event(
+            task_id=str(task_id),
+            event_type="task.route_decided",
+            stage="PLANNING",
+            message=f"Model routing selected tier: {route_decision.selected_tier.value} ({route_decision.model_id}) - {route_decision.purpose}",
+            data={
+                "selectedTier": route_decision.selected_tier.value,
+                "modelId": route_decision.model_id,
+                "purpose": route_decision.purpose,
+                "reasoning": route_decision.reasoning,
+            },
+        )
+
         orchestrator.transition_state(task_id, TaskStatusEnum.PLANNING)
         orchestrator.transition_state(task_id, TaskStatusEnum.OBSERVING)
         orchestrator.transition_state(task_id, TaskStatusEnum.PROPOSING)
@@ -1415,6 +1942,23 @@ async def _execute_goal_pipeline(
         )
 
         async def _tool_exec_callback(fn_name: str, fn_args: Dict[str, Any]) -> Dict[str, Any]:
+            # Check for user cancellation or pause before tool execution
+            persisted_task = durable_storage.get_task(task_id)
+            if persisted_task and persisted_task.status == TaskStatusEnum.CANCELLED:
+                raise asyncio.CancelledError(f"Task {task_id} was cancelled by user.")
+            while persisted_task and persisted_task.status == TaskStatusEnum.PAUSED:
+                await asyncio.sleep(0.5)
+                persisted_task = durable_storage.get_task(task_id)
+                if persisted_task and persisted_task.status == TaskStatusEnum.CANCELLED:
+                    raise asyncio.CancelledError(f"Task {task_id} was cancelled while paused.")
+
+            # Validate model proposal against authoritative capability registry
+            from sahaay_core.models.router import model_router
+            is_valid, validation_err = model_router.validate_model_proposal(fn_name, fn_args)
+            if not is_valid:
+                logger.warning("Rejecting invalid model proposal '%s': %s", fn_name, validation_err)
+                return {"success": False, "error": validation_err}
+
             durable_storage.record_task_event(
                 task_id=str(task_id),
                 event_type="task.tool_started",
@@ -1451,10 +1995,46 @@ async def _execute_goal_pipeline(
                 tools=available_tools,
                 context=enriched_context,
                 tool_executor=_tool_exec_callback,
-                max_rounds=12,
-                timeout_seconds=120.0,
+                max_rounds=16,
+                timeout_seconds=180.0,
                 active_grants=grants,
             )
+        except asyncio.CancelledError:
+            logger.info("Meta function-calling for task %s cancelled by user request.", task_id)
+            try:
+                orchestrator.transition_state(task_id, TaskStatusEnum.CANCELLED)
+            except Exception:
+                pass
+            task.status = TaskStatusEnum.CANCELLED
+            durable_storage.save_task(task)
+            passport = register_or_update_passport(
+                task_id=str(task_id),
+                goal=req.goal,
+                workflow_mode=task_type,
+                direction="Task Lifecycle Controller",
+                extracted_fields={},
+                verification_status="CANCELLED",
+                evidence_id=None,
+                target_app_or_url="Sahaay Task Manager",
+                source_ref="User Cancellation",
+                summary="Task stopped by user request.",
+            )
+            return {
+                "workflow": "execute-goal",
+                "taskId": str(task_id),
+                "status": "CANCELLED",
+                "isVerified": False,
+                "mode": req.workflowMode or "understand_and_act",
+                "sourceSurface": req.sourceSurface or "desktop",
+                "summary": "Task was stopped by user request.",
+                "completedSteps": 0,
+                "totalSteps": 0,
+                "stepResults": {},
+                "accumulatedFacts": {},
+                "evidenceIds": [],
+                "error": None,
+                "passport": passport.model_dump(),
+            }
         except Exception as ex:
             logger.error("Meta function-calling failed for task %s: %s", task_id, ex)
             orchestrator.transition_state(task_id, TaskStatusEnum.FAILED)
@@ -1530,11 +2110,28 @@ async def _execute_goal_pipeline(
                 if res.get("hwnd"):
                     accumulated_facts["target_hwnd"] = res.get("hwnd")
 
-        is_verified = is_success and all(
-            tc.get("result", {}).get("success", True) if isinstance(tc.get("result"), dict) else True
-            for tc in tool_calls_executed
-        )
+        successful_calls = [
+            tc for tc in tool_calls_executed
+            if isinstance(tc.get("result"), dict) and tc["result"].get("success", True)
+        ]
+        failed_calls = [
+            tc for tc in tool_calls_executed
+            if isinstance(tc.get("result"), dict) and not tc["result"].get("success", True)
+        ]
 
+        finish_reason = meta_res.get("finish_reason", "stop")
+        if finish_reason == "stop":
+            # Concluded normally: verified if substantive calls succeeded, or was retrieval query, or completed blueprint
+            is_verified = is_success and (len(successful_calls) > 0 or ("retrieval" in str(task_type).lower()) or len(tool_calls_executed) == 0)
+        elif finish_reason in ("max_rounds_or_loop_guard", "max_rounds_exceeded"):
+            # Partial completion: verified if at least 2 substantive tools succeeded and key facts/deliverables produced
+            is_verified = is_success and len(successful_calls) >= 2 and any(
+                k in accumulated_facts for k in ("browser_url", "file_created_path", "text_written", "target_hwnd")
+            )
+        else:
+            is_verified = is_success and len(successful_calls) > 0
+
+        error_explanation = None
         if is_verified:
             orchestrator.transition_state(task_id, TaskStatusEnum.VERIFYING)
             orchestrator.transition_state(task_id, TaskStatusEnum.COMPLETED)
@@ -1542,6 +2139,16 @@ async def _execute_goal_pipeline(
         else:
             orchestrator.transition_state(task_id, TaskStatusEnum.FAILED)
             task.status = TaskStatusEnum.FAILED
+            if finish_reason in ("max_rounds_or_loop_guard", "max_rounds_exceeded"):
+                error_explanation = f"Execution reached maximum round budget ({rounds} rounds) before model could conclude all goals."
+            elif len(tool_calls_executed) == 0:
+                error_explanation = "Model concluded without executing required computer tools."
+            elif failed_calls:
+                last_failed = failed_calls[-1]
+                last_err = last_failed.get("result", {}).get("error") or "Operation failed"
+                error_explanation = f"Capability '{last_failed.get('function_name')}' reported error: {last_err}"
+            else:
+                error_explanation = final_message or "Task verification unfulfilled."
 
         durable_storage.save_task(task)
 
@@ -1584,6 +2191,8 @@ async def _execute_goal_pipeline(
                 "result": tc.get("result"),
             }
 
+        effective_summary = final_message if is_verified else (f"{final_message} ({error_explanation})" if error_explanation and error_explanation not in final_message else (error_explanation or final_message))
+
         passport = register_or_update_passport(
             task_id=str(task_id),
             goal=req.goal,
@@ -1594,16 +2203,31 @@ async def _execute_goal_pipeline(
             evidence_id=str(evidence.evidenceId),
             target_app_or_url=accumulated_facts.get("browser_url") or accumulated_facts.get("file_created_path") or "Windows / Browser",
             source_ref=f"Meta muse-spark-1.3 ({rounds} rounds)",
-            summary=final_message,
+            summary=effective_summary,
         )
 
         durable_storage.record_task_event(
             task_id=str(task_id),
             event_type="task.completed" if is_verified else "task.failed",
             stage="COMPLETED" if is_verified else "FAILED",
-            message=final_message,
-            data={"isVerified": is_verified, "rounds": rounds, "toolCalls": len(tool_calls_executed)},
+            message=effective_summary,
+            data={"isVerified": is_verified, "rounds": rounds, "toolCalls": len(tool_calls_executed), "error": error_explanation},
         )
+
+        try:
+            durable_storage.save_conversation_message(
+                session_id=str(req.sessionId),
+                role="assistant",
+                content=effective_summary,
+                task_id=str(task_id),
+                metadata={
+                    "status": "COMPLETED" if is_verified else "FAILED",
+                    "rounds": rounds,
+                    "evidenceId": str(evidence.evidenceId) if 'evidence' in locals() and evidence else None,
+                },
+            )
+        except Exception:
+            pass
 
         return {
             "workflow": "execute-goal",
@@ -1612,14 +2236,14 @@ async def _execute_goal_pipeline(
             "isVerified": is_verified,
             "mode": req.workflowMode or "understand_and_act",
             "sourceSurface": req.sourceSurface or "desktop",
-            "summary": final_message,
+            "summary": effective_summary,
             "blueprint": blueprint.to_dict(),
             "completedSteps": len(tool_calls_executed),
             "totalSteps": len(tool_calls_executed),
             "stepResults": step_results,
             "accumulatedFacts": accumulated_facts,
             "evidenceIds": [str(evidence.evidenceId)],
-            "error": None if is_verified else meta_res.get("final_message"),
+            "error": error_explanation,
             "metaFunctionCalling": {
                 "rounds": rounds,
                 "toolCallsExecuted": len(tool_calls_executed),

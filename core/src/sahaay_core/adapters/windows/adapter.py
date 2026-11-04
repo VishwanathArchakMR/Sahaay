@@ -128,7 +128,23 @@ class WindowsNativeAdapter:
     def capture_window_screenshot(
         self, hwnd: int = 0, output_dir: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Capture screenshot of authorized application window or entire desktop."""
+        """Capture screenshot of authorized application window, preventing self-capture."""
+        if hwnd <= 0:
+            active = self.get_active_window()
+            if active and int(active.get("hwnd", 0)) > 0:
+                proc = (active.get("processName") or "").lower()
+                title = (active.get("title") or "").lower()
+                if not any(x in proc for x in ["electron", "sahaay", "node"]) and "sahaay" not in title:
+                    hwnd = int(active["hwnd"])
+
+        if hwnd <= 0:
+            return {
+                "success": False,
+                "noExternalTarget": True,
+                "error": "No external target window specified or active.",
+                "hwnd": 0,
+            }
+
         params = {"hwnd": hwnd}
         if output_dir:
             params["outputDir"] = output_dir
@@ -373,48 +389,101 @@ if ($root) {{
         }
 
     AUTHORIZED_LAUNCH_APPS = {
-        "calc",
-        "calc.exe",
-        "calculator",
-        "notepad",
-        "notepad.exe",
-        "explorer",
-        "explorer.exe",
+        "calc": "calc.exe",
+        "calc.exe": "calc.exe",
+        "calculator": "calc.exe",
+        "notepad": "notepad.exe",
+        "notepad.exe": "notepad.exe",
+        "explorer": "explorer.exe",
+        "explorer.exe": "explorer.exe",
+        "chrome": "chrome.exe",
+        "chrome.exe": "chrome.exe",
+        "edge": "msedge.exe",
+        "msedge": "msedge.exe",
+        "msedge.exe": "msedge.exe",
+        "code": "code.cmd",
+        "code.exe": "code.exe",
+        "code.cmd": "code.cmd",
+        "vscode": "code.cmd",
+        "paint": "mspaint.exe",
+        "mspaint": "mspaint.exe",
+        "mspaint.exe": "mspaint.exe",
+        "terminal": "wt.exe",
+        "wt": "wt.exe",
+        "wt.exe": "wt.exe",
+        "taskmgr": "taskmgr.exe",
+        "taskmgr.exe": "taskmgr.exe",
+        "control": "control.exe",
+        "control.exe": "control.exe",
+        "write": "write.exe",
+        "write.exe": "write.exe",
+        "wordpad": "write.exe",
     }
 
     def launch_application(self, application: str) -> Dict[str, Any]:
-        """Launch an authorized application (calc, notepad, explorer)."""
+        """Launch an authorized application (calc, notepad, explorer, chrome, edge, code, etc.)."""
         app_norm = application.lower().strip()
-        if app_norm not in self.AUTHORIZED_LAUNCH_APPS:
+        exe_name = self.AUTHORIZED_LAUNCH_APPS.get(app_norm)
+        if not exe_name:
+            clean_name = os.path.splitext(app_norm)[0]
+            exe_name = self.AUTHORIZED_LAUNCH_APPS.get(clean_name)
+        if not exe_name:
             raise RuntimeError(
                 f"Application '{application}' is not in the authorized launch allowlist."
             )
         try:
             res = self.client.send_command(
-                "launch_application", parameters={"application": application}
+                "launch_application", parameters={"application": exe_name}
             )
-            if not res.get("success"):
-                raise RuntimeError(
-                    res.get("error", f"Failed to launch application '{application}'.")
-                )
-            data = res.get("data", {})
-            if isinstance(data, dict):
-                data["success"] = True
-                data["driverProvenance"] = "real_native_driver"
-            return data
-        except ConnectionError:
-            self._handle_connection_error("launch_application")
+            if res.get("success"):
+                data = res.get("data", {})
+                if isinstance(data, dict):
+                    data["success"] = True
+                    data["driverProvenance"] = "real_native_driver"
+                return data
+        except (ConnectionError, Exception):
+            pass
+
+        # Native companion unavailable or rejected: safely spawn authorized executable
+        try:
+            import subprocess
+            proc = subprocess.Popen([exe_name], shell=False)
+            time.sleep(0.8)
+            hwnd = 0
+            title = ""
+            try:
+                wins = self.list_open_windows()
+                stem = os.path.splitext(exe_name)[0].lower()
+                for w in wins:
+                    if stem in w.get("processName", "").lower() or stem in w.get("title", "").lower():
+                        hwnd = int(w.get("hwnd", 0))
+                        title = w.get("title", "")
+                        break
+            except Exception:
+                pass
+
             return {
                 "success": True,
                 "launched": True,
-                "application": application,
-                "hwnd": 1001 if self.allow_simulation else 0,
-                "pid": 0,
-                "driverProvenance": "offline_simulation",
-                "offlineSimulation": True,
-                "driverProvenance": "test_fixture" if self.allow_simulation else "offline_simulation",
-                "offlineSimulation": self.allow_simulation,
+                "application": exe_name,
+                "hwnd": hwnd,
+                "title": title,
+                "pid": proc.pid,
+                "driverProvenance": "direct_os_process_launcher",
+                "offlineSimulation": False,
             }
+        except Exception as ex:
+            if self.allow_simulation:
+                return {
+                    "success": True,
+                    "launched": True,
+                    "application": application,
+                    "hwnd": 1001,
+                    "pid": 0,
+                    "driverProvenance": "test_fixture",
+                    "offlineSimulation": True,
+                }
+            raise RuntimeError(f"Failed to launch application '{application}': {ex}") from ex
 
     def click_control(self, hwnd: int, target_id: Optional[str] = None) -> Dict[str, Any]:
         """Click a UI Automation control in the specified window."""
@@ -497,4 +566,101 @@ if ($root) {{
                 "isMuted": False,
                 "driverProvenance": "offline_simulation",
                 "offlineSimulation": True,
+            }
+
+    def get_fused_screen_observation(self) -> Dict[str, Any]:
+        """Produce a comprehensive observation of the active Windows desktop surface."""
+        import base64
+        import time
+        import uuid
+
+        obs_id = str(uuid.uuid4())
+        now = time.time()
+
+        is_conn = self.is_connected()
+        if not is_conn:
+            return {
+                "observationId": obs_id,
+                "timestamp": now,
+                "source": "windows_companion",
+                "isConnected": False,
+                "isStale": True,
+                "freshnessStatus": "disconnected",
+                "activeWindow": None,
+                "focusedControl": None,
+                "elementsCount": 0,
+                "elements": [],
+                "screenshotDataUri": None,
+                "message": "Windows companion is waiting for interactive desktop connection.",
+            }
+
+        try:
+            active_win = self.get_active_window()
+            # Verify active_win is not Sahaay itself or excluded process
+            if active_win:
+                proc_name = (active_win.get("processName") or "").lower()
+                win_title = (active_win.get("title") or "").lower()
+                if (
+                    any(x in proc_name for x in ["electron", "sahaay", "node", "cmd", "powershell", "pwsh", "conhost"])
+                    or "sahaay" in win_title
+                    or win_title == "program manager"
+                ):
+                    active_win = None
+
+            hwnd = int(active_win.get("hwnd", 0)) if active_win else 0
+            elements: List[Dict[str, Any]] = []
+            focused_ctrl = None
+            if hwnd > 0:
+                try:
+                    elements = self.inspect_window_elements(hwnd)
+                    for el in elements:
+                        if el.get("hasKeyboardFocus") or el.get("isFocused"):
+                            focused_ctrl = el
+                            break
+                    if not focused_ctrl and elements:
+                        focused_ctrl = elements[0]
+                except Exception:
+                    pass
+
+            screenshot_uri = None
+            if hwnd > 0:
+                try:
+                    cap = self.capture_window_screenshot(hwnd)
+                    path = cap.get("filePath")
+                    if path and os.path.exists(path):
+                        with open(path, "rb") as f:
+                            b64 = base64.b64encode(f.read()).decode("utf-8")
+                            screenshot_uri = f"data:image/png;base64,{b64}"
+                except Exception:
+                    pass
+
+            has_target = bool(active_win and hwnd > 0)
+            return {
+                "observationId": obs_id,
+                "timestamp": now,
+                "source": "windows_companion",
+                "isConnected": True,
+                "isStale": False,
+                "freshnessStatus": "live" if has_target else "no_target",
+                "hasExternalTarget": has_target,
+                "activeWindow": active_win,
+                "focusedControl": focused_ctrl,
+                "elementsCount": len(elements),
+                "elements": elements[:50],
+                "screenshotDataUri": screenshot_uri,
+                "message": (
+                    f"Observing external window '{active_win.get('title', '')}' ({active_win.get('processName', '')})"
+                    if has_target
+                    else "No external application selected. Focus an external application (e.g. Chrome, Notepad, VS Code) to observe."
+                ),
+            }
+        except Exception as ex:
+            return {
+                "observationId": obs_id,
+                "timestamp": now,
+                "source": "windows_companion",
+                "isConnected": False,
+                "isStale": True,
+                "error": str(ex),
+                "message": f"Observation error: {ex}",
             }

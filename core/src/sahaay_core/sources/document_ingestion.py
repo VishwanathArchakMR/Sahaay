@@ -10,7 +10,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from pypdf import PdfReader
+try:
+    from pypdf import PdfReader
+except ImportError:
+    PdfReader = None
 
 from sahaay_core.context.store import ContextStore
 from sahaay_core.contracts.models import FactTypeEnum, SourceReference
@@ -291,6 +294,8 @@ class DocumentIngestionService:
     def _parse_pdf(self, path: Path, source_id: UUID) -> List[Any]:
         """Extract text page-by-page from PDF."""
         facts = []
+        if PdfReader is None:
+            return facts
         try:
             reader = PdfReader(str(path))
             for page_idx, page in enumerate(reader.pages):

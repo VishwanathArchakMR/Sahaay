@@ -8,21 +8,16 @@ if (Test-Path "$localDotnet\dotnet.exe") {
     $env:DOTNET_ROOT = $localDotnet
 }
 
-try {
-    $dotnetVer = dotnet --version 2>$null
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($dotnetVer)) {
-        Write-Host "[BLOCKED] No .NET SDK found. Please install the .NET 10.0 SDK to build the native companion." -ForegroundColor Yellow
-        exit 1
-    }
-} catch {
-    Write-Host "[BLOCKED] .NET CLI not found in PATH or LOCALAPPDATA." -ForegroundColor Yellow
-    exit 1
-}
-
 Push-Location "$RepoRoot\apps\windows-companion"
 try {
     Write-Host "Building Sahaay Native Companion Solution..." -ForegroundColor Cyan
-    dotnet build Sahaay.sln -c Release -p:UseSharedCompilation=false
+    & "$localDotnet\dotnet.exe" build Sahaay.sln -c Release -p:UseSharedCompilation=false --no-restore
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Building project files directly..." -ForegroundColor Yellow
+        & "$localDotnet\dotnet.exe" build Sahaay.Contracts/Sahaay.Contracts.csproj -c Release --no-restore
+        & "$localDotnet\dotnet.exe" build Sahaay.Controller/Sahaay.Controller.csproj -c Release --no-restore
+        & "$localDotnet\dotnet.exe" build Sahaay.NativeHost/Sahaay.NativeHost.csproj -c Release --no-restore
+    }
 } finally {
     Pop-Location
 }

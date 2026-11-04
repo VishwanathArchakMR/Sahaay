@@ -182,6 +182,7 @@ class Settings(BaseSettings):
         env_file=[str(REPO_ROOT / ".env"), ".env"],
         env_file_encoding="utf-8",
         extra="ignore",
+        protected_namespaces=("settings_",),
     )
 
     @property
@@ -279,8 +280,10 @@ class Settings(BaseSettings):
                 except Exception:
                     pass
         if not self.model_api_key:
-            self.model_api_key = os.environ.get(
-                "MODEL_API_KEY", os.environ.get("META_LLAMA_API_KEY", "")
+            self.model_api_key = (
+                os.environ.get("SAHAAY_MODEL_API_KEY")
+                or os.environ.get("MODEL_API_KEY")
+                or os.environ.get("META_LLAMA_API_KEY", "")
             )
 
 

@@ -160,6 +160,62 @@ async def grant_onboarding_consent(
     return _apply_onboarding_grants(session_id)
 
 
+@router.get("/active/latest", response_model=Session)
+async def get_latest_active_session() -> Session:
+    """Returns the most recent active session for cross-surface sync."""
+    from sahaay_core.storage.persistence import get_sqlite_conn
+    from datetime import datetime
+    import json
+    conn = get_sqlite_conn()
+    row = conn.execute(
+        "SELECT * FROM sessions WHERE is_active = 1 ORDER BY created_at DESC LIMIT 1"
+    ).fetchone()
+    conn.close()
+    if row:
+        sess = Session(
+            sessionId=UUID(row["session_id"]),
+            createdAt=datetime.fromisoformat(row["created_at"]),
+            expiresAt=datetime.fromisoformat(row["expires_at"]) if row["expires_at"] else None,
+            isActive=bool(row["is_active"]),
+            localOnlyMode=bool(row["local_only_mode"]),
+            metadata=json.loads(row["metadata_json"] or "{}"),
+        )
+        active_sessions[sess.sessionId] = sess
+        return sess
+
+    # Fallback create session
+    sess = Session(localOnlyMode=settings.local_only_mode)
+    durable_storage.save_session(sess)
+    _apply_meta_cloud_grants(sess.sessionId)
+    active_sessions[sess.sessionId] = sess
+    return sess
+
+
+@router.get("/{session_id}/messages")
+async def list_conversation_messages(session_id: UUID, limit: int = 100) -> List[dict]:
+    """Retrieve chronologically ordered shared conversation messages for this session."""
+    return durable_storage.list_conversation_messages(str(session_id), limit=limit)
+
+
+class PostMessageRequest(BaseModel):
+    role: str
+    content: str
+    taskId: Optional[str] = None
+    metadata: Optional[dict] = None
+
+
+@router.post("/{session_id}/messages", status_code=status.HTTP_201_CREATED)
+async def post_conversation_message(session_id: UUID, req: PostMessageRequest) -> dict:
+    """Post a user or assistant message to the shared conversation transcript."""
+    return durable_storage.save_conversation_message(
+        session_id=str(session_id),
+        role=req.role,
+        content=req.content,
+        task_id=req.taskId,
+        metadata=req.metadata,
+    )
+
+
 @router.get("/{session_id}/grants", response_model=List[ConsentGrant])
 async def list_grants(session_id: UUID) -> List[ConsentGrant]:
     """List all consent grants for a session from durable storage."""

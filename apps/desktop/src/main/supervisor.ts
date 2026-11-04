@@ -119,6 +119,9 @@ export class RuntimeSupervisor {
       }
     }
 
+    const certifiBundle = join(this.repoRoot, "core", ".venv", "Lib", "site-packages", "certifi", "cacert.pem");
+    const sslCertFile = existsSync(certifiBundle) ? certifiBundle : (process.env.SSL_CERT_FILE || "");
+
     try {
       this.backendProcess = spawn(
         pythonExe,
@@ -131,6 +134,7 @@ export class RuntimeSupervisor {
             MODEL_API_KEY: modelApiKey,
             SAHAAY_MODEL_API_KEY: modelApiKey,
             PYTHONPATH: join(this.repoRoot, "core", "src"),
+            ...(sslCertFile ? { SSL_CERT_FILE: sslCertFile } : {}),
           },
         }
       );

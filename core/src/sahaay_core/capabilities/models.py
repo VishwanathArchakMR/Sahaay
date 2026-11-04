@@ -5,7 +5,7 @@ verification, risk, and runtime properties.
 """
 
 from enum import Enum
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -77,4 +77,23 @@ class CapabilityDescriptor(BaseModel):
     )
     known_limitations: List[str] = Field(
         default_factory=list, description="Unsupported conditions or constraints"
+    )
+    # Master Execution Contract Properties (Directive Section 4)
+    action_type: Optional[str] = Field(
+        default=None, description="Mapped ActionTypeEnum action type string"
+    )
+    executor: Optional[str] = Field(
+        default=None, description="Registered executable handler/engine"
+    )
+    observation_requirements: List[str] = Field(
+        default_factory=list, description="Target observation prerequisites (e.g. semantic_uia, visual_window, browser_dom, filesystem)"
+    )
+    verification_strategy: Optional[str] = Field(
+        default=None, description="Independent verification strategy (e.g. readback_control, match_url, file_existence, hash_comparison)"
+    )
+    failure_modes: List[str] = Field(
+        default_factory=list, description="Anticipated failure modes and recovery hints"
+    )
+    authorization_requirements: List[str] = Field(
+        default_factory=list, description="Explicit authorization requirements"
     )

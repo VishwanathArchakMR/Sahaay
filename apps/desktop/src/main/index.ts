@@ -9,7 +9,7 @@
  * - supervised backend & interactive Windows companion lifecycle
  */
 
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { existsSync } from "fs";
 import { join } from "path";
 import { RuntimeSupervisor } from "./supervisor";
@@ -123,6 +123,26 @@ ipcMain.handle("sahaay:restart-component", async (event, component: "backend" | 
     return await supervisor.ensureControllerRunning();
   }
   return false;
+});
+
+ipcMain.handle("dialog:openFiles", async () => {
+  if (!mainWindow) return [];
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ["openFile", "multiSelections"],
+    title: "Select Files to Attach to Sahaay",
+  });
+  if (result.canceled) return [];
+  return result.filePaths;
+});
+
+ipcMain.handle("dialog:openDirectory", async () => {
+  if (!mainWindow) return null;
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ["openDirectory"],
+    title: "Select Project Folder / Workspace to Attach",
+  });
+  if (result.canceled) return null;
+  return result.filePaths[0] || null;
 });
 
 // Isolate userData to dedicated directory to prevent Chromium simple cache sharing conflicts

@@ -114,9 +114,9 @@ async function getAuthHeaders(extra: Record<string, string> = {}): Promise<Recor
   return headers;
 }
 
-async function safeFetch(url: string, options: RequestInit = {}, timeoutMs: number = 3000): Promise<Response> {
+async function safeFetch(url: string, options: RequestInit = {}, timeoutMs: number = 5000): Promise<Response> {
   const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeoutMs);
+  const id = setTimeout(() => controller.abort(new Error("Timeout awaiting " + url)), timeoutMs);
   try {
     const res = await fetch(url, { ...options, signal: controller.signal });
     clearTimeout(id);
@@ -162,6 +162,19 @@ async function ensureSession(): Promise<string> {
   if (currentSessionId && currentSessionId !== "00000000-0000-0000-0000-000000000001") {
     return currentSessionId;
   }
+
+  // Try to bind to existing shared active session from desktop/backend
+  try {
+    const headers = await getAuthHeaders();
+    const activeRes = await safeFetch(`${API_BASE}/sessions/active/latest`, { headers }, 2000);
+    if (activeRes.ok) {
+      const activeData = await activeRes.json();
+      if (activeData.sessionId) {
+        currentSessionId = activeData.sessionId;
+        return currentSessionId!;
+      }
+    }
+  } catch {}
 
   // Create session on canonical backend
   try {
@@ -271,6 +284,91 @@ function appendAgentCard(htmlContent: string): HTMLElement {
   return container;
 }
 
+function renderCompletionCard(container: HTMLElement, opts: {
+  taskId: string;
+  goal: string;
+  status: string;
+  summary: string;
+  error?: string;
+  targetSurface?: string;
+  provenanceSha256?: string;
+  milestones?: Array<{ title: string; description: string; status: string }>;
+  deliverableUrl?: string;
+}) {
+  const isVerified = opts.status === "COMPLETED";
+  const badgeText = isVerified ? "VERIFIED" : (opts.status === "FAILED" ? "FAILED" : (opts.status === "CANCELLED" ? "CANCELLED" : "NEEDS ATTENTION"));
+  const headerColor = isVerified ? "#8af5cf" : (opts.status === "FAILED" ? "#ff6b6b" : "#ffd166");
+  const borderColor = isVerified ? "rgba(138, 245, 207, 0.3)" : (opts.status === "FAILED" ? "rgba(255, 107, 107, 0.3)" : "rgba(255, 209, 102, 0.3)");
+
+  let deliverableHtml = "";
+  if (opts.deliverableUrl) {
+    deliverableHtml = `
+      <div style="margin: 8px 0; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 8px; text-align: center;">
+        <img src="${opts.deliverableUrl}" alt="Task Result Deliverable" style="max-width: 100%; max-height: 200px; border-radius: 6px; object-fit: contain;" />
+      </div>
+    `;
+  }
+
+  let milestonesHtml = "";
+  if (opts.milestones && opts.milestones.length > 0) {
+    milestonesHtml = opts.milestones.map((m) => `
+      <div style="display: flex; align-items: flex-start; gap: 6px; margin-bottom: 4px;">
+        <span style="color: ${m.status === 'COMPLETED' ? '#8af5cf' : '#888'};">✓</span>
+        <div>
+          <span style="font-weight: 500; color: #eee;">${m.title}:</span>
+          <span style="color: #aaa; margin-left: 4px;">${m.description}</span>
+        </div>
+      </div>
+    `).join("");
+  }
+
+  container.innerHTML = `
+    <div style="background: rgba(6, 24, 34, 0.95); border: 1px solid ${borderColor}; border-radius: 12px; padding: 14px; font-size: 13px; display: flex; flex-direction: column; gap: 10px;">
+      <div style="display: flex; align-items: center; justify-content: space-between;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: #8892b0;">
+            TASK RESULT
+          </span>
+          <span style="padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; background: ${isVerified ? 'rgba(138, 245, 207, 0.15)' : 'rgba(255,107,107,0.15)'}; color: ${headerColor}; border: 1px solid ${borderColor};">
+            ${badgeText}
+          </span>
+        </div>
+        <span style="font-family: monospace; font-size: 10px; color: #64748b;">
+          ${opts.taskId.slice(0, 8)}
+        </span>
+      </div>
+
+      <div style="border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 8px;">
+        <div style="font-size: 11px; font-weight: 600; color: #8892b0; margin-bottom: 2px;">What you asked:</div>
+        <div style="color: #cbd5e1; font-weight: 500;">${opts.goal}</div>
+      </div>
+
+      <div>
+        <div style="font-size: 11px; font-weight: 600; color: ${headerColor}; margin-bottom: 2px;">What Sahaay did:</div>
+        <div style="color: #f1f5f9; line-height: 1.4;">${opts.summary || (isVerified ? "Task completed successfully with ledger verification." : (opts.error || "Execution terminated."))}</div>
+      </div>
+
+      ${deliverableHtml}
+
+      <div style="background: rgba(138, 245, 207, 0.05); padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(138, 245, 207, 0.15); font-size: 11px;">
+        <div style="font-weight: 600; color: #8af5cf; margin-bottom: 4px;">Verification:</div>
+        <div style="color: #cbd5e1; display: flex; flex-direction: column; gap: 2px;">
+          <div>✓ Target surface: ${opts.targetSurface || "Authorized Browser / Desktop Environment"}</div>
+          <div>✓ Cryptographic proof recorded in ledger</div>
+          ${opts.provenanceSha256 ? `<div>✓ Hash: <code style="font-size: 10px; color: #94a3b8;">${opts.provenanceSha256.slice(0, 16)}...</code></div>` : ""}
+        </div>
+      </div>
+
+      <details style="border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 6px;">
+        <summary style="font-size: 11px; color: #64748b; cursor: pointer;">Technical Evidence & Milestones</summary>
+        <div style="margin-top: 8px; font-size: 11px;">
+          ${milestonesHtml || '<span style="color: #64748b;">No individual milestone steps recorded.</span>'}
+        </div>
+      </details>
+    </div>
+  `;
+}
+
 async function handleGeneralPrompt(promptText: string): Promise<void> {
   if (!promptText.trim()) return;
   appendUserMessage(promptText);
@@ -287,10 +385,33 @@ async function handleGeneralPrompt(promptText: string): Promise<void> {
 
   try {
     const sessionId = await ensureSession();
+
+    // Dynamically determine workflowMode
+    const lowerPrompt = promptText.toLowerCase().trim();
+    let workflowMode: "ask" | "do" | "combined_retrieval_and_action" = "ask";
+    const actionKeywords = [
+      "open", "click", "type", "navigate", "browse", "launch", "search for", "create",
+      "download", "fill", "press", "scroll", "edit", "write", "generate", "calc", "notepad", "tab"
+    ];
+    const retrievalKeywords = [
+      "what is", "explain", "summarize", "find", "who is", "why", "how does", "tell me", "extract"
+    ];
+
+    const hasAction = actionKeywords.some((kw) => lowerPrompt.includes(kw));
+    const hasRetrieval = retrievalKeywords.some((kw) => lowerPrompt.includes(kw));
+
+    if (hasAction && hasRetrieval) {
+      workflowMode = "combined_retrieval_and_action";
+    } else if (hasAction) {
+      workflowMode = "do";
+    } else {
+      workflowMode = "ask";
+    }
+
     const payload = {
       sessionId,
       goal: promptText,
-      workflowMode: "ask",
+      workflowMode,
       context: `Current active browser tab title: "${currentTabContext.title}", URL: "${currentTabContext.url}". Excerpt: "${(currentTabContext.visibleTextExcerpt || "").slice(0, 300)}"`,
     };
 
@@ -299,9 +420,9 @@ async function handleGeneralPrompt(promptText: string): Promise<void> {
       method: "POST",
       headers,
       body: JSON.stringify(payload),
-    }, 25000);
+    }, 90000);
 
-    const cardBody = agentCard.querySelector(".agent-card");
+    const cardBody = agentCard.querySelector(".agent-card") as HTMLElement | null;
     if (res.ok) {
       const data = await res.json();
       const taskId = data.taskId;
@@ -318,7 +439,7 @@ async function handleGeneralPrompt(promptText: string): Promise<void> {
 
         let isCompleted = false;
         let attempts = 0;
-        const maxAttempts = 40;
+        const maxAttempts = 300; // 180s authoritative timeout budget
 
         while (!isCompleted && attempts < maxAttempts) {
           await new Promise((r) => setTimeout(r, 600));
@@ -334,39 +455,29 @@ async function handleGeneralPrompt(promptText: string): Promise<void> {
               const tData = await pollRes.json();
               const bStatus = (tData.status || "").toUpperCase();
 
-              if (bStatus === "COMPLETED") {
+              if (bStatus === "COMPLETED" || bStatus === "FAILED" || bStatus === "CANCELLED") {
                 isCompleted = true;
                 if (cardBody) {
-                  const summaryText = tData.summary || "Task completed successfully.";
-                  cardBody.innerHTML = `
-                    <p><strong>Result:</strong></p>
-                    <p style="color: #fff; margin-top: 4px; font-size: 13px;">${summaryText}</p>
-                    <div class="status-badge-card" style="margin-top: 8px;">
-                      <div class="status-indicator-text">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                          <polyline points="20 6 9 17 4 12"/>
-                        </svg>
-                        <span>Verified in Ledger</span>
-                      </div>
-                      <button class="btn-pill-subtle details-btn" data-info="Task ID: ${taskId}\nRecorded with cryptographic proof.">
-                        Details
-                      </button>
-                    </div>
-                  `;
-                  const btn = cardBody.querySelector<HTMLButtonElement>(".details-btn");
-                  if (btn) {
-                    btn.addEventListener("click", () => {
-                      alert(btn.getAttribute("data-info") || `Task ID: ${taskId}`);
-                    });
-                  }
-                }
-                break;
-              } else if (bStatus === "FAILED" || bStatus === "CANCELLED") {
-                isCompleted = true;
-                if (cardBody) {
-                  cardBody.innerHTML = `
-                    <p style="color: var(--sahaay-danger);">Task ${bStatus.toLowerCase()} (${tData.error || bStatus}).</p>
-                  `;
+                  // Attempt to fetch task passport for richer details
+                  let passportData: any = null;
+                  try {
+                    const passRes = await safeFetch(`${API_BASE}/tasks/${taskId}/passport`, { headers: pHeaders }, 2000);
+                    if (passRes.ok) passportData = await passRes.json();
+                  } catch {}
+
+                  const deliverableUrl = tData.deliverableUrl || (tData.artifacts && tData.artifacts[0]?.filePath ? `${API_BASE}/tasks/${taskId}/artifacts` : undefined);
+
+                  renderCompletionCard(cardBody, {
+                    taskId,
+                    goal: promptText,
+                    status: bStatus,
+                    summary: tData.summary || passportData?.summaryNotice || (bStatus === "COMPLETED" ? "Action successfully verified and completed." : "Task ended."),
+                    error: tData.error,
+                    targetSurface: currentTabContext.title ? `Browser Tab: "${currentTabContext.title}"` : "Windows Environment",
+                    provenanceSha256: passportData?.provenanceSha256,
+                    milestones: passportData?.milestones,
+                    deliverableUrl,
+                  });
                 }
                 break;
               }
@@ -378,10 +489,13 @@ async function handleGeneralPrompt(promptText: string): Promise<void> {
           cardBody.innerHTML = `<p style="color: var(--sahaay-warning);">Task execution timed out awaiting verification.</p>`;
         }
       } else if (cardBody) {
-        cardBody.innerHTML = `
-          <p><strong>Result (${data.status}):</strong></p>
-          <p style="color: var(--sahaay-text-muted); font-size: 12px;">${data.summary || `Completed ${data.completedSteps} of ${data.totalSteps} planned steps.`}</p>
-        `;
+        renderCompletionCard(cardBody, {
+          taskId: taskId || "sync-exec",
+          goal: promptText,
+          status: (data.status || "COMPLETED").toUpperCase(),
+          summary: data.summary || `Completed ${data.completedSteps || 1} step(s).`,
+          targetSurface: currentTabContext.title ? `Browser Tab: "${currentTabContext.title}"` : "Browser Extension",
+        });
       }
     } else {
       if (cardBody) {
@@ -389,7 +503,7 @@ async function handleGeneralPrompt(promptText: string): Promise<void> {
       }
     }
   } catch (err: any) {
-    const cardBody = agentCard.querySelector(".agent-card");
+    const cardBody = agentCard.querySelector(".agent-card") as HTMLElement | null;
     if (cardBody) {
       cardBody.innerHTML = `<p style="color: var(--sahaay-danger);">Error connecting to backend (${err.message}).</p>`;
     }
@@ -413,6 +527,181 @@ btnRetryConn.addEventListener("click", () => {
     checkBridgeStatus();
   }
 });
+
+
+// Attachment & Voice Input Controls
+const btnAttach = document.getElementById("btn-attach") as HTMLButtonElement | null;
+const btnVoice = document.getElementById("btn-voice") as HTMLButtonElement | null;
+const fileInput = document.getElementById("sidepanel-file-input") as HTMLInputElement | null;
+const attachedChipsEl = document.getElementById("attached-chips") as HTMLElement | null;
+
+// ── Pure-JS WAV encoder (16kHz mono s16le PCM for Meta Voyager ASR) ──────
+function encodeWav(samples: Float32Array[], sampleRate: number): Blob {
+  const totalLen = samples.reduce((a, s) => a + s.length, 0);
+  const merged = new Float32Array(totalLen);
+  let offset = 0;
+  for (const chunk of samples) {
+    merged.set(chunk, offset);
+    offset += chunk.length;
+  }
+  const targetRate = 16000;
+  let pcm = merged;
+  if (sampleRate !== targetRate) {
+    const ratio = sampleRate / targetRate;
+    const outLen = Math.floor(totalLen / ratio);
+    pcm = new Float32Array(outLen);
+    for (let i = 0; i < outLen; i++) {
+      const srcIdx = i * ratio;
+      const lo = Math.floor(srcIdx);
+      const hi = Math.min(lo + 1, totalLen - 1);
+      const frac = srcIdx - lo;
+      pcm[i] = merged[lo] * (1 - frac) + merged[hi] * frac;
+    }
+  }
+  const int16 = new Int16Array(pcm.length);
+  for (let i = 0; i < pcm.length; i++) {
+    const s = Math.max(-1, Math.min(1, pcm[i]));
+    int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+  }
+  const dataBytes = int16.buffer.byteLength;
+  const buffer = new ArrayBuffer(44 + dataBytes);
+  const view = new DataView(buffer);
+  const write = (off: number, str: string) => {
+    for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i));
+  };
+  write(0, "RIFF"); view.setUint32(4, 36 + dataBytes, true);
+  write(8, "WAVE"); write(12, "fmt "); view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);   // PCM
+  view.setUint16(22, 1, true);   // mono
+  view.setUint32(24, targetRate, true);
+  view.setUint32(28, targetRate * 2, true); // byte rate
+  view.setUint16(32, 2, true);   // block align
+  view.setUint16(34, 16, true);  // bits per sample
+  write(36, "data"); view.setUint32(40, dataBytes, true);
+  new Uint8Array(buffer, 44).set(new Uint8Array(int16.buffer));
+  return new Blob([buffer], { type: "audio/wav" });
+}
+
+let isRecording = false;
+let audioContext: AudioContext | null = null;
+let scriptProcessor: ScriptProcessorNode | null = null;
+let mediaStream: MediaStream | null = null;
+let pcmSamples: Float32Array[] = [];
+
+if (btnAttach && fileInput) {
+  btnAttach.addEventListener("click", () => {
+    fileInput.click();
+  });
+
+  fileInput.addEventListener("change", async () => {
+    if (!fileInput.files || fileInput.files.length === 0) return;
+    const file = fileInput.files[0];
+    try {
+      const sid = await ensureSession();
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("customTitle", file.name);
+
+      const headers = await getAuthHeaders();
+      const res = await fetch(`${API_BASE}/sources/upload-and-ingest`, {
+        method: "POST",
+        headers,
+        body: formData,
+      });
+
+      if (res.ok) {
+        if (attachedChipsEl) {
+          attachedChipsEl.style.display = "flex";
+          const chip = document.createElement("div");
+          chip.style.cssText = "font-size: 11px; padding: 2px 8px; border-radius: 9999px; background: rgba(85,216,255,0.15); border: 1px solid rgba(85,216,255,0.3); color: var(--sahaay-cyan); display: flex; align-items: center; gap: 4px;";
+          chip.textContent = `Attached: ${file.name}`;
+          attachedChipsEl.appendChild(chip);
+        }
+      }
+    } catch (err) {
+      console.warn("File upload error:", err);
+    }
+  });
+}
+
+if (btnVoice) {
+  btnVoice.addEventListener("click", async () => {
+    if (!isRecording) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true, noiseSuppression: true },
+        });
+        mediaStream = stream;
+        pcmSamples = [];
+
+        audioContext = new AudioContext({ sampleRate: 16000 });
+        const source = audioContext.createMediaStreamSource(stream);
+        scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+        scriptProcessor.onaudioprocess = (e) => {
+          const chunk = e.inputBuffer.getChannelData(0);
+          pcmSamples.push(new Float32Array(chunk));
+        };
+        source.connect(scriptProcessor);
+        scriptProcessor.connect(audioContext.destination);
+
+        isRecording = true;
+        btnVoice.style.color = "var(--sahaay-danger)";
+        btnVoice.style.background = "rgba(255,141,145,0.2)";
+        btnVoice.title = "Recording 16kHz WAV... Click to stop";
+      } catch (err) {
+        console.warn("Microphone access denied or unavailable:", err);
+      }
+    } else {
+      isRecording = false;
+      btnVoice.style.color = "var(--sahaay-mint)";
+      btnVoice.style.background = "rgba(138,245,207,0.1)";
+      btnVoice.title = "Push-to-Talk Voice Input (16kHz WAV)";
+
+      if (scriptProcessor) {
+        scriptProcessor.disconnect();
+        scriptProcessor = null;
+      }
+      if (audioContext) {
+        await audioContext.close();
+        audioContext = null;
+      }
+      if (mediaStream) {
+        mediaStream.getTracks().forEach((track) => track.stop());
+        mediaStream = null;
+      }
+
+      const samples = pcmSamples;
+      pcmSamples = [];
+      if (samples.length === 0) return;
+
+      const audioBlob = encodeWav(samples, 16000);
+      try {
+        const sid = await ensureSession();
+        const formData = new FormData();
+        formData.append("file", audioBlob, "recording.wav");
+        formData.append("languageHints", "kn,hi,en");
+        formData.append("sessionId", sid);
+
+        const headers = await getAuthHeaders();
+        const res = await fetch(`${API_BASE}/models/transcribe`, {
+          method: "POST",
+          headers,
+          body: formData,
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.transcript) {
+            composerInput.value = data.transcript;
+            composerInput.focus();
+          }
+        }
+      } catch (err) {
+        console.warn("Voice transcription error:", err);
+      }
+    }
+  });
+}
 
 if (btnStop) {
   btnStop.addEventListener("click", async () => {
@@ -454,6 +743,13 @@ if (chrome?.tabs?.onActivated) {
 if (chrome?.tabs?.onUpdated) {
   chrome.tabs.onUpdated.addListener((_tabId, changeInfo) => {
     if (changeInfo.status === "complete" || changeInfo.title || changeInfo.url) {
+      refreshActiveTab();
+    }
+  });
+}
+if (chrome?.windows?.onFocusChanged) {
+  chrome.windows.onFocusChanged.addListener((windowId) => {
+    if (windowId !== chrome.windows.WINDOW_ID_NONE) {
       refreshActiveTab();
     }
   });

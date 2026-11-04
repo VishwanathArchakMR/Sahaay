@@ -774,6 +774,26 @@ class MuseSparkClient:
             logger.warning("Online Meta Muse Spark planning error (%s)", ex)
             raise ModelProviderError(f"Meta Muse Spark planning failed: {ex}") from ex
 
+    def determine_reasoning_effort(self, goal: str, context: Optional[str] = None) -> str:
+        """Determine dynamic reasoning effort ('low', 'medium', 'high') based on goal complexity."""
+        g_lower = goal.lower()
+        low_keywords = [
+            "open ", "launch ", "close ", "focus ", "mute", "unmute",
+            "volume", "scroll", "maximize", "minimize", "show desktop"
+        ]
+        if any(g_lower.startswith(kw) or f" {kw}" in g_lower for kw in low_keywords) and len(g_lower.split()) <= 6:
+            return "low"
+
+        high_keywords = [
+            "research", "analyze", "analyse", "compare", "audit", "discrepan",
+            "inconsisten", "difference", "investigate", "synthesize", "deep dive",
+            "debug", "fix issue", "what is wrong", "limitation"
+        ]
+        if any(kw in g_lower for kw in high_keywords):
+            return "high"
+
+        return "medium"
+
     async def execute_with_tools(
         self,
         goal: str,
@@ -818,6 +838,7 @@ class MuseSparkClient:
         last_tool_signatures: List[str] = []
         executor_fn = tool_executor or getattr(self, "_tool_executor", None)
         last_http_status = 200
+        effort = self.determine_reasoning_effort(goal, context)
 
         while rounds < max_rounds:
             elapsed = time.perf_counter() - start_time
@@ -825,13 +846,14 @@ class MuseSparkClient:
                 raise ModelProviderError(f"Function-calling loop timed out after {elapsed:.1f}s")
 
             rounds += 1
-            logger.info("Meta function-calling round %d/%d for goal: %s", rounds, max_rounds, goal[:60])
+            logger.info("Meta function-calling round %d/%d (effort: %s) for goal: %s", rounds, max_rounds, effort, goal[:60])
 
             payload: Dict[str, Any] = {
                 "model": self.model_id,
                 "messages": messages,
                 "tools": tools,
                 "temperature": 0.1,
+                "reasoning_effort": effort,
             }
 
             try:
@@ -853,16 +875,27 @@ class MuseSparkClient:
 
             tool_calls = assistant_message.get("tool_calls") or []
 
-            # If model concluded without tool calls, we are done
+            # Anti-stall ReAct pattern: If on round 1 the model replies with conversational text without calling tools for an action goal, nudge to invoke tool
+            if rounds == 1 and not tool_calls and any(kw in goal.lower() for kw in ["open", "launch", "write", "create", "click", "search", "navigate", "find", "add to cart"]):
+                logger.info("Model returned conversational text without tool calls on round 1 for actionable goal; nudging to invoke tool directly.")
+                messages.append({
+                    "role": "user",
+                    "content": "Please proceed directly to execute this request using the available tools on the user's computer."
+                })
+                continue
+
+            # If model concluded without tool calls, evaluate whether goal has been accomplished
             if finish_reason == "stop" or not tool_calls:
                 final_text = assistant_message.get("content") or "Task completed successfully."
                 latency_ms = (time.perf_counter() - start_time) * 1000
+                is_task_fulfilled = len(executed_calls) > 0 or ("retrieval" in self.classify_task_mode(goal))
                 telemetry = {
                     "model_id": self.model_id,
                     "endpoint": "chat/completions",
                     "http_status": last_http_status,
                     "latency_ms": latency_ms,
                     "rounds": rounds,
+                    "reasoning_effort": effort,
                     "tool_calls_count": len(executed_calls),
                     "tool_names": [tc["function_name"] for tc in executed_calls],
                     "finish_reason": finish_reason,
@@ -870,10 +903,11 @@ class MuseSparkClient:
                 }
                 self.last_telemetry = telemetry
                 return {
-                    "success": True,
+                    "success": is_task_fulfilled,
                     "final_message": final_text,
                     "tool_calls_executed": executed_calls,
                     "rounds": rounds,
+                    "reasoning_effort": effort,
                     "latency_ms": latency_ms,
                     "model_id": self.model_id,
                     "finish_reason": finish_reason,

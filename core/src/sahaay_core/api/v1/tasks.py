@@ -67,10 +67,19 @@ async def cancel_task(task_id: UUID) -> TaskContract:
     """Cancel task immediately and block subsequent actions."""
     try:
         from sahaay_core.api.v1.workflows import active_workflow_tasks
+        from sahaay_core.storage.persistence import durable_storage
 
         bg_task = active_workflow_tasks.get(task_id)
         if bg_task and not bg_task.done():
             bg_task.cancel()
+
+        durable_storage.record_task_event(
+            task_id=str(task_id),
+            event_type="task.cancelled",
+            stage="CANCELLED",
+            message="Task was stopped by user request.",
+            data={"reason": "User requested stop/cancel via UI"},
+        )
         return orchestrator.cancel_task(task_id)
     except InvalidStateTransitionError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -78,10 +87,24 @@ async def cancel_task(task_id: UUID) -> TaskContract:
         raise HTTPException(status_code=404, detail=str(e)) from e
 
 
+@router.post("/{task_id}/stop", response_model=TaskContract)
+async def stop_task(task_id: UUID) -> TaskContract:
+    """Stop task execution immediately (alias for cancel)."""
+    return await cancel_task(task_id)
+
+
 @router.post("/{task_id}/pause", response_model=TaskContract)
 async def pause_task(task_id: UUID) -> TaskContract:
     """Pause task execution."""
     try:
+        from sahaay_core.storage.persistence import durable_storage
+
+        durable_storage.record_task_event(
+            task_id=str(task_id),
+            event_type="task.paused",
+            stage="PAUSED",
+            message="Task execution was paused by user.",
+        )
         return orchestrator.pause_task(task_id)
     except InvalidStateTransitionError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -91,6 +114,14 @@ async def pause_task(task_id: UUID) -> TaskContract:
 async def resume_task(task_id: UUID) -> TaskContract:
     """Resume task execution."""
     try:
+        from sahaay_core.storage.persistence import durable_storage
+
+        durable_storage.record_task_event(
+            task_id=str(task_id),
+            event_type="task.resumed",
+            stage="EXECUTING",
+            message="Task execution was resumed by user.",
+        )
         return orchestrator.resume_task(task_id)
     except InvalidStateTransitionError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -281,6 +312,45 @@ async def get_task_events(task_id: UUID, limit: int = 100):
 
     events = durable_storage.get_task_events(str(task_id), limit=limit)
     return {"taskId": str(task_id), "events": events, "count": len(events)}
+
+
+@router.get("/{task_id}/passport")
+async def get_task_passport_endpoint(task_id: str):
+    """Retrieve the authoritative Task Passport and milestone progression for a task."""
+    from sahaay_core.storage.persistence import durable_storage
+
+    passport = durable_storage.get_task_passport(str(task_id))
+    if not passport:
+        task = None
+        try:
+            from uuid import UUID as PyUUID
+            task = orchestrator.get_task(PyUUID(task_id))
+        except (ValueError, TypeError):
+            pass
+
+        if not task:
+            raise HTTPException(status_code=404, detail="Task passport not found")
+
+        events = durable_storage.get_task_events(str(task_id), limit=50)
+        return {
+            "taskId": str(task.taskId),
+            "goal": task.goal,
+            "workflowMode": "do",
+            "verificationStatus": "VERIFIED" if task.status == TaskStatusEnum.COMPLETED else ("FAILED" if task.status == TaskStatusEnum.FAILED else "UNVERIFIED"),
+            "summaryNotice": task.summary or f"Task is {task.status.value}",
+            "milestones": [
+                {
+                    "milestoneId": f"m-{i}",
+                    "title": ev.get("stage", "STAGE"),
+                    "description": ev.get("message", ""),
+                    "status": "COMPLETED" if ev.get("eventType") in ("task.completed", "action.executed") else "IN_PROGRESS",
+                    "timestamp": ev.get("timestamp", ""),
+                }
+                for i, ev in enumerate(events)
+            ],
+            "totalMilestones": len(events),
+        }
+    return passport
 
 
 @router.get("/{task_id}/blueprint")

@@ -34,6 +34,8 @@ export interface SahaayAPI {
   getApiToken: () => Promise<string>;
   getRuntimeHealth: () => Promise<RuntimeHealthReport>;
   restartComponent: (component: "backend" | "controller") => Promise<boolean>;
+  openFiles: () => Promise<string[]>;
+  openDirectory: () => Promise<string | null>;
 }
 
 const api: SahaayAPI = {
@@ -42,6 +44,8 @@ const api: SahaayAPI = {
   getRuntimeHealth: () => ipcRenderer.invoke("sahaay:get-runtime-health"),
   restartComponent: (component: "backend" | "controller") =>
     ipcRenderer.invoke("sahaay:restart-component", component),
+  openFiles: () => ipcRenderer.invoke("dialog:openFiles"),
+  openDirectory: () => ipcRenderer.invoke("dialog:openDirectory"),
 };
 
 contextBridge.exposeInMainWorld("sahaay", api);

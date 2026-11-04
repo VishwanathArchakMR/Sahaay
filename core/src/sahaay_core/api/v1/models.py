@@ -16,6 +16,7 @@ from sahaay_core.adapters.browser.adapter import BrowserAdapter
 from sahaay_core.adapters.windows.adapter import WindowsNativeAdapter
 from sahaay_core.config.settings import settings
 from sahaay_core.contracts.models import TaskContract
+from sahaay_core.hardware.gpu_detector import get_gpu_profile
 from sahaay_core.models.local.client import LocalLlamaClient
 from sahaay_core.models.local.llama_runtime import local_llama_manager
 from sahaay_core.models.meta.meta_client import MetaClient
@@ -77,15 +78,28 @@ last_meta_connectivity_result: Dict[str, Any] = {}
 
 
 def _resolve_provider_readiness(is_configured: bool, cache_key: str) -> str:
-    """Computes truthful provider readiness state: NOT_CONFIGURED, NEEDS_CONSENT, CONFIGURED_UNTESTED, AUTHENTICATED, MODEL_REQUEST_VERIFIED, UNAUTHORIZED, UNAVAILABLE, or FAILED."""
+    """Computes truthful provider readiness state:
+    NOT_CONFIGURED, NEEDS_CONSENT, CONFIGURED_UNTESTED, AUTHENTICATED, GENERATION_VERIFIED,
+    MODEL_UNAVAILABLE, UNAUTHORIZED, TLS_ERROR, NETWORK_ERROR, TIMEOUT_ERROR, or FAILED.
+    """
     if not is_configured:
         return "NOT_CONFIGURED"
     if settings.local_only_mode or not settings.hosted_models_permitted:
         return "NEEDS_CONSENT"
     cached = provider_connectivity_cache.get(cache_key, "UNTESTED")
-    if cached in ("READY", "AUTHENTICATED", "MODEL_REQUEST_VERIFIED"):
+    if cached in ("READY", "AUTHENTICATED", "MODEL_REQUEST_VERIFIED", "GENERATION_VERIFIED"):
         return cached
-    if cached in ("FAILED", "UNAUTHORIZED", "UNAVAILABLE"):
+    if cached in (
+        "FAILED",
+        "UNAUTHORIZED",
+        "GENERATION_UNAUTHORIZED",
+        "CATALOGUE_ONLY",
+        "UNAVAILABLE",
+        "MODEL_UNAVAILABLE",
+        "TLS_ERROR",
+        "NETWORK_ERROR",
+        "TIMEOUT_ERROR",
+    ):
         return cached
     return "CONFIGURED_UNTESTED"
 
@@ -121,6 +135,9 @@ async def get_models_status() -> Dict[str, Any]:
     )
     is_companion_up = windows_adapter.is_connected()
 
+    # Diagnostics breakdown from connectivity probe
+    diag = last_meta_connectivity_result.get("diagnostics", {})
+
     return {
         "metaHosted": {
             "isConfigured": meta_client.is_configured,
@@ -128,42 +145,61 @@ async def get_models_status() -> Dict[str, Any]:
             "endpoint": f"{meta_client.base_url}/models",
             "modelId": settings.muse_spark_model_id,
             "status": meta_status,
+            "generationVerified": bool(last_meta_connectivity_result.get("generationVerified")),
+            "toolCallingVerified": bool(last_meta_connectivity_result.get("toolCallingVerified")),
+            "catalogueVerified": bool(last_meta_connectivity_result.get("catalogueVerified")),
+            "remediationGuidance": last_meta_connectivity_result.get("remediationGuidance"),
             "statusCode": last_meta_connectivity_result.get(
                 "statusCode",
-                200 if meta_status in ("READY", "AUTHENTICATED", "MODEL_REQUEST_VERIFIED") else 0,
+                200 if meta_status in ("READY", "AUTHENTICATED", "MODEL_REQUEST_VERIFIED", "GENERATION_VERIFIED") else 0,
             ),
             "httpResult": last_meta_connectivity_result.get(
                 "httpResult",
                 "HTTP 200 OK"
-                if meta_status in ("READY", "AUTHENTICATED", "MODEL_REQUEST_VERIFIED")
+                if meta_status in ("READY", "AUTHENTICATED", "MODEL_REQUEST_VERIFIED", "GENERATION_VERIFIED")
                 else meta_status,
             ),
             "error": last_meta_connectivity_result.get("error"),
+            "diagnostics": {
+                "credential": diag.get("credential", "Configured" if meta_client.is_configured else "Not Configured"),
+                "tlsConnection": diag.get("tlsConnection", "Untested"),
+                "apiAuthentication": diag.get("apiAuthentication", "Untested"),
+                "catalogueAvailability": diag.get("catalogueAvailability", "Untested"),
+                "museSpark": diag.get("museSpark", "Untested"),
+                "museWonder": diag.get("museWonder", "Untested"),
+                "museVoice": diag.get("museVoice", "Untested"),
+                "sam": diag.get("sam", "Untested"),
+            },
             "models": {
                 "museSpark": {
                     "id": settings.muse_spark_model_id,
-                    "status": meta_status,
+                    "status": "GENERATION_VERIFIED" if last_meta_connectivity_result.get("generationVerified") else meta_status,
                     "role": "Semantic Reasoning & Structured Planning",
+                    "diagnostics": diag.get("museSpark", "Untested"),
                 },
                 "museWonder": {
                     "id": settings.muse_wonder_model_id,
-                    "status": meta_status,
+                    "status": "GENERATION_VERIFIED" if last_meta_connectivity_result.get("wonderVerified") else meta_status,
                     "role": "Responses API Visual Computer-Use",
+                    "diagnostics": diag.get("museWonder", "Untested"),
                 },
                 "museVoice": {
                     "id": settings.muse_voice_model_id,
-                    "status": meta_status,
+                    "status": "ASR_VERIFIED" if last_meta_connectivity_result.get("voiceVerified") else meta_status,
                     "role": "Multilingual Speech-to-Text Transcription",
+                    "diagnostics": diag.get("museVoice", "Untested"),
                 },
                 "museImage": {
                     "id": settings.muse_image_model,
                     "status": muse_image_status,
                     "role": "Task Passport Visual Milestone Storytelling",
+                    "diagnostics": "Ready" if muse_image.is_configured else "Not Configured",
                 },
                 "sam": {
                     "id": settings.sam_model_id,
-                    "status": meta_status,
+                    "status": "GROUNDING_VERIFIED" if last_meta_connectivity_result.get("samVerified") else meta_status,
                     "role": "Visual Grounding & Element Segmentation",
+                    "diagnostics": diag.get("sam", "Untested"),
                 },
             },
             "lastVerification": last_meta_connectivity_result,
@@ -193,6 +229,7 @@ async def get_models_status() -> Dict[str, Any]:
             "windowsCompanion": "CONNECTED" if is_companion_up else "DISCONNECTED",
             "sqliteLedger": "READY",
         },
+        "gpuAcceleration": get_gpu_profile(),
     }
 
 
@@ -230,7 +267,7 @@ async def test_model_connectivity() -> Dict[str, Any]:
 
     provider_connectivity_cache["meta"] = (
         meta_result.get("status", "AUTHENTICATED")
-        if meta_result.get("isHealthy") or meta_result.get("isLive")
+        if meta_result.get("isHealthy") and meta_result.get("generationVerified")
         else meta_result.get("status", "FAILED")
     )
     provider_connectivity_cache["muse_image"] = (
@@ -247,6 +284,33 @@ async def test_model_connectivity() -> Dict[str, Any]:
             "status": local_llama_manager.status.value,
             "message": local_llama_manager.status_message,
         },
+    }
+
+
+@router.post("/verify")
+async def verify_models() -> Dict[str, Any]:
+    """Explicitly verify live connectivity and all models against Meta API."""
+    return await test_model_connectivity()
+
+
+@router.get("/available")
+async def get_available_models() -> Dict[str, Any]:
+    """Return catalogue of available models from Meta API and local runtimes."""
+    if not meta_client.is_configured:
+        return {"models": [], "count": 0, "configured": False}
+
+    models = last_meta_connectivity_result.get("availableModels")
+    if not models:
+        conn = await meta_client.check_connectivity(force_live=False)
+        last_meta_connectivity_result.clear()
+        last_meta_connectivity_result.update(conn)
+        models = conn.get("availableModels", [])
+
+    return {
+        "models": models,
+        "count": len(models),
+        "configured": True,
+        "status": last_meta_connectivity_result.get("status", "CONFIGURED_UNTESTED"),
     }
 
 
@@ -275,6 +339,12 @@ async def update_model_credentials(req: UpdateCredentialsRequest) -> Dict[str, A
     muse_image.api_key = new_key
     if hasattr(muse_spark, "client"):
         muse_spark.client.api_key = new_key
+    if hasattr(muse_wonder, "client"):
+        muse_wonder.client.api_key = new_key
+    if hasattr(muse_voice, "client"):
+        muse_voice.client.api_key = new_key
+    if hasattr(sam_client, "client"):
+        sam_client.client.api_key = new_key
 
     # 2. Persist securely to REPO_ROOT/.env
     env_file = REPO_ROOT / ".env"
@@ -298,7 +368,11 @@ async def update_model_credentials(req: UpdateCredentialsRequest) -> Dict[str, A
     last_meta_connectivity_result.update(conn)
     provider_connectivity_cache["meta"] = conn.get("status", "FAILED")
 
-    is_verified = bool(conn.get("isHealthy") and conn.get("status") == "AUTHENTICATED")
+    is_verified = bool(
+        conn.get("isHealthy")
+        and conn.get("status") == "AUTHENTICATED"
+        and conn.get("generationVerified")
+    )
 
     response_payload = {
         "status": "VERIFIED_SUCCESS" if is_verified else conn.get("status", "FAILED"),

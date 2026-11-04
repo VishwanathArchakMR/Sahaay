@@ -62,7 +62,49 @@ class ExecuteScrollActionRequest(BaseModel):
 @router.get("/active-observation", response_model=Dict[str, Any])
 async def get_active_observation() -> Dict[str, Any]:
     """Retrieve the latest captured observation state and staleness flag for the active browser tab."""
-    return active_tab_state
+    from datetime import datetime, timezone
+    is_bridge_connected = adapter.is_connected()
+    is_tab_attached = adapter.is_browser_attached() if is_bridge_connected else False
+
+    # If tab is attached but cached state is empty, attempt on-demand query
+    if is_tab_attached and not active_tab_state.get("url"):
+        try:
+            live_obs = adapter.get_active_tab_observation()
+            if live_obs and live_obs.get("url"):
+                active_tab_state["url"] = live_obs.get("url")
+                active_tab_state["title"] = live_obs.get("title")
+                active_tab_state["capturedAt"] = live_obs.get("capturedAt") or datetime.now(timezone.utc).isoformat()
+                active_tab_state["visibleTextExcerpt"] = live_obs.get("visibleTextExcerpt", "")
+        except Exception:
+            pass
+
+    captured = active_tab_state.get("capturedAt")
+    is_stale = False
+    if captured:
+        try:
+            dt = datetime.fromisoformat(captured)
+            is_stale = (datetime.now(timezone.utc) - dt).total_seconds() > 30.0
+        except Exception:
+            pass
+
+    if not is_bridge_connected:
+        freshness = "disconnected"
+    elif not is_tab_attached:
+        freshness = "awaiting_tab"
+    elif is_stale:
+        freshness = "stale"
+    elif active_tab_state.get("url"):
+        freshness = "live"
+    else:
+        freshness = "no_observation"
+
+    return {
+        **active_tab_state,
+        "isBridgeConnected": is_bridge_connected,
+        "isTabAttached": is_tab_attached,
+        "isStale": is_stale,
+        "freshnessStatus": freshness,
+    }
 
 
 @router.post("/observe", response_model=Dict[str, Any])

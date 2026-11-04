@@ -10,7 +10,7 @@ from sahaay_core.contracts.models import FactTypeEnum
 from sahaay_core.main import app
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_retrieval_only_task_denies_computer_action():
     """Verify ActionGate strictly blocks computer/browser actions when task is declared retrieval_only."""
     transport = ASGITransport(app=app)
@@ -39,7 +39,7 @@ async def test_retrieval_only_task_denies_computer_action():
         assert "retrieval-only" in data["reason"].lower()
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_combined_task_satisfies_precondition_and_executes():
     """Verify combined workflow verifies retrieved fact before dispatching authorized scroll."""
     transport = ASGITransport(app=app)
@@ -85,7 +85,7 @@ async def test_combined_task_satisfies_precondition_and_executes():
         assert "evidenceId" in data
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_combined_task_skips_action_when_precondition_unmet():
     """Verify combined workflow safely skips computer action if required fact is absent."""
     transport = ASGITransport(app=app)
@@ -115,7 +115,7 @@ async def test_combined_task_skips_action_when_precondition_unmet():
         assert "not found" in data["reason"].lower()
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_combined_task_conflicts_trigger_handoff():
     """Verify conflicting facts stop execution and transition task to HANDOFF_REQUESTED."""
     transport = ASGITransport(app=app)
@@ -158,7 +158,7 @@ async def test_combined_task_conflicts_trigger_handoff():
         assert "conflicting" in data["reason"].lower()
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_browser_action_detects_stale_observation_on_navigation():
     """Verify action rejects with REOBSERVE if active browser tab navigates away."""
     transport = ASGITransport(app=app)

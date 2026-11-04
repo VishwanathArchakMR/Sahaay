@@ -3,7 +3,7 @@
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel
 
 from sahaay_core.context.store import ContextStore
@@ -211,3 +211,26 @@ async def search_sources(req: SearchSourcesRequest) -> Dict[str, Any]:
         "isModelInference": False,
         "notice": notice,
     }
+
+
+@router.post("/upload-and-ingest", status_code=status.HTTP_201_CREATED)
+async def upload_and_ingest_file(
+    file: UploadFile = File(...),
+    customTitle: Optional[str] = Form(None),
+    taskId: Optional[str] = Form(None),
+) -> Dict[str, Any]:
+    """Upload a file directly (e.g. from browser extension side panel) and ingest into context."""
+    from uuid import uuid4
+    from sahaay_core.config.settings import settings
+    upload_dir = settings.storage_dir / "uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    file_path = upload_dir / f"{uuid4().hex}_{file.filename}"
+    content = await file.read()
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    return doc_ingestion_service.ingest_file(
+        file_path_str=str(file_path),
+        custom_title=customTitle or file.filename,
+        task_id=UUID(taskId) if taskId else None,
+    )

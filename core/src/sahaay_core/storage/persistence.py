@@ -9,7 +9,7 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sahaay_core.config.settings import settings
 from sahaay_core.contracts.models import (
@@ -215,8 +215,48 @@ def init_persistence_schema() -> None:
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS conversation_messages (
+                message_id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                task_id TEXT,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                metadata_json TEXT NOT NULL DEFAULT '{}'
+            );
             """
         )
+        try:
+            conn.execute("ALTER TABLE tasks ADD COLUMN origin TEXT DEFAULT 'user';")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE tasks ADD COLUMN summary TEXT;")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE tasks ADD COLUMN error TEXT;")
+        except Exception:
+            pass
+
+        fixture_goals = [
+            "Populate form without permission",
+            "Transfer bill to desktop without grant",
+            "Resolve quota and apply settings",
+            "Interact with Page A",
+            "Cancellable task",
+            "Transfer to non-existent window handle",
+            "Quick jump test",
+        ]
+        placeholders = ",".join("?" for _ in fixture_goals)
+        try:
+            conn.execute(
+                f"UPDATE tasks SET origin = 'fixture' WHERE goal IN ({placeholders}) AND (origin IS NULL OR origin = 'user')",
+                fixture_goals,
+            )
+        except Exception:
+            pass
     conn.close()
 
 
@@ -621,8 +661,8 @@ class DurableStorage:
         with conn:
             conn.execute(
                 """
-                INSERT OR REPLACE INTO tasks (task_id, session_id, goal, task_type, status, created_at, completed_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT OR REPLACE INTO tasks (task_id, session_id, goal, task_type, status, created_at, completed_at, origin, summary, error)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     str(task.taskId),
@@ -632,6 +672,9 @@ class DurableStorage:
                     task.status.value if hasattr(task.status, "value") else str(task.status),
                     task.createdAt.isoformat(),
                     task.completedAt.isoformat() if task.completedAt else None,
+                    getattr(task, "origin", "user"),
+                    getattr(task, "summary", None),
+                    getattr(task, "error", None),
                 ),
             )
         conn.close()
@@ -643,12 +686,16 @@ class DurableStorage:
         if not row:
             return None
         steps = self.get_task_steps(task_id)
+        row_keys = row.keys() if hasattr(row, "keys") else []
         return TaskContract(
             taskId=UUID(row["task_id"]),
             sessionId=UUID(row["session_id"]),
             goal=row["goal"],
             taskType=row["task_type"],
             status=TaskStatusEnum(row["status"]),
+            origin=row["origin"] if "origin" in row_keys else "user",
+            summary=row["summary"] if "summary" in row_keys else None,
+            error=row["error"] if "error" in row_keys else None,
             createdAt=datetime.fromisoformat(row["created_at"]),
             completedAt=datetime.fromisoformat(row["completed_at"])
             if row["completed_at"]
@@ -708,15 +755,21 @@ class DurableStorage:
             )
         return steps
 
-    def list_tasks(self, limit: int = 50) -> List[TaskContract]:
+    def list_tasks(self, limit: int = 50, include_fixtures: bool = False) -> List[TaskContract]:
         conn = get_sqlite_conn()
-        rows = conn.execute(
-            "SELECT * FROM tasks ORDER BY created_at DESC LIMIT ?", (limit,)
-        ).fetchall()
+        if include_fixtures:
+            rows = conn.execute(
+                "SELECT * FROM tasks ORDER BY created_at DESC LIMIT ?", (limit,)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM tasks WHERE origin = 'user' OR origin IS NULL ORDER BY created_at DESC LIMIT ?", (limit,)
+            ).fetchall()
         conn.close()
         tasks = []
         for row in rows:
             steps = self.get_task_steps(UUID(row["task_id"]))
+            row_keys = row.keys() if hasattr(row, "keys") else []
             tasks.append(
                 TaskContract(
                     taskId=UUID(row["task_id"]),
@@ -724,6 +777,9 @@ class DurableStorage:
                     goal=row["goal"],
                     taskType=row["task_type"],
                     status=TaskStatusEnum(row["status"]),
+                    origin=row["origin"] if "origin" in row_keys else "user",
+                    summary=row["summary"] if "summary" in row_keys else None,
+                    error=row["error"] if "error" in row_keys else None,
                     createdAt=datetime.fromisoformat(row["created_at"]),
                     completedAt=datetime.fromisoformat(row["completed_at"])
                     if row["completed_at"]
@@ -1233,6 +1289,61 @@ class DurableStorage:
                 recordedAt=datetime.fromisoformat(r["recorded_at"]),
                 metadata=json.loads(r["metadata_json"]),
             )
+            for r in rows
+        ]
+
+
+    # --- Conversation Messages ---
+    def save_conversation_message(
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        task_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        message_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        mid = message_id or uuid4().hex
+        now_str = datetime.now(timezone.utc).isoformat()
+        conn = get_sqlite_conn()
+        with conn:
+            conn.execute(
+                """
+                INSERT INTO conversation_messages (message_id, session_id, task_id, role, content, created_at, metadata_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (mid, str(session_id), str(task_id) if task_id else None, role, content, now_str, json.dumps(metadata or {}))
+            )
+        conn.close()
+        return {
+            "messageId": mid,
+            "sessionId": str(session_id),
+            "taskId": str(task_id) if task_id else None,
+            "role": role,
+            "content": content,
+            "createdAt": now_str,
+            "metadata": metadata or {},
+        }
+
+    def list_conversation_messages(
+        self, session_id: str, limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        conn = get_sqlite_conn()
+        rows = conn.execute(
+            "SELECT * FROM conversation_messages WHERE session_id = ? ORDER BY created_at ASC LIMIT ?",
+            (str(session_id), limit)
+        ).fetchall()
+        conn.close()
+        return [
+            {
+                "messageId": r["message_id"],
+                "sessionId": r["session_id"],
+                "taskId": r["task_id"],
+                "role": r["role"],
+                "content": r["content"],
+                "createdAt": r["created_at"],
+                "metadata": json.loads(r["metadata_json"] or "{}"),
+            }
             for r in rows
         ]
 
