@@ -1466,8 +1466,10 @@ async def _execute_goal_pipeline(
 
     # -------------------------------------------------------------------------
     # FAST DETERMINISTIC DIRECT EXECUTION PATH B: Single-Step Direct Invocations
-    # Bypasses hosted reasoning latency for low-risk, deterministic operations
+    # Bypasses hosted reasoning latency for low-risk, deterministic single-step operations
     # (e.g. launch app, open URL/site, search web/YouTube, write to Notepad, adjust volume, list files).
+    # Compound instructions, multi-verb tasks, comparisons, and report generation
+    # are strictly directed through Muse Spark Mission Strategy.
     # -------------------------------------------------------------------------
     import re
     import urllib.parse
@@ -1485,21 +1487,41 @@ async def _execute_goal_pipeline(
         "x": "https://x.com",
     }
 
+    compound_indicators = [
+        " and then ",
+        " then ",
+        " after that ",
+        "summarize",
+        "compare",
+        "analyze",
+        "report",
+        "document",
+        "spreadsheet",
+        "generate document",
+        "extract and",
+        "research",
+        "find out",
+        "audit",
+        "inconsistenc",
+        "synthesis",
+    ]
+    is_compound_or_complex = any(ci in goal_lower for ci in compound_indicators)
+
     direct_launch_match = re.match(r"^(?:open|launch)\s+([a-zA-Z0-9_\-]+)(?:\.exe)?$", goal_lower)
     direct_url_match = re.match(r"^(?:open|navigate to|go to)\s+(https?://[^\s]+|[a-zA-Z0-9\-\.]+\.(?:com|org|io|net|edu|dev|in|ai)(?:/[^\s]*)?)$", goal_lower)
     direct_vol_match = re.match(r"^(?:set|change)\s+(?:system\s+)?volume\s+(?:to\s+)?(\d+)(?:%)?$", goal_lower)
     direct_snap_match = re.match(r"^(?:take|capture)\s+(?:a\s+)?(?:screen(?:shot)?|desktop\s+screen(?:shot)?)$", goal_lower)
 
-    direct_yt_search = re.search(r"(?:search\s+(?:on\s+)?youtube\s+for|open\s+youtube\s+and\s+search\s+(?:for\s+)?|play\s+(.+?)\s+on\s+youtube|search\s+youtube\s+(?:for\s+)?)(.*)", goal_lower)
-    direct_notepad_write = re.search(r"""(?:open\s+notepad\s+and\s+(?:write|type)|(?:write|type))\s+['"]?(.*?)['"]?\s+(?:in|into|to)\s+notepad""", goal_lower)
-    if not direct_notepad_write and "notepad" in goal_lower and ("write" in goal_lower or "type" in goal_lower):
-        direct_notepad_write = re.search(r"""open\s+notepad\s+and\s+(?:write|type)\s+['"]?(.*?)['"]?$""", goal_lower)
+    direct_yt_search = re.match(r"^(?:search\s+(?:on\s+)?youtube\s+for|open\s+youtube\s+and\s+search\s+(?:for\s+)?|play\s+(.+?)\s+on\s+youtube|search\s+youtube\s+(?:for\s+)?)\s*(.*)$", goal_lower)
+    direct_notepad_write = re.match(r"^(?:(?:open\s+notepad\s+and\s+(?:write|type))|(?:write|type))\s+['\"]?(.*?)['\"]?\s+(?:in|into|to)\s+notepad$", goal_lower)
+    if not direct_notepad_write and "notepad" in goal_lower and ("write" in goal_lower or "type" in goal_lower) and not is_compound_or_complex:
+        direct_notepad_write = re.match(r"^open\s+notepad\s+and\s+(?:write|type)\s+['\"]?(.*?)['\"]?$", goal_lower)
 
-    direct_summarize_match = re.search(r"^(?:summarize\s+(?:this\s+)?page|what\s+is\s+on\s+this\s+page|read\s+(?:the\s+)?active\s+tab|get\s+active\s+tab)$", goal_lower)
-    direct_list_match = re.search(r"^(?:list|show)\s+(?:the\s+)?(?:files|directory|folder)(?:\s+(?:in|of))?\s*(.*)$", goal_lower)
-    direct_read_match = re.search(r"^(?:read|open)\s+(?:the\s+)?file\s+([^\s]+)$", goal_lower)
+    direct_summarize_match = re.match(r"^(?:summarize\s+(?:this\s+)?page|what\s+is\s+on\s+this\s+page|read\s+(?:the\s+)?active\s+tab|get\s+active\s+tab)$", goal_lower)
+    direct_list_match = re.match(r"^(?:list|show)\s+(?:the\s+)?(?:files|directory|folder)(?:\s+(?:in|of))?\s*([^\s]*)$", goal_lower)
+    direct_read_match = re.match(r"^(?:read|open)\s+(?:the\s+)?file\s+([^\s]+)$", goal_lower)
 
-    is_fast_path = bool(
+    is_fast_path = (not is_compound_or_complex) and bool(
         direct_launch_match
         or direct_url_match
         or direct_vol_match
@@ -1552,12 +1574,22 @@ async def _execute_goal_pipeline(
             if not raw_q:
                 raw_q = "music"
             encoded_q = urllib.parse.quote(raw_q)
+            is_play_intent = "play" in goal_lower
             target_url = f"https://www.youtube.com/results?search_query={encoded_q}"
             fast_target = target_url
             fast_action_type = ActionTypeEnum.BROWSER_OPEN_TAB
             br_res = await asyncio.to_thread(live_br_adapter.open_tab, target_url, str(req.sessionId))
+            if is_play_intent:
+                # Trigger playback on top video link
+                await asyncio.sleep(1.0)
+                try:
+                    await asyncio.to_thread(live_br_adapter.play_media, raw_q, str(req.sessionId))
+                except Exception:
+                    pass
+                fast_summary = f"I opened YouTube and started playing '{raw_q}'."
+            else:
+                fast_summary = f"I opened YouTube in a browser tab and searched for '{raw_q}'. The results are displayed on your screen."
             fast_out_data = br_res
-            fast_summary = f"I opened YouTube in a browser tab and searched for '{raw_q}'. The results are displayed on your screen."
 
         elif direct_launch_match:
             app_target = direct_launch_match.group(1).lower()
@@ -1988,7 +2020,23 @@ async def _execute_goal_pipeline(
             from sahaay_core.skills.manager import skills_manager
             matched_skills = skills_manager.get_relevant_skills(req.goal)
             skills_prompt = skills_manager.format_skills_for_prompt(matched_skills)
-            enriched_context = (req.context or "") + ("\n\n" + skills_prompt if skills_prompt else "")
+
+            from sahaay_core.orchestration.mission_strategist import mission_strategist
+            mission_strategy = await mission_strategist.analyze_objective(
+                task_id=str(task_id),
+                session_id=str(req.sessionId),
+                goal=req.goal,
+                context=req.context,
+                active_grants=grants,
+                allow_model_call=use_meta_tools,
+            )
+            strategy_prompt = mission_strategy.format_for_execution_prompt()
+
+            enriched_context = (
+                (req.context or "")
+                + ("\n\n" + strategy_prompt if strategy_prompt else "")
+                + ("\n\n" + skills_prompt if skills_prompt else "")
+            )
 
             meta_res = await muse_spark.execute_with_tools(
                 goal=req.goal,
@@ -2120,6 +2168,23 @@ async def _execute_goal_pipeline(
         ]
 
         finish_reason = meta_res.get("finish_reason", "stop")
+        if (failed_calls or not is_success) and muse_spark.client.is_configured:
+            logger.info("Attempting visual escalation to Muse Wonder for recovery...")
+            try:
+                screen_bytes = await asyncio.to_thread(live_win_adapter.capture_screen)
+                if screen_bytes:
+                    from sahaay_core.orchestration.mission_strategist import mission_strategist
+                    wonder_eval = await mission_strategist.escalate_to_visual_wonder(
+                        task_id=str(task_id),
+                        goal=req.goal,
+                        screenshot_bytes=screen_bytes,
+                        target_surface="desktop",
+                        active_grants=grants,
+                    )
+                    accumulated_facts["wonder_escalation"] = wonder_eval
+            except Exception as w_err:
+                logger.warning("Could not complete visual wonder escalation: %s", w_err)
+
         if finish_reason == "stop":
             # Concluded normally: verified if substantive calls succeeded, or was retrieval query, or completed blueprint
             is_verified = is_success and (len(successful_calls) > 0 or ("retrieval" in str(task_type).lower()) or len(tool_calls_executed) == 0)

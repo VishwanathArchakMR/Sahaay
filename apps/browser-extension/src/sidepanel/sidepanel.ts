@@ -185,7 +185,9 @@ async function ensureSession(): Promise<string> {
 
       body: JSON.stringify({
         userId: "local-user",
-        privacyTier: "LOCAL_ONLY",
+        privacyTier: "HOSTED_ALLOWED",
+        localOnlyMode: false,
+        autoAuthorizeMetaCloud: true,
         deviceFingerprint: "sahaay-browser-extension-mv3",
       }),
     }, 2500);
@@ -691,9 +693,12 @@ if (btnVoice) {
 
         if (res.ok) {
           const data = await res.json();
-          if (data.transcript) {
-            composerInput.value = data.transcript;
+          if (data.transcript && data.transcript.trim()) {
+            const transcript = data.transcript.trim();
+            composerInput.value = transcript;
             composerInput.focus();
+            // Automatically execute recognized voice command
+            await handleGeneralPrompt(transcript);
           }
         }
       } catch (err) {

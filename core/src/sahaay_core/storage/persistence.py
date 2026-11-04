@@ -1065,37 +1065,44 @@ class DurableStorage:
         """Durable persistence for the structured Task Blueprint."""
         conn = get_sqlite_conn()
         now_str = datetime.now(timezone.utc).isoformat()
-        with conn:
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO task_blueprints (
-                    task_id, session_id, original_goal, normalized_outcome,
-                    constraints_json, definition_of_done_json, deliverables_json,
-                    required_capabilities_json, risk_gates_json, verification_criteria_json,
-                    created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    task_id,
-                    str(blueprint.get("sessionId", "")),
-                    str(blueprint.get("originalGoal", "")),
-                    str(blueprint.get("normalizedOutcome", "")),
-                    json.dumps(blueprint.get("constraints", [])),
-                    json.dumps(blueprint.get("definitionOfDone", [])),
-                    json.dumps(blueprint.get("deliverables", [])),
-                    json.dumps(blueprint.get("requiredCapabilities", [])),
-                    json.dumps(blueprint.get("riskGates", [])),
-                    json.dumps(blueprint.get("verificationCriteria", [])),
-                    blueprint.get("createdAt", now_str),
-                    now_str,
-                ),
-            )
-        conn.close()
+        try:
+            with conn:
+                task_exists = conn.execute("SELECT 1 FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
+                if not task_exists:
+                    return
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO task_blueprints (
+                        task_id, session_id, original_goal, normalized_outcome,
+                        constraints_json, definition_of_done_json, deliverables_json,
+                        required_capabilities_json, risk_gates_json, verification_criteria_json,
+                        created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        task_id,
+                        str(blueprint.get("sessionId", "")),
+                        str(blueprint.get("originalGoal", "")),
+                        str(blueprint.get("normalizedOutcome", "")),
+                        json.dumps(blueprint.get("constraints", [])),
+                        json.dumps(blueprint.get("definitionOfDone", [])),
+                        json.dumps(blueprint.get("deliverables", [])),
+                        json.dumps(blueprint.get("requiredCapabilities", [])),
+                        json.dumps(blueprint.get("riskGates", [])),
+                        json.dumps(blueprint.get("verificationCriteria", [])),
+                        blueprint.get("createdAt", now_str),
+                        now_str,
+                    ),
+                )
+        finally:
+            conn.close()
 
     def get_task_blueprint(self, task_id: str) -> Optional[Dict[str, Any]]:
         conn = get_sqlite_conn()
-        row = conn.execute("SELECT * FROM task_blueprints WHERE task_id = ?", (task_id,)).fetchone()
-        conn.close()
+        try:
+            row = conn.execute("SELECT * FROM task_blueprints WHERE task_id = ?", (task_id,)).fetchone()
+        finally:
+            conn.close()
         if not row:
             return None
         return {
@@ -1136,23 +1143,27 @@ class DurableStorage:
             "timestamp": now_str,
         }
         conn = get_sqlite_conn()
-        with conn:
-            conn.execute(
-                """
-                INSERT INTO task_events (event_id, task_id, event_type, stage, message, data_json, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    event_id,
-                    task_id,
-                    event_type,
-                    stage,
-                    message,
-                    json.dumps(data or {}),
-                    now_str,
-                ),
-            )
-        conn.close()
+        try:
+            with conn:
+                task_exists = conn.execute("SELECT 1 FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
+                if task_exists:
+                    conn.execute(
+                        """
+                        INSERT INTO task_events (event_id, task_id, event_type, stage, message, data_json, timestamp)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            event_id,
+                            task_id,
+                            event_type,
+                            stage,
+                            message,
+                            json.dumps(data or {}),
+                            now_str,
+                        ),
+                    )
+        finally:
+            conn.close()
         return event_dict
 
     def get_task_events(self, task_id: str, limit: int = 100) -> List[Dict[str, Any]]:

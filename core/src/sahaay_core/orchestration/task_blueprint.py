@@ -47,6 +47,7 @@ class TaskBlueprintService:
         session_id: str,
         goal: str,
         context: Optional[str] = None,
+        persist: bool = True,
     ) -> TaskBlueprint:
         """Constructs a structured blueprint analyzing the goal and determining definition-of-done."""
         goal_lower = goal.lower()
@@ -119,17 +120,18 @@ class TaskBlueprintService:
         )
 
         # Persist to durable storage
-        try:
-            durable_storage.save_task_blueprint(task_id, blueprint.to_dict())
-            durable_storage.record_task_event(
-                task_id=task_id,
-                event_type="task.plan_created",
-                stage="PLANNING",
-                message=f"Constructed Task Blueprint with {len(definition_of_done)} definition-of-done criteria.",
-                data=blueprint.to_dict(),
-            )
-        except Exception as ex:
-            logger.warning("Could not persist task blueprint: %s", ex)
+        if persist:
+            try:
+                durable_storage.save_task_blueprint(task_id, blueprint.to_dict())
+                durable_storage.record_task_event(
+                    task_id=task_id,
+                    event_type="task.plan_created",
+                    stage="PLANNING",
+                    message=f"Constructed Task Blueprint with {len(definition_of_done)} definition-of-done criteria.",
+                    data=blueprint.to_dict(),
+                )
+            except Exception as ex:
+                logger.warning("Could not persist task blueprint: %s", ex)
 
         return blueprint
 

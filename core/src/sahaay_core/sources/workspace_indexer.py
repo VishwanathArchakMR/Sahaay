@@ -53,13 +53,15 @@ TEXT_EXTENSIONS = {
 
 
 def index_workspace_directory(
-    directory_path: str,
+    directory_path: Optional[str] = None,
     session_id: Optional[UUID] = None,
     max_depth: int = 4,
     max_files: int = 150,
+    workspace_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Index an authorized project folder or workspace directory."""
-    target_dir = Path(directory_path).resolve()
+    effective_path = directory_path or workspace_path or "."
+    target_dir = Path(effective_path).resolve()
     if not target_dir.exists() or not target_dir.is_dir():
         raise ValueError(f"Directory path does not exist or is not a folder: {target_dir}")
 

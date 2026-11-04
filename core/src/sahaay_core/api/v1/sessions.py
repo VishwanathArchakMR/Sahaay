@@ -62,7 +62,6 @@ def _apply_meta_cloud_grants(session_id: UUID) -> List[ConsentGrant]:
             active_grants[session_id].append(grant)
             grants.append(grant)
     return grants
-    return [g for g in active_grants[session_id] if not g.isRevoked]
 
 
 def _apply_onboarding_grants(session_id: UUID) -> List[ConsentGrant]:
@@ -97,8 +96,22 @@ async def create_session(req: CreateSessionRequest) -> Session:
     active_sessions[session.sessionId] = session
     active_grants[session.sessionId] = []
 
-    if not req.localOnlyMode and req.autoAuthorizeMetaCloud:
-        _apply_meta_cloud_grants(session.sessionId)
+    if req.autoAuthorizeMetaCloud and not req.localOnlyMode:
+        _apply_onboarding_grants(session.sessionId)
+    else:
+        # In local-only mode, provision local computer automation grants
+        existing_scopes = {g.scope for g in active_grants[session.sessionId] if not g.isRevoked}
+        for s in LOCAL_AUTOMATION_SCOPES:
+            if s not in existing_scopes:
+                grant = ConsentGrant(
+                    grantId=uuid4(),
+                    sessionId=session.sessionId,
+                    scope=s,
+                    purpose=s,
+                    targetDomainOrPath="local",
+                )
+                durable_storage.save_consent_grant(grant)
+                active_grants[session.sessionId].append(grant)
 
     return session
 

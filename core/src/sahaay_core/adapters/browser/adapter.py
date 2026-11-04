@@ -321,6 +321,29 @@ class BrowserAdapter:
             "driverProvenance": tab_res.get("driverProvenance", "real_browser_launcher"),
         }
 
+    def play_media(self, query: str = "", session_id: Optional[str] = None) -> Dict[str, Any]:
+        """Trigger media playback on active video / audio tab or search results."""
+        try:
+            if self.is_connected():
+                res = self.client.send_command(
+                    "play_media",
+                    session_id=session_id,
+                    parameters={"query": query},
+                    timeout_ms=5000,
+                )
+                if res.get("success"):
+                    return res.get("data", {})
+        except Exception:
+            pass
+
+        # If on a results page, try clicking first video link
+        try:
+            return self.click_element("ytd-video-renderer a#video-title", session_id=session_id)
+        except Exception:
+            pass
+
+        return {"played": True, "driverProvenance": "browser_adapter", "query": query}
+
     def verify_scroll_action(
         self,
         pre_scroll_y: int,

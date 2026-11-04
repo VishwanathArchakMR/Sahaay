@@ -191,12 +191,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         request.target;
       let el: HTMLElement | null = null;
       if (target) {
-        el =
-          document.getElementById(target) ||
-          document.querySelector(target) ||
-          document.querySelector(`[name="${CSS.escape(target)}"]`) ||
-          document.querySelector(`[aria-label="${CSS.escape(target)}"]`) ||
-          document.querySelector(`[data-testid="${CSS.escape(target)}"]`);
+        try {
+          el = document.querySelector(target);
+        } catch {}
+        if (!el) {
+          el =
+            document.getElementById(target) ||
+            document.querySelector(`[name="${CSS.escape(target)}"]`) ||
+            document.querySelector(`[aria-label="${CSS.escape(target)}"]`) ||
+            document.querySelector(`[data-testid="${CSS.escape(target)}"]`);
+        }
       }
       if (!el) {
         sendResponse({ success: false, error: `Element '${target}' not found on active page.` });
@@ -215,6 +219,39 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       });
     } catch (ex: any) {
       sendResponse({ success: false, error: ex.message || "Failed to click element." });
+    }
+    return true;
+  }
+
+  if (request.command === "play_media" || request.command === "play_first_video") {
+    try {
+      // Find first playable video item on YouTube or media sites
+      const videoLink = (
+        document.querySelector("ytd-video-renderer a#video-title") ||
+        document.querySelector("ytd-rich-item-renderer a#video-title-link") ||
+        document.querySelector("a[href*='/watch?v=']") ||
+        document.querySelector("video")
+      ) as HTMLElement | null;
+
+      if (videoLink) {
+        if (videoLink instanceof HTMLVideoElement) {
+          videoLink.play();
+        } else {
+          videoLink.click();
+        }
+        sendResponse({
+          success: true,
+          data: {
+            played: true,
+            title: videoLink.getAttribute("title") || videoLink.innerText || "Media Video",
+            url: (videoLink as HTMLAnchorElement).href || window.location.href,
+          },
+        });
+        return true;
+      }
+      sendResponse({ success: false, error: "No playable media found on the active page." });
+    } catch (ex: any) {
+      sendResponse({ success: false, error: ex.message || "Failed to play media." });
     }
     return true;
   }

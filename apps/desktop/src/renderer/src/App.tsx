@@ -483,7 +483,8 @@ export function App(): React.JSX.Element {
         const data = await res.json();
         if (Array.isArray(data)) {
           setTasksList(data);
-          const targetTaskId = activeTaskId || (data.length > 0 ? (data[0].task_id || data[0].taskId) : null);
+          const runningTask = data.find((t: any) => ["EXECUTING", "PROPOSING", "OBSERVING", "PLANNING"].includes(((t.status || t.state || "") as string).toUpperCase()));
+          const targetTaskId = activeTaskId || (runningTask ? (runningTask.task_id || runningTask.taskId) : null);
           if (targetTaskId) {
             try {
               const evRes = await safeFetch(`${API_BASE}/tasks/${targetTaskId}/events`, { headers }, 2000);
@@ -604,7 +605,8 @@ export function App(): React.JSX.Element {
         const data = await res.json();
         if (Array.isArray(data)) {
           setTasksList(data);
-          const targetTaskId = activeTaskId || (data.length > 0 ? (data[0].task_id || data[0].taskId) : null);
+          const runningTask = data.find((t: any) => ["EXECUTING", "PROPOSING", "OBSERVING", "PLANNING"].includes(((t.status || t.state || "") as string).toUpperCase()));
+          const targetTaskId = activeTaskId || (runningTask ? (runningTask.task_id || runningTask.taskId) : null);
           if (targetTaskId) {
             try {
               const evRes = await safeFetch(`${API_BASE}/tasks/${targetTaskId}/events`, { headers }, 2000);

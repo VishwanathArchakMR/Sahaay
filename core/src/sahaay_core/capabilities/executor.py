@@ -862,8 +862,14 @@ if ($root) {{
 
             elif capability_id == "workspace_index_directory":
                 from sahaay_core.sources.workspace_indexer import index_workspace_directory
-                ws_path = parameters.get("workspace_path") or parameters.get("workspacePath") or parameters.get("path") or "."
-                return index_workspace_directory(workspace_path=ws_path)
+                ws_path = (
+                    parameters.get("workspace_path")
+                    or parameters.get("workspacePath")
+                    or parameters.get("directory_path")
+                    or parameters.get("path")
+                    or "."
+                )
+                return index_workspace_directory(directory_path=ws_path)
 
             elif capability_id == "deterministic_retrieval":
                 query = parameters.get("query", "")
