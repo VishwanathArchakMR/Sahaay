@@ -31,7 +31,8 @@ build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["../../tests", "tests"]
+testpaths = ["../../tests/unit", "../../tests/browser", "../../tests/desktop", "tests"]
+addopts = "--ignore=../../tests/integration --ignore=tests/integration"
 pythonpath = ["src"]
 
 [tool.ruff]
