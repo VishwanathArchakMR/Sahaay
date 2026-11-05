@@ -47,7 +47,7 @@ jobs:
 
       - name: Run Automated Pytest Suite (Unit, Privacy, Security, Contracts)
         run: |
-          .\core\.venv\Scripts\pytest.exe tests
+          .\core\.venv\Scripts\pytest.exe tests/unit tests/browser tests/desktop tests/privacy tests/security -v --tb=short
 
       - name: Run .NET Windows Companion Test Suite
         run: |
