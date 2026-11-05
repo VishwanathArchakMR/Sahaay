@@ -12,7 +12,6 @@ import logging
 import wave
 from typing import List, Optional
 
-import httpx
 from pydantic import BaseModel
 
 from sahaay_core.config.settings import settings
@@ -22,7 +21,7 @@ from sahaay_core.contracts.consent_purposes import (
 )
 from sahaay_core.contracts.models import ConsentGrant
 from sahaay_core.models.meta.meta_client import MetaClient
-from sahaay_core.models.meta.transport import create_meta_http_client, classify_meta_exception
+from sahaay_core.models.meta.transport import classify_meta_exception, create_meta_http_client
 from sahaay_core.privacy.privacy_gateway import PrivacyGateway
 
 logger = logging.getLogger("sahaay.models.muse_voice")
@@ -136,6 +135,7 @@ class MuseVoiceClient:
         active_grants = active_grants or []
 
         import sys
+
         is_test = getattr(settings, "is_testing", False) or "pytest" in sys.modules
         if is_test:
             allow_offline_fixture = True
@@ -263,7 +263,11 @@ class MuseVoiceClient:
                     return self._build_deterministic_transcript(audio_bytes, language_hints)
         except Exception as ex:
             err_category, err_narrative = classify_meta_exception(ex)
-            logger.warning("Online audio transcription failed [%s]: %s; falling back.", err_category, err_narrative)
+            logger.warning(
+                "Online audio transcription failed [%s]: %s; falling back.",
+                err_category,
+                err_narrative,
+            )
             if not allow_offline_fixture:
                 return VoiceTranscriptionResult(
                     transcript="",

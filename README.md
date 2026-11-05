@@ -37,6 +37,15 @@
 
 **Sahaay** (derived from the Sanskrit and Kannada word **ಸಹಾಯ**, meaning *assistance* or *support*) is a native Windows AI computer agent designed to bridge conversational intelligence with actual operating-system and browser execution.
 
+<div align="center">
+  <br />
+  <a href="https://youtu.be/Bu_sdsKfEvA" target="_blank" title="Watch Sahaay Demo on YouTube">
+    <img src="https://img.youtube.com/vi/Bu_sdsKfEvA/maxresdefault.jpg" alt="Sahaay System-Wide Windows AI Assistant Demo" width="760" style="max-width: 100%; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);" />
+  </a>
+  <p><em>▶️ <strong>Click the preview above to watch the end-to-end Sahaay computer automation demo on YouTube.</strong></em></p>
+  <br />
+</div>
+
 ### The Fundamental Difference: Chatbots vs. Computer Agents
 Most current AI assistants are conversational chatbots trapped in a web browser tab or sandboxed mobile window. When asked to perform computer work—such as opening an application, summarizing local files, transferring an invoice total into accounting software, or finding a video—traditional LLMs merely generate text describing how a human might do it, or hallucinate completion without verifying that any action occurred.
 
@@ -787,6 +796,15 @@ To run the complete automated test suite across all three language ecosystems in
 ---
 
 ## 15. Demo Walkthrough
+
+<div align="center">
+  <br />
+  <a href="https://youtu.be/Bu_sdsKfEvA" target="_blank" title="Watch Sahaay Demo on YouTube">
+    <img src="https://img.youtube.com/vi/Bu_sdsKfEvA/maxresdefault.jpg" alt="Sahaay Live Computer Automation Demo" width="760" style="max-width: 100%; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);" />
+  </a>
+  <p><em>▶️ <strong>Watch the full end-to-end Sahaay demonstration video on YouTube (click image above to play).</strong></em></p>
+  <br />
+</div>
 
 ### Representative Scenario: Grounded Invoice Extraction to Notepad
 

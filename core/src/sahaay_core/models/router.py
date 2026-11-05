@@ -16,8 +16,9 @@ before authorization or execution.
 
 import logging
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
-from pydantic import BaseModel, Field
+from typing import Any, Dict, Optional, Tuple
+
+from pydantic import BaseModel
 
 from sahaay_core.capabilities.registry import capability_registry
 from sahaay_core.config.settings import settings
@@ -112,7 +113,17 @@ class ModelCapabilityRouter:
             )
 
         # 2. Specialized: Visual Grounding / SAM 3.1
-        if any(w in combined for w in ("locate button", "find element coordinates", "visual grounding", "segment", "bounding box", "sam 3.1")):
+        if any(
+            w in combined
+            for w in (
+                "locate button",
+                "find element coordinates",
+                "visual grounding",
+                "segment",
+                "bounding box",
+                "sam 3.1",
+            )
+        ):
             if is_local_only or not self.meta_client.is_configured:
                 return ModelRouteDecision(
                     selected_tier=ModelTier.DETERMINISTIC_LOGIC,
@@ -135,7 +146,17 @@ class ModelCapabilityRouter:
             )
 
         # 3. Specialized: Creative Image Editing / Styling
-        if any(w in combined for w in ("edit image", "style image", "retro style", "vintage style", "synthwave", "generate image")):
+        if any(
+            w in combined
+            for w in (
+                "edit image",
+                "style image",
+                "retro style",
+                "vintage style",
+                "synthwave",
+                "generate image",
+            )
+        ):
             if is_local_only or not self.meta_client.is_configured:
                 return ModelRouteDecision(
                     selected_tier=ModelTier.DETERMINISTIC_LOGIC,
@@ -161,7 +182,9 @@ class ModelCapabilityRouter:
         if is_local_only:
             return ModelRouteDecision(
                 selected_tier=ModelTier.LOCAL_LLAMA,
-                model_id=settings.local_llama_model_path.name if settings.local_llama_model_path else "Llama-3.2-3B-Instruct",
+                model_id=settings.local_llama_model_path.name
+                if settings.local_llama_model_path
+                else "Llama-3.2-3B-Instruct",
                 purpose="On-device local LLM reasoning and intent classification",
                 is_live_call=False,
                 requires_network=False,
@@ -220,7 +243,11 @@ class ModelCapabilityRouter:
 
         # Validate required parameters
         if cap.input_schema and "required" in cap.input_schema:
-            missing = [p for p in cap.input_schema["required"] if p not in tool_args or tool_args[p] is None]
+            missing = [
+                p
+                for p in cap.input_schema["required"]
+                if p not in tool_args or tool_args[p] is None
+            ]
             if missing:
                 return False, f"Model call to '{tool_name}' missing required parameters: {missing}"
 

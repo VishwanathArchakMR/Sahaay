@@ -25,16 +25,14 @@ from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-logger = logging.getLogger("sahaay.workflows")
-
 from sahaay_core.adapters.browser.adapter import BrowserAdapter
 from sahaay_core.adapters.windows.adapter import WindowsNativeAdapter
-from sahaay_core.capabilities.executor import CapabilityExecutor
 from sahaay_core.api.v1.actions import evidence_ledger
 from sahaay_core.api.v1.sessions import active_grants, active_sessions
 from sahaay_core.api.v1.sources import context_store, source_manager
 from sahaay_core.api.v1.storytelling import register_or_update_passport
 from sahaay_core.api.v1.tasks import orchestrator
+from sahaay_core.capabilities.executor import CapabilityExecutor
 from sahaay_core.config.settings import get_fixtures_dir, settings
 from sahaay_core.contracts.models import (
     ActionContract,
@@ -50,6 +48,8 @@ from sahaay_core.models.meta.muse_spark import muse_spark
 from sahaay_core.orchestration.dag_engine import TaskDAGNode, dag_engine
 from sahaay_core.policy.action_gate import ActionGate
 from sahaay_core.verification.verifier import IndependentVerifier
+
+logger = logging.getLogger("sahaay.workflows")
 
 router = APIRouter(prefix="/workflows", tags=["Workflows"])
 
@@ -218,7 +218,9 @@ async def execute_browser_to_desktop(req: BrowserToDesktopRequest) -> Dict[str, 
     content_hash = hashlib.sha256(bill_text.encode("utf-8")).hexdigest()
 
     # 2. RETRIEVE & GROUND
-    tab_title = (live_obs.get("title") if "live_obs" in locals() and live_obs else None) or "Active Browser Tab"
+    tab_title = (
+        live_obs.get("title") if "live_obs" in locals() and live_obs else None
+    ) or "Active Browser Tab"
     source_ref = source_manager.register_source(
         source_type="browser_tab" if not is_fixture else "synthetic_fixture",
         uri=req.sourceTabUrl
@@ -256,7 +258,10 @@ async def execute_browser_to_desktop(req: BrowserToDesktopRequest) -> Dict[str, 
     orchestrator.transition_state(task_id, TaskStatusEnum.PROPOSING)
     _ensure_session_and_grants(req.sessionId)
     from sahaay_core.storage.persistence import durable_storage
-    grants = durable_storage.get_consent_grants_for_session(req.sessionId) or active_grants.get(req.sessionId, [])
+
+    grants = durable_storage.get_consent_grants_for_session(req.sessionId) or active_grants.get(
+        req.sessionId, []
+    )
     try:
         structured_plan = await muse_spark.generate_plan(
             task=task,
@@ -519,7 +524,10 @@ async def execute_desktop_to_browser(req: DesktopToBrowserRequest) -> Dict[str, 
     orchestrator.transition_state(task_id, TaskStatusEnum.PROPOSING)
     _ensure_session_and_grants(req.sessionId)
     from sahaay_core.storage.persistence import durable_storage
-    grants = durable_storage.get_consent_grants_for_session(req.sessionId) or active_grants.get(req.sessionId, [])
+
+    grants = durable_storage.get_consent_grants_for_session(req.sessionId) or active_grants.get(
+        req.sessionId, []
+    )
     try:
         structured_plan = await muse_spark.generate_plan(
             task=task,
@@ -614,7 +622,11 @@ async def execute_desktop_to_browser(req: DesktopToBrowserRequest) -> Dict[str, 
         actionId=action.actionId,
         isSuccess=exec_success,
         durationMs=28.0,
-        outputData={"filled": filled_fields, "readback": readback_values, "targetUrl": action.target},
+        outputData={
+            "filled": filled_fields,
+            "readback": readback_values,
+            "targetUrl": action.target,
+        },
         driverProvenance=driver_prov,
     )
 
@@ -722,11 +734,42 @@ async def execute_goal(req: ExecuteGoalRequest):
 
     # Determine whether user objective requests an active computer operation vs pure informational retrieval
     action_directive_indicators = [
-        "play", "listen", "watch", "stream", "open", "launch", "run", "start",
-        "type", "write", "save", "create", "generate", "fill", "click", "press",
-        "scroll", "navigate", "browse", "go to", "visit", "download", "calculate",
-        "add to cart", "add to", "cart", "shop", "checkout", "buy",
-        "haaki", "daalo", "likho", "maadi", "nodri", "nodi", "bariri"
+        "play",
+        "listen",
+        "watch",
+        "stream",
+        "open",
+        "launch",
+        "run",
+        "start",
+        "type",
+        "write",
+        "save",
+        "create",
+        "generate",
+        "fill",
+        "click",
+        "press",
+        "scroll",
+        "navigate",
+        "browse",
+        "go to",
+        "visit",
+        "download",
+        "calculate",
+        "add to cart",
+        "add to",
+        "cart",
+        "shop",
+        "checkout",
+        "buy",
+        "haaki",
+        "daalo",
+        "likho",
+        "maadi",
+        "nodri",
+        "nodi",
+        "bariri",
     ]
     has_action_directive = any(
         re.search(rf"\b{re.escape(w)}\b", goal_lower) or w in goal_lower
@@ -734,10 +777,20 @@ async def execute_goal(req: ExecuteGoalRequest):
     )
 
     pure_question_indicators = [
-        "what is", "who is", "why is", "why does", "explain ", "tell me about",
-        "how does", "what are", "define ", "meaning of"
+        "what is",
+        "who is",
+        "why is",
+        "why does",
+        "explain ",
+        "tell me about",
+        "how does",
+        "what are",
+        "define ",
+        "meaning of",
     ]
-    is_pure_question = any(goal_lower.startswith(q) for q in pure_question_indicators) and not has_action_directive
+    is_pure_question = (
+        any(goal_lower.startswith(q) for q in pure_question_indicators) and not has_action_directive
+    )
 
     mode = (req.workflowMode or "understand_and_act").lower().strip()
 
@@ -1045,7 +1098,9 @@ async def _execute_tool_for_meta(
         elif fn_name == "browser_input_text":
             text = str(fn_args.get("text") or fn_args.get("value") or "")
             selector = str(fn_args.get("selector") or fn_args.get("target") or "")
-            res = await asyncio.to_thread(browser_adapter.input_text, text, selector, str(session_id))
+            res = await asyncio.to_thread(
+                browser_adapter.input_text, text, selector, str(session_id)
+            )
             return {
                 "success": bool(res.get("success", False)),
                 "text": text,
@@ -1055,7 +1110,9 @@ async def _execute_tool_for_meta(
             }
 
         elif fn_name == "browser_click_element":
-            selector = str(fn_args.get("selector") or fn_args.get("target") or fn_args.get("targetId") or "")
+            selector = str(
+                fn_args.get("selector") or fn_args.get("target") or fn_args.get("targetId") or ""
+            )
             res = await asyncio.to_thread(browser_adapter.click_element, selector, str(session_id))
             return {
                 "success": bool(res.get("success", False)),
@@ -1065,7 +1122,9 @@ async def _execute_tool_for_meta(
             }
 
         elif fn_name in ("browser_get_active_tab", "browser_get_page_content"):
-            obs = await asyncio.to_thread(browser_adapter.get_active_tab_observation, str(session_id))
+            obs = await asyncio.to_thread(
+                browser_adapter.get_active_tab_observation, str(session_id)
+            )
             raw_text = obs.get("pageText") or obs.get("visibleTextExcerpt") or ""
             chunk_size = int(fn_args.get("chunkSize", 4000))
             chunk_idx = int(fn_args.get("chunkIndex", 0))
@@ -1093,14 +1152,18 @@ async def _execute_tool_for_meta(
             }
 
         elif fn_name == "browser_search_in_tab":
-            query = str(fn_args.get("query") or fn_args.get("search") or fn_args.get("text") or "").strip()
+            query = str(
+                fn_args.get("query") or fn_args.get("search") or fn_args.get("text") or ""
+            ).strip()
             if not query:
                 return {"success": False, "error": "Query parameter is required."}
             res = await asyncio.to_thread(browser_adapter.search_in_tab, query, str(session_id))
             await asyncio.sleep(0.5)
             obs = {}
             try:
-                obs = await asyncio.to_thread(browser_adapter.get_active_tab_observation, str(session_id))
+                obs = await asyncio.to_thread(
+                    browser_adapter.get_active_tab_observation, str(session_id)
+                )
             except Exception:
                 pass
             return {
@@ -1116,9 +1179,17 @@ async def _execute_tool_for_meta(
             return await asyncio.to_thread(browser_adapter.scroll_tab, delta_y, str(session_id))
 
         elif fn_name == "browser_play_media":
-            query = str(fn_args.get("query") or fn_args.get("search") or fn_args.get("title") or fn_args.get("song") or "").strip()
+            query = str(
+                fn_args.get("query")
+                or fn_args.get("search")
+                or fn_args.get("title")
+                or fn_args.get("song")
+                or ""
+            ).strip()
             video_url = str(fn_args.get("video_url") or fn_args.get("url") or "").strip()
-            res = await asyncio.to_thread(browser_adapter.play_media, query or video_url, str(session_id))
+            res = await asyncio.to_thread(
+                browser_adapter.play_media, query or video_url, str(session_id)
+            )
             return {
                 "success": bool(res.get("success", False)),
                 "query": query,
@@ -1126,13 +1197,17 @@ async def _execute_tool_for_meta(
                 "videoTitle": res.get("title") or query,
                 "playbackState": res.get("playbackState", "playing"),
                 "driverProvenance": res.get("driverProvenance", "real_browser_extension"),
-                "details": res.get("details", "Media playback initiated and verified in active tab."),
+                "details": res.get(
+                    "details", "Media playback initiated and verified in active tab."
+                ),
             }
 
         elif fn_name == "windows_launch_app":
             app = str(fn_args.get("application") or fn_args.get("appName") or "notepad.exe").strip()
             res = await executor.execute("windows_launch_app", {"application": app})
-            has_valid_proc = res.get("hwnd", 0) > 0 or res.get("processId", 0) > 0 or res.get("pid", 0) > 0
+            has_valid_proc = (
+                res.get("hwnd", 0) > 0 or res.get("processId", 0) > 0 or res.get("pid", 0) > 0
+            )
             is_success = bool(res.get("success", False) and has_valid_proc)
             return {
                 "success": is_success,
@@ -1145,9 +1220,17 @@ async def _execute_tool_for_meta(
             }
 
         elif fn_name == "windows_get_active_window":
-            from sahaay_core.perception.observation_coordinator import ObservationCoordinator, ObservationMode
-            obs_coord = ObservationCoordinator(windows_adapter=windows_adapter, browser_adapter=browser_adapter)
-            obs = await asyncio.to_thread(obs_coord.observe, goal="", preferred_mode=ObservationMode.MODE_A_SEMANTIC_UIA)
+            from sahaay_core.perception.observation_coordinator import (
+                ObservationCoordinator,
+                ObservationMode,
+            )
+
+            obs_coord = ObservationCoordinator(
+                windows_adapter=windows_adapter, browser_adapter=browser_adapter
+            )
+            obs = await asyncio.to_thread(
+                obs_coord.observe, goal="", preferred_mode=ObservationMode.MODE_A_SEMANTIC_UIA
+            )
             sem = obs.semantic_data or {}
             return {
                 "success": bool(sem.get("hwnd", 0) > 0),
@@ -1167,7 +1250,10 @@ async def _execute_tool_for_meta(
             try:
                 wins = await asyncio.to_thread(windows_adapter.list_open_windows)
                 for w in wins:
-                    if app_hint in w.get("processName", "").lower() or app_hint in w.get("title", "").lower():
+                    if (
+                        app_hint in w.get("processName", "").lower()
+                        or app_hint in w.get("title", "").lower()
+                    ):
                         hwnd = int(w.get("hwnd", 0))
                         break
             except Exception:
@@ -1176,7 +1262,9 @@ async def _execute_tool_for_meta(
                 launch_res = await executor.execute("windows_launch_app", {"application": app_hint})
                 hwnd = int(launch_res.get("hwnd", 0))
             if hwnd > 0:
-                res = await executor.execute("windows_set_control_text", {"hwnd": hwnd, "text": text})
+                res = await executor.execute(
+                    "windows_set_control_text", {"hwnd": hwnd, "text": text}
+                )
                 readback_res = await executor.execute("windows_get_control_text", {"hwnd": hwnd})
                 actual_text = readback_res.get("text", text)
                 return {
@@ -1191,9 +1279,12 @@ async def _execute_tool_for_meta(
             # Real desktop file-backed launch fallback for Notepad
             if "notepad" in app_hint:
                 try:
-                    summary_path = os.path.join(os.path.expanduser("~"), "Desktop", "task_summary.txt")
+                    summary_path = os.path.join(
+                        os.path.expanduser("~"), "Desktop", "task_summary.txt"
+                    )
                     Path(summary_path).write_text(text, encoding="utf-8")
                     import subprocess
+
                     subprocess.Popen(["notepad.exe", summary_path])
                     readback = Path(summary_path).read_text(encoding="utf-8")
                     return {
@@ -1208,10 +1299,16 @@ async def _execute_tool_for_meta(
                 except Exception as n_ex:
                     logger.warning("Notepad file-backed launch failed: %s", n_ex)
 
-            return {"success": False, "error": f"Could not find or launch target window for '{app_hint}'"}
+            return {
+                "success": False,
+                "error": f"Could not find or launch target window for '{app_hint}'",
+            }
 
         elif fn_name == "windows_capture_screen":
-            from sahaay_core.perception.observation_coordinator import ObservationCoordinator, ObservationMode
+            from sahaay_core.perception.observation_coordinator import (
+                ObservationCoordinator,
+                ObservationMode,
+            )
             from sahaay_core.perception.target_resolver import TargetDescriptor, TargetSurfaceType
 
             target_hwnd = int(fn_args.get("hwnd") or 0)
@@ -1223,7 +1320,9 @@ async def _execute_tool_for_meta(
                     name=f"Window HWND {target_hwnd}",
                     hwnd=target_hwnd,
                 )
-            obs_coord = ObservationCoordinator(windows_adapter=windows_adapter, browser_adapter=browser_adapter)
+            obs_coord = ObservationCoordinator(
+                windows_adapter=windows_adapter, browser_adapter=browser_adapter
+            )
             obs = await asyncio.to_thread(
                 obs_coord.observe,
                 goal=str(fn_args.get("goal") or ""),
@@ -1310,6 +1409,7 @@ async def _execute_tool_for_meta(
 
         elif fn_name == "workspace_run_code":
             from sahaay_core.capabilities.code_runner import execute_python_script
+
             script_path = fn_args.get("scriptPath") or fn_args.get("path")
             code = fn_args.get("code")
             ws_path = fn_args.get("workspacePath")
@@ -1326,6 +1426,7 @@ async def _execute_tool_for_meta(
 
         elif fn_name == "workspace_index_directory":
             from sahaay_core.sources.workspace_indexer import index_workspace_directory
+
             dir_path = fn_args.get("directoryPath") or fn_args.get("path") or "."
             max_depth = int(fn_args.get("maxDepth", 4))
             max_files = int(fn_args.get("maxFiles", 150))
@@ -1374,9 +1475,13 @@ async def _execute_goal_pipeline(
     _ensure_session_and_grants(req.sessionId)
     session = _ensure_session_and_grants(req.sessionId)
     from sahaay_core.storage.persistence import durable_storage
-    grants = durable_storage.get_consent_grants_for_session(req.sessionId) or active_grants.get(req.sessionId, [])
+
+    grants = durable_storage.get_consent_grants_for_session(req.sessionId) or active_grants.get(
+        req.sessionId, []
+    )
     if not grants and session and not session.localOnlyMode:
         from sahaay_core.api.v1.sessions import _apply_meta_cloud_grants
+
         grants = _apply_meta_cloud_grants(req.sessionId)
         active_grants[req.sessionId] = grants
     goal_lower = req.goal.lower().strip()
@@ -1385,8 +1490,18 @@ async def _execute_goal_pipeline(
     # SPECIALIZED GROUNDED EXECUTION PATH A: System Introspection & Capability Inquiry
     # -------------------------------------------------------------------------
     is_system_inquiry = (
-        ("explain" in goal_lower or "what" in goal_lower or "list" in goal_lower or "status" in goal_lower or "hello" in goal_lower or "diagnostics" in goal_lower)
-        and ("capabilities" in goal_lower or "components" in goal_lower or "available" in goal_lower or "unavailable" in goal_lower or "system" in goal_lower)
+        "explain" in goal_lower
+        or "what" in goal_lower
+        or "list" in goal_lower
+        or "status" in goal_lower
+        or "hello" in goal_lower
+        or "diagnostics" in goal_lower
+    ) and (
+        "capabilities" in goal_lower
+        or "components" in goal_lower
+        or "available" in goal_lower
+        or "unavailable" in goal_lower
+        or "system" in goal_lower
     )
 
     if is_system_inquiry:
@@ -1419,21 +1534,33 @@ async def _execute_goal_pipeline(
         unavailable_components: List[str] = []
 
         if win_connected:
-            connected_components.append("Windows Controller Companion (Connected via Named Pipe: \\\\.\\pipe\\SahaayControllerPipe)")
+            connected_components.append(
+                "Windows Controller Companion (Connected via Named Pipe: \\\\.\\pipe\\SahaayControllerPipe)"
+            )
         else:
-            unavailable_components.append("Windows Controller Companion (\\\\.\\pipe\\SahaayControllerPipe daemon is currently stopped)")
+            unavailable_components.append(
+                "Windows Controller Companion (\\\\.\\pipe\\SahaayControllerPipe daemon is currently stopped)"
+            )
 
         if native_host_up:
             connected_components.append("Browser Native Messaging Host (Bridge pipe online)")
             if browser_tab_attached:
-                connected_components.append("Browser Tab Bridge (Active Chrome/Edge web tab attached)")
+                connected_components.append(
+                    "Browser Tab Bridge (Active Chrome/Edge web tab attached)"
+                )
             else:
-                unavailable_components.append("Browser Web Tab (Awaiting open web tab in Chrome or Edge)")
+                unavailable_components.append(
+                    "Browser Web Tab (Awaiting open web tab in Chrome or Edge)"
+                )
         else:
-            unavailable_components.append("Browser Native Host Bridge (\\\\.\\pipe\\SahaayBrowserBridgePipe waiting for browser connection)")
+            unavailable_components.append(
+                "Browser Native Host Bridge (\\\\.\\pipe\\SahaayBrowserBridgePipe waiting for browser connection)"
+            )
 
         if local_only:
-            unavailable_components.append("Hosted Meta API Models (Blocked by strict Local-Only Privacy Mode)")
+            unavailable_components.append(
+                "Hosted Meta API Models (Blocked by strict Local-Only Privacy Mode)"
+            )
         elif not meta_configured:
             unavailable_components.append("Hosted Meta API Models (Meta API key not configured)")
         else:
@@ -1445,7 +1572,11 @@ async def _execute_goal_pipeline(
             + "\n".join(f"  • {c}" for c in connected_components)
             + "\n\n"
             "CURRENTLY UNAVAILABLE / AWAITING CONNECTION:\n"
-            + ("\n".join(f"  • {u}" for u in unavailable_components) if unavailable_components else "  • None (All subsystems operational)")
+            + (
+                "\n".join(f"  • {u}" for u in unavailable_components)
+                if unavailable_components
+                else "  • None (All subsystems operational)"
+            )
             + f"\n\nREGISTERED CAPABILITIES ({len(caps)}):\n"
             + "\n".join(f"  • {c}" for c in cap_summaries[:8])
             + ("\n  • ...and more registered in CapabilityRegistry" if len(caps) > 8 else "")
@@ -1469,7 +1600,11 @@ async def _execute_goal_pipeline(
             actionId=exec_action.actionId,
             isSuccess=True,
             durationMs=15.0,
-            outputData={"connected": connected_components, "unavailable": unavailable_components, "capabilitiesCount": len(caps)},
+            outputData={
+                "connected": connected_components,
+                "unavailable": unavailable_components,
+                "capabilitiesCount": len(caps),
+            },
         )
         verifier_result = IndependentVerifier.verify_action_outcome(
             action=exec_action,
@@ -1494,7 +1629,10 @@ async def _execute_goal_pipeline(
             goal=req.goal,
             workflow_mode=task_type,
             direction="Local System Introspection",
-            extracted_fields={"capabilities_count": len(caps), "connected_count": len(connected_components)},
+            extracted_fields={
+                "capabilities_count": len(caps),
+                "connected_count": len(connected_components),
+            },
             verification_status="VERIFIED",
             evidence_id=str(evidence.evidenceId),
             target_app_or_url="Sahaay Runtime Registry",
@@ -1581,18 +1719,46 @@ async def _execute_goal_pipeline(
     ]
     is_compound_or_complex = any(ci in goal_lower for ci in compound_indicators)
 
-    direct_launch_match = re.match(r"^(?:open|launch)\s+([a-zA-Z0-9_\-\s]+?)(?:\.exe)?$", goal_lower)
-    direct_url_match = re.match(r"^(?:open|navigate to|go to)\s+(https?://[^\s]+|[a-zA-Z0-9\-\.]+\.(?:com|org|io|net|edu|dev|in|ai)(?:/[^\s]*)?)$", goal_lower)
-    direct_vol_match = re.match(r"^(?:set|change)\s+(?:system\s+)?volume\s+(?:to\s+)?(\d+)(?:%)?$", goal_lower)
-    direct_snap_match = re.match(r"^(?:take|capture)\s+(?:a\s+)?(?:screen(?:shot)?|desktop\s+screen(?:shot)?)$", goal_lower)
+    direct_launch_match = re.match(
+        r"^(?:open|launch)\s+([a-zA-Z0-9_\-\s]+?)(?:\.exe)?$", goal_lower
+    )
+    direct_url_match = re.match(
+        r"^(?:open|navigate to|go to)\s+(https?://[^\s]+|[a-zA-Z0-9\-\.]+\.(?:com|org|io|net|edu|dev|in|ai)(?:/[^\s]*)?)$",
+        goal_lower,
+    )
+    direct_vol_match = re.match(
+        r"^(?:set|change)\s+(?:system\s+)?volume\s+(?:to\s+)?(\d+)(?:%)?$", goal_lower
+    )
+    direct_snap_match = re.match(
+        r"^(?:take|capture)\s+(?:a\s+)?(?:screen(?:shot)?|desktop\s+screen(?:shot)?)$", goal_lower
+    )
 
-    direct_yt_search = re.match(r"^(?:search\s+(?:on\s+)?youtube\s+for|open\s+youtube\s+and\s+search\s+(?:for\s+)?|play\s+(.+?)\s+on\s+youtube|search\s+youtube\s+(?:for\s+)?)\s*(.*)$", goal_lower)
-    direct_notepad_write = re.match(r"^(?:(?:open\s+notepad\s+and\s+(?:write|type))|(?:write|type))\s+['\"]?(.*?)['\"]?\s+(?:in|into|to)\s+notepad$", goal_lower)
-    if not direct_notepad_write and "notepad" in goal_lower and ("write" in goal_lower or "type" in goal_lower) and not is_compound_or_complex:
-        direct_notepad_write = re.match(r"^open\s+notepad\s+and\s+(?:write|type)\s+['\"]?(.*?)['\"]?$", goal_lower)
+    direct_yt_search = re.match(
+        r"^(?:search\s+(?:on\s+)?youtube\s+for|open\s+youtube\s+and\s+search\s+(?:for\s+)?|play\s+(.+?)\s+on\s+youtube|search\s+youtube\s+(?:for\s+)?)\s*(.*)$",
+        goal_lower,
+    )
+    direct_notepad_write = re.match(
+        r"^(?:(?:open\s+notepad\s+and\s+(?:write|type))|(?:write|type))\s+['\"]?(.*?)['\"]?\s+(?:in|into|to)\s+notepad$",
+        goal_lower,
+    )
+    if (
+        not direct_notepad_write
+        and "notepad" in goal_lower
+        and ("write" in goal_lower or "type" in goal_lower)
+        and not is_compound_or_complex
+    ):
+        direct_notepad_write = re.match(
+            r"^open\s+notepad\s+and\s+(?:write|type)\s+['\"]?(.*?)['\"]?$", goal_lower
+        )
 
-    direct_summarize_match = re.match(r"^(?:summarize\s+(?:this\s+)?page|what\s+is\s+on\s+this\s+page|read\s+(?:the\s+)?active\s+tab|get\s+active\s+tab)$", goal_lower)
-    direct_list_match = re.match(r"^(?:list|show)\s+(?:the\s+)?(?:files|directory|folder)(?:\s+(?:in|of))?\s*([^\s]*)$", goal_lower)
+    direct_summarize_match = re.match(
+        r"^(?:summarize\s+(?:this\s+)?page|what\s+is\s+on\s+this\s+page|read\s+(?:the\s+)?active\s+tab|get\s+active\s+tab)$",
+        goal_lower,
+    )
+    direct_list_match = re.match(
+        r"^(?:list|show)\s+(?:the\s+)?(?:files|directory|folder)(?:\s+(?:in|of))?\s*([^\s]*)$",
+        goal_lower,
+    )
     direct_read_match = re.match(r"^(?:read|open)\s+(?:the\s+)?file\s+([^\s]+)$", goal_lower)
 
     is_fast_path = (not is_compound_or_complex) and bool(
@@ -1631,13 +1797,25 @@ async def _execute_goal_pipeline(
             fast_target = "notepad.exe"
             fast_action_type = ActionTypeEnum.WINDOWS_SET_CONTROL_TEXT
             try:
-                launch_res = await live_executor.execute("windows_launch_app", {"application": "notepad"})
+                launch_res = await live_executor.execute(
+                    "windows_launch_app", {"application": "notepad"}
+                )
                 await asyncio.sleep(0.4)
-                write_res = await live_executor.execute("windows_set_control_text", {"text": text_to_write, "application": "notepad"})
-                readback_res = await live_executor.execute("windows_get_control_text", {"application": "notepad"})
+                write_res = await live_executor.execute(
+                    "windows_set_control_text", {"text": text_to_write, "application": "notepad"}
+                )
+                readback_res = await live_executor.execute(
+                    "windows_get_control_text", {"application": "notepad"}
+                )
                 read_text = str(readback_res.get("text", ""))
                 verified = (text_to_write.lower() in read_text.lower()) if read_text else True
-                fast_out_data = {"launch": launch_res, "write": write_res, "readback": readback_res, "verified": verified, "success": True}
+                fast_out_data = {
+                    "launch": launch_res,
+                    "write": write_res,
+                    "readback": readback_res,
+                    "verified": verified,
+                    "success": True,
+                }
                 fast_summary = f"I opened Notepad on your Windows desktop, entered the requested text ('{text_to_write}'), and verified the content matches."
             except Exception as np_err:
                 fast_out_data = {"success": False, "error": str(np_err)}
@@ -1652,7 +1830,9 @@ async def _execute_goal_pipeline(
             target_url = f"https://www.youtube.com/results?search_query={encoded_q}"
             fast_target = target_url
             fast_action_type = ActionTypeEnum.BROWSER_OPEN_TAB
-            br_res = await asyncio.to_thread(live_br_adapter.open_tab, target_url, str(req.sessionId))
+            br_res = await asyncio.to_thread(
+                live_br_adapter.open_tab, target_url, str(req.sessionId)
+            )
             if is_play_intent:
                 # Trigger playback on top video link
                 await asyncio.sleep(1.0)
@@ -1671,13 +1851,19 @@ async def _execute_goal_pipeline(
                 target_url = WEB_TARGET_MAP[app_target]
                 fast_target = target_url
                 fast_action_type = ActionTypeEnum.BROWSER_OPEN_TAB
-                br_res = await asyncio.to_thread(live_br_adapter.open_tab, target_url, str(req.sessionId))
+                br_res = await asyncio.to_thread(
+                    live_br_adapter.open_tab, target_url, str(req.sessionId)
+                )
                 fast_out_data = br_res
-                fast_summary = f"I opened {app_target.capitalize()} ({target_url}) in a browser tab."
+                fast_summary = (
+                    f"I opened {app_target.capitalize()} ({target_url}) in a browser tab."
+                )
             else:
                 fast_target = app_target
                 fast_action_type = ActionTypeEnum.STATE_MUTATION
-                launch_res = await live_executor.execute("windows_launch_app", {"application": app_target})
+                launch_res = await live_executor.execute(
+                    "windows_launch_app", {"application": app_target}
+                )
                 fast_out_data = launch_res
                 if launch_res.get("success"):
                     fast_summary = f"I launched '{app_target}' on your Windows desktop (PID/HWND: {launch_res.get('hwnd', 0)})."
@@ -1686,10 +1872,14 @@ async def _execute_goal_pipeline(
 
         elif direct_url_match:
             raw_url = direct_url_match.group(1)
-            target_url = raw_url if raw_url.startswith(("http://", "https://")) else f"https://{raw_url}"
+            target_url = (
+                raw_url if raw_url.startswith(("http://", "https://")) else f"https://{raw_url}"
+            )
             fast_target = target_url
             fast_action_type = ActionTypeEnum.BROWSER_OPEN_TAB
-            br_res = await asyncio.to_thread(live_br_adapter.open_tab, target_url, str(req.sessionId))
+            br_res = await asyncio.to_thread(
+                live_br_adapter.open_tab, target_url, str(req.sessionId)
+            )
             fast_out_data = br_res
             fast_summary = f"I opened {target_url} in a browser companion tab."
 
@@ -1702,7 +1892,9 @@ async def _execute_goal_pipeline(
             page_text = obs.get("visibleTextExcerpt") or obs.get("pageText") or ""
             fast_out_data = obs
             if page_text:
-                fast_summary = f"Summary of active page '{page_title}' ({page_url}):\n\n{page_text[:1000]}"
+                fast_summary = (
+                    f"Summary of active page '{page_title}' ({page_url}):\n\n{page_text[:1000]}"
+                )
             else:
                 fast_summary = f"Inspected active tab '{page_title}' ({page_url}). No text content was retrieved from the page."
 
@@ -1716,7 +1908,9 @@ async def _execute_goal_pipeline(
                 fast_summary = dir_res["summary"]
             else:
                 items = dir_res.get("items", [])
-                items_preview = "\n".join(f"- {i.get('name')} ({i.get('type')})" for i in items[:12])
+                items_preview = "\n".join(
+                    f"- {i.get('name')} ({i.get('type')})" for i in items[:12]
+                )
                 fast_summary = f"I listed folder '{target_path}'. Discovered {dir_res.get('count', len(items))} items:\n{items_preview}"
 
         elif direct_read_match:
@@ -1742,7 +1936,9 @@ async def _execute_goal_pipeline(
             fast_out_data = snap_res
             fast_summary = f"Desktop screenshot captured successfully ({snap_res.get('filePath')})."
 
-        is_fast_success = bool(fast_out_data.get("success", False) and not fast_out_data.get("error"))
+        is_fast_success = bool(
+            fast_out_data.get("success", False) and not fast_out_data.get("error")
+        )
         orchestrator.transition_state(task_id, TaskStatusEnum.VERIFYING)
         target_final_state = TaskStatusEnum.COMPLETED if is_fast_success else TaskStatusEnum.FAILED
         orchestrator.transition_state(task_id, target_final_state)
@@ -1770,7 +1966,10 @@ async def _execute_goal_pipeline(
         verifier_result = IndependentVerifier.verify_action_outcome(
             action=exec_action,
             execution_result=exec_result,
-            observed_postcondition_data={"status": "VERIFIED" if is_fast_success else "FAILED", **fast_out_data},
+            observed_postcondition_data={
+                "status": "VERIFIED" if is_fast_success else "FAILED",
+                **fast_out_data,
+            },
             is_model_self_attestation=False,
         )
         evidence = evidence_ledger.record_evidence(
@@ -1788,7 +1987,11 @@ async def _execute_goal_pipeline(
                 role="assistant",
                 content=fast_summary,
                 task_id=str(task_id),
-                metadata={"status": target_final_state.value, "target": fast_target, "evidenceId": str(evidence.evidenceId) if is_fast_success else None},
+                metadata={
+                    "status": target_final_state.value,
+                    "target": fast_target,
+                    "evidenceId": str(evidence.evidenceId) if is_fast_success else None,
+                },
             )
         except Exception as ex_conv:
             logger.warning("Could not record assistant conversation response: %s", ex_conv)
@@ -1832,14 +2035,29 @@ async def _execute_goal_pipeline(
     # Dispatches creative image requests through Meta muse-image-1.0 and vector
     # stylizers, preserving original images and creating verifiable visual artifacts.
     # -------------------------------------------------------------------------
-    is_image_editing = (
-        any(w in goal_lower for w in ["edit image", "style image", "retro style", "vintage style", "synthwave", "filter image", "image style"])
-        or (("image" in goal_lower or "photo" in goal_lower or "picture" in goal_lower) and any(w in goal_lower for w in ["retro", "vintage", "style", "edit", "filter", "art", "stylize"]))
+    is_image_editing = any(
+        w in goal_lower
+        for w in [
+            "edit image",
+            "style image",
+            "retro style",
+            "vintage style",
+            "synthwave",
+            "filter image",
+            "image style",
+        ]
+    ) or (
+        ("image" in goal_lower or "photo" in goal_lower or "picture" in goal_lower)
+        and any(
+            w in goal_lower
+            for w in ["retro", "vintage", "style", "edit", "filter", "art", "stylize"]
+        )
     )
 
     if is_image_editing:
-        from sahaay_core.models.meta.muse_image import muse_image
         import re
+
+        from sahaay_core.models.meta.muse_image import muse_image
 
         orchestrator.transition_state(task_id, TaskStatusEnum.PLANNING)
         orchestrator.transition_state(task_id, TaskStatusEnum.OBSERVING)
@@ -1847,7 +2065,9 @@ async def _execute_goal_pipeline(
         # Detect source image from context or default
         source_image_path = ""
         context_str = req.context or ""
-        img_match = re.search(r'([A-Za-z]:\\[^\n\r]+\.(?:png|jpg|jpeg|webp))', context_str, re.IGNORECASE)
+        img_match = re.search(
+            r"([A-Za-z]:\\[^\n\r]+\.(?:png|jpg|jpeg|webp))", context_str, re.IGNORECASE
+        )
         if img_match:
             source_image_path = img_match.group(1)
         else:
@@ -1900,7 +2120,10 @@ async def _execute_goal_pipeline(
         verifier_result = IndependentVerifier.verify_action_outcome(
             action=edit_action,
             execution_result=exec_res,
-            observed_postcondition_data={"styledPath": style_res.get("styledPath"), "status": "VERIFIED"},
+            observed_postcondition_data={
+                "styledPath": style_res.get("styledPath"),
+                "status": "VERIFIED",
+            },
             is_model_self_attestation=False,
         )
         evidence = evidence_ledger.record_evidence(
@@ -1912,7 +2135,9 @@ async def _execute_goal_pipeline(
         )
 
         styled_out_path = style_res.get("styledPath")
-        is_edit_success = bool(style_res.get("success", False) and styled_out_path and os.path.exists(styled_out_path))
+        is_edit_success = bool(
+            style_res.get("success", False) and styled_out_path and os.path.exists(styled_out_path)
+        )
 
         creative_summary = (
             f"Image successfully edited and styled in '{style_instruction}'.\n\n"
@@ -1937,7 +2162,10 @@ async def _execute_goal_pipeline(
             goal=req.goal,
             workflow_mode=task_type,
             direction="Local Creative Synthesis",
-            extracted_fields={"style": style_instruction, "output_path": style_res.get("styledPath")},
+            extracted_fields={
+                "style": style_instruction,
+                "output_path": style_res.get("styledPath"),
+            },
             verification_status="VERIFIED",
             evidence_id=str(evidence.evidenceId),
             target_app_or_url=style_res.get("styledPath", "Local Artifact"),
@@ -2001,6 +2229,7 @@ async def _execute_goal_pipeline(
 
     if use_meta_tools:
         from sahaay_core.models.router import model_router
+
         route_decision = model_router.route_task(
             goal=req.goal,
             context=req.context,
@@ -2063,6 +2292,7 @@ async def _execute_goal_pipeline(
 
             # Validate model proposal against authoritative capability registry
             from sahaay_core.models.router import model_router
+
             is_valid, validation_err = model_router.validate_model_proposal(fn_name, fn_args)
             if not is_valid:
                 logger.warning("Rejecting invalid model proposal '%s': %s", fn_name, validation_err)
@@ -2096,10 +2326,12 @@ async def _execute_goal_pipeline(
         try:
             available_tools = capability_registry.to_model_tool_definitions()
             from sahaay_core.skills.manager import skills_manager
+
             matched_skills = skills_manager.get_relevant_skills(req.goal)
             skills_prompt = skills_manager.format_skills_for_prompt(matched_skills)
 
             from sahaay_core.orchestration.mission_strategist import mission_strategist
+
             mission_strategy = await mission_strategist.analyze_objective(
                 task_id=str(task_id),
                 session_id=str(req.sessionId),
@@ -2236,7 +2468,9 @@ async def _execute_goal_pipeline(
                 if res.get("hwnd"):
                     accumulated_facts["target_hwnd"] = res.get("hwnd")
                 if res.get("application") or res.get("processName"):
-                    accumulated_facts["target_app"] = res.get("application") or res.get("processName")
+                    accumulated_facts["target_app"] = res.get("application") or res.get(
+                        "processName"
+                    )
 
                 # File list facts
                 if fname in ("file_list_directory", "list_directory"):
@@ -2247,8 +2481,15 @@ async def _execute_goal_pipeline(
 
                 # Media playback facts - require verified active playback
                 is_play_tool = fname in ("browser_play_media", "play_youtube_video", "media_play")
-                playback_active = str(res.get("playbackState", "")).lower() in ("playing", "started", "active") or res.get("verifiedPlayback") is True
-                if (is_play_tool or res.get("media_playback")) and res.get("success", False) is True and playback_active:
+                playback_active = (
+                    str(res.get("playbackState", "")).lower() in ("playing", "started", "active")
+                    or res.get("verifiedPlayback") is True
+                )
+                if (
+                    (is_play_tool or res.get("media_playback"))
+                    and res.get("success", False) is True
+                    and playback_active
+                ):
                     accumulated_facts["media_playback"] = True
                     if res.get("videoTitle") or res.get("title"):
                         accumulated_facts["media_title"] = res.get("videoTitle") or res.get("title")
@@ -2256,12 +2497,16 @@ async def _execute_goal_pipeline(
                         accumulated_facts["media_url"] = res.get("videoUrl") or res.get("url")
 
         successful_calls = [
-            tc for tc in tool_calls_executed
+            tc
+            for tc in tool_calls_executed
             if isinstance(tc.get("result"), dict) and tc["result"].get("success", False) is True
         ]
         failed_calls = [
-            tc for tc in tool_calls_executed
-            if not (isinstance(tc.get("result"), dict) and tc["result"].get("success", False) is True)
+            tc
+            for tc in tool_calls_executed
+            if not (
+                isinstance(tc.get("result"), dict) and tc["result"].get("success", False) is True
+            )
         ]
 
         finish_reason = meta_res.get("finish_reason", "stop")
@@ -2271,6 +2516,7 @@ async def _execute_goal_pipeline(
                 screen_bytes = await asyncio.to_thread(live_win_adapter.capture_screen)
                 if screen_bytes:
                     from sahaay_core.orchestration.mission_strategist import mission_strategist
+
                     wonder_eval = await mission_strategist.escalate_to_visual_wonder(
                         task_id=str(task_id),
                         goal=req.goal,
@@ -2285,10 +2531,40 @@ async def _execute_goal_pipeline(
         # Objective-driven verification:
         # Determine whether user objective requested a real computer/browser/file action
         action_indicators = [
-            "play", "listen", "watch", "stream", "open", "launch", "run", "start",
-            "type", "write", "save", "create", "generate", "fill", "click", "press",
-            "scroll", "navigate", "browse", "go to", "visit", "download", "calculate",
-            "add to cart", "add to", "cart", "shop", "checkout", "buy", "list", "show", "files", "folder", "directory"
+            "play",
+            "listen",
+            "watch",
+            "stream",
+            "open",
+            "launch",
+            "run",
+            "start",
+            "type",
+            "write",
+            "save",
+            "create",
+            "generate",
+            "fill",
+            "click",
+            "press",
+            "scroll",
+            "navigate",
+            "browse",
+            "go to",
+            "visit",
+            "download",
+            "calculate",
+            "add to cart",
+            "add to",
+            "cart",
+            "shop",
+            "checkout",
+            "buy",
+            "list",
+            "show",
+            "files",
+            "folder",
+            "directory",
         ]
         requires_physical_action = any(
             re.search(rf"\b{re.escape(w)}\b", goal_lower) or w in goal_lower
@@ -2304,14 +2580,28 @@ async def _execute_goal_pipeline(
                 is_verified = False
                 error_explanation = "All attempted computer action tools reported failure."
             elif finish_reason in ("max_rounds_or_loop_guard", "max_rounds_exceeded"):
-                is_verified = is_success and len(successful_calls) >= 2 and any(
-                    k in accumulated_facts for k in ("browser_url", "file_created_path", "text_written", "target_hwnd", "directory")
+                is_verified = (
+                    is_success
+                    and len(successful_calls) >= 2
+                    and any(
+                        k in accumulated_facts
+                        for k in (
+                            "browser_url",
+                            "file_created_path",
+                            "text_written",
+                            "target_hwnd",
+                            "directory",
+                        )
+                    )
                 )
                 if not is_verified:
                     error_explanation = f"Execution reached round budget ({rounds} rounds) before operations could be verified."
             else:
                 # Normal stop: verify substantive deliverables
-                if accumulated_facts.get("directory_summary") or accumulated_facts.get("directory_count") is not None:
+                if (
+                    accumulated_facts.get("directory_summary")
+                    or accumulated_facts.get("directory_count") is not None
+                ):
                     is_verified = True
                 elif accumulated_facts.get("media_playback"):
                     is_verified = True
@@ -2319,10 +2609,14 @@ async def _execute_goal_pipeline(
                     is_verified = True
                 elif accumulated_facts.get("target_hwnd"):
                     is_verified = True
-                elif accumulated_facts.get("browser_url") and not accumulated_facts.get("browser_url", "").endswith("newtab"):
+                elif accumulated_facts.get("browser_url") and not accumulated_facts.get(
+                    "browser_url", ""
+                ).endswith("newtab"):
                     is_verified = True
                 else:
-                    is_verified = is_success and len(successful_calls) > 0 and len(failed_calls) == 0
+                    is_verified = (
+                        is_success and len(successful_calls) > 0 and len(failed_calls) == 0
+                    )
 
                 if not is_verified and not error_explanation:
                     error_explanation = "State postcondition could not be independently verified."
@@ -2358,7 +2652,11 @@ async def _execute_goal_pipeline(
             or accumulated_facts.get("file_created_path")
             or accumulated_facts.get("directory")
             or accumulated_facts.get("target_app")
-            or ("Browser" if "browser" in goal_lower or "youtube" in goal_lower or "web" in goal_lower else "Windows Desktop")
+            or (
+                "Browser"
+                if "browser" in goal_lower or "youtube" in goal_lower or "web" in goal_lower
+                else "Windows Desktop"
+            )
         )
 
         observed_postconditions = {
@@ -2372,7 +2670,9 @@ async def _execute_goal_pipeline(
 
         exec_action = ActionContract(
             actionId=uuid4(),
-            actionType=ActionTypeEnum.DETERMINISTIC_RETRIEVAL if not requires_physical_action else ActionTypeEnum.BROWSER_NAVIGATE,
+            actionType=ActionTypeEnum.DETERMINISTIC_RETRIEVAL
+            if not requires_physical_action
+            else ActionTypeEnum.BROWSER_NAVIGATE,
             target=str(resolved_target),
             parameters={"goal": req.goal, "rounds": rounds, "tools": len(tool_calls_executed)},
             expectedPostcondition="Verified computer state updated via Meta function-calling",
@@ -2402,9 +2702,11 @@ async def _execute_goal_pipeline(
 
         step_results: Dict[str, Any] = {}
         for i, tc in enumerate(tool_calls_executed):
-            fn_name = tc.get("function_name", f"step_{i+1}")
-            step_results[f"tool_{i+1}_{fn_name}"] = {
-                "success": tc.get("result", {}).get("success", False) is True if isinstance(tc.get("result"), dict) else False,
+            fn_name = tc.get("function_name", f"step_{i + 1}")
+            step_results[f"tool_{i + 1}_{fn_name}"] = {
+                "success": tc.get("result", {}).get("success", False) is True
+                if isinstance(tc.get("result"), dict)
+                else False,
                 "function": fn_name,
                 "arguments": tc.get("arguments"),
                 "result": tc.get("result"),
@@ -2444,7 +2746,12 @@ async def _execute_goal_pipeline(
             event_type="task.completed" if is_verified else "task.failed",
             stage="COMPLETED" if is_verified else "FAILED",
             message=effective_summary,
-            data={"isVerified": is_verified, "rounds": rounds, "toolCalls": len(tool_calls_executed), "error": error_explanation},
+            data={
+                "isVerified": is_verified,
+                "rounds": rounds,
+                "toolCalls": len(tool_calls_executed),
+                "error": error_explanation,
+            },
         )
 
         try:
@@ -2456,7 +2763,9 @@ async def _execute_goal_pipeline(
                 metadata={
                     "status": "COMPLETED" if is_verified else "FAILED",
                     "rounds": rounds,
-                    "evidenceId": str(evidence.evidenceId) if 'evidence' in locals() and evidence else None,
+                    "evidenceId": str(evidence.evidenceId)
+                    if "evidence" in locals() and evidence
+                    else None,
                 },
             )
         except Exception:
@@ -2593,7 +2902,11 @@ async def _execute_goal_pipeline(
         summary_text = f"Execution failed: {report.error or 'Required steps or verifications were not fulfilled.'}"
     else:
         summary_text = (
-            (f"Calculation outcome: {facts.get('calculation_result')}" if facts.get("calculation_result") is not None else None)
+            (
+                f"Calculation outcome: {facts.get('calculation_result')}"
+                if facts.get("calculation_result") is not None
+                else None
+            )
             or facts.get("extracted_summary")
             or facts.get("key_findings")
             or facts.get("deadline_summary")

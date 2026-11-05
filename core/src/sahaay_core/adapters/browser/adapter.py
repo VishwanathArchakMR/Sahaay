@@ -3,16 +3,21 @@
 Processes authorized browser observations and executes bounded tab actions via Native Messaging Bridge.
 """
 
+import logging
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 from sahaay_core.adapters.windows.named_pipe_client import NamedPipeClient
 
+logger = logging.getLogger(__name__)
+
 
 class BrowserAdapter:
     """Adapter for browser tab inspection and permitted interactions via Native Messaging bridge."""
 
-    def __init__(self, pipe_name: str = "SahaayBrowserBridgePipe", allow_simulation: bool = False) -> None:
+    def __init__(
+        self, pipe_name: str = "SahaayBrowserBridgePipe", allow_simulation: bool = False
+    ) -> None:
         self.pipe_name = pipe_name
         self.client = NamedPipeClient(pipe_name=pipe_name)
         self.active_observations: Dict[str, Dict[str, Any]] = {}
@@ -108,7 +113,9 @@ class BrowserAdapter:
             if str(k).startswith("@obs-"):
                 ref_obs_id = str(k).split(":")[0][5:]
                 if self.latest_observation_id and ref_obs_id != self.latest_observation_id:
-                    raise ValueError(f"Stale element reference '{k}': bound to observation '{ref_obs_id}' but active observation is '{self.latest_observation_id}'.")
+                    raise ValueError(
+                        f"Stale element reference '{k}': bound to observation '{ref_obs_id}' but active observation is '{self.latest_observation_id}'."
+                    )
         try:
             res = self.client.send_command(
                 "fill_form_fields",
@@ -148,7 +155,11 @@ class BrowserAdapter:
         except (ConnectionError, RuntimeError) as ce:
             if not self.allow_simulation:
                 raise ConnectionError("Browser bridge not connected.") from ce
-            return {"values": {}, "driverProvenance": "offline_simulation", "offlineSimulation": True}
+            return {
+                "values": {},
+                "driverProvenance": "offline_simulation",
+                "offlineSimulation": True,
+            }
 
     def click_element(
         self, target_id_or_selector: str, session_id: Optional[str] = None
@@ -157,7 +168,9 @@ class BrowserAdapter:
         if str(target_id_or_selector).startswith("@obs-"):
             ref_obs_id = str(target_id_or_selector).split(":")[0][5:]
             if self.latest_observation_id and ref_obs_id != self.latest_observation_id:
-                raise ValueError(f"Stale element reference '{target_id_or_selector}': bound to observation '{ref_obs_id}' but active observation is '{self.latest_observation_id}'.")
+                raise ValueError(
+                    f"Stale element reference '{target_id_or_selector}': bound to observation '{ref_obs_id}' but active observation is '{self.latest_observation_id}'."
+                )
         try:
             res = self.client.send_command(
                 "click_element",
@@ -173,9 +186,16 @@ class BrowserAdapter:
         except (ConnectionError, RuntimeError) as ce:
             if not self.allow_simulation:
                 raise ConnectionError("Browser bridge not connected.") from ce
-            return {"clicked": True, "target": target_id_or_selector, "driverProvenance": "offline_simulation", "offlineSimulation": True}
+            return {
+                "clicked": True,
+                "target": target_id_or_selector,
+                "driverProvenance": "offline_simulation",
+                "offlineSimulation": True,
+            }
 
-    def input_text(self, text: str, selector: str = "", session_id: Optional[str] = None) -> Dict[str, Any]:
+    def input_text(
+        self, text: str, selector: str = "", session_id: Optional[str] = None
+    ) -> Dict[str, Any]:
         """Type text into an input field or contenteditable element in the active tab."""
         try:
             if self.is_connected():
@@ -192,12 +212,25 @@ class BrowserAdapter:
                         data.setdefault("text", text)
                         data["driverProvenance"] = "real_browser_extension"
                         return data
-                    return {"success": True, "text": text, "driverProvenance": "real_browser_extension"}
-                raise RuntimeError(res.get("error", f"Input text failed for selector '{selector}'."))
+                    return {
+                        "success": True,
+                        "text": text,
+                        "driverProvenance": "real_browser_extension",
+                    }
+                raise RuntimeError(
+                    res.get("error", f"Input text failed for selector '{selector}'.")
+                )
         except Exception as e:
             if not self.allow_simulation:
-                raise ConnectionError("Browser bridge not connected or input command failed.") from e
-            return {"success": True, "text": text, "selector": selector, "driverProvenance": "offline_simulation"}
+                raise ConnectionError(
+                    "Browser bridge not connected or input command failed."
+                ) from e
+            return {
+                "success": True,
+                "text": text,
+                "selector": selector,
+                "driverProvenance": "offline_simulation",
+            }
 
     def open_tab(self, url: str, session_id: Optional[str] = None) -> Dict[str, Any]:
         """Open a new browser tab at the specified URL via Native Messaging bridge or browser launcher."""
@@ -219,12 +252,19 @@ class BrowserAdapter:
                         data["state"] = "TAB_CREATED"
                         data["driverProvenance"] = "real_browser_extension"
                         return data
-                    return {"url": url, "success": True, "state": "TAB_CREATED", "driverProvenance": "real_browser_extension"}
+                    return {
+                        "url": url,
+                        "success": True,
+                        "state": "TAB_CREATED",
+                        "driverProvenance": "real_browser_extension",
+                    }
         except Exception:
             pass
 
         # Launch URL in Google Chrome or default system browser
-        import os, subprocess, webbrowser
+        import os
+        import subprocess
+        import webbrowser
 
         chrome_candidates = [
             r"C:\Program Files\Google\Chrome\Application\chrome.exe",
@@ -261,7 +301,9 @@ class BrowserAdapter:
             logger.warning("Failed to open URL %s in default system browser: %s", url, wb_err)
 
         if not self.allow_simulation:
-            raise ConnectionError(f"Browser bridge not connected and browser launcher failed for '{url}'.")
+            raise ConnectionError(
+                f"Browser bridge not connected and browser launcher failed for '{url}'."
+            )
         return {
             "url": url,
             "title": f"Simulated tab: {url}",
@@ -290,7 +332,11 @@ class BrowserAdapter:
                         data.setdefault("success", True)
                         data["driverProvenance"] = "real_browser_extension"
                         return data
-                    return {"url": url, "success": True, "driverProvenance": "real_browser_extension"}
+                    return {
+                        "url": url,
+                        "success": True,
+                        "driverProvenance": "real_browser_extension",
+                    }
         except Exception:
             pass
 
@@ -313,12 +359,17 @@ class BrowserAdapter:
                         data.setdefault("success", True)
                         data["driverProvenance"] = "real_browser_extension"
                         return data
-                    return {"query": query, "success": True, "driverProvenance": "real_browser_extension"}
+                    return {
+                        "query": query,
+                        "success": True,
+                        "driverProvenance": "real_browser_extension",
+                    }
         except Exception:
             pass
 
         # Construct destination search URL
         import urllib.parse
+
         encoded_query = urllib.parse.quote_plus(query)
         search_url = f"https://www.youtube.com/results?search_query={encoded_query}"
         tab_res = self.open_tab(search_url, session_id=session_id)

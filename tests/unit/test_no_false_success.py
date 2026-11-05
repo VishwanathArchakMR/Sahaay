@@ -179,9 +179,10 @@ def test_executor_resolves_downloads_folder_alias():
     """file_list_directory must resolve 'Downloads' alias to user's real Downloads directory."""
     import asyncio
     from pathlib import Path
-    from sahaay_core.capabilities.executor import CapabilityExecutor
-    from sahaay_core.adapters.windows.adapter import WindowsNativeAdapter
+
     from sahaay_core.adapters.browser.adapter import BrowserAdapter
+    from sahaay_core.adapters.windows.adapter import WindowsNativeAdapter
+    from sahaay_core.capabilities.executor import CapabilityExecutor
 
     executor = CapabilityExecutor(
         windows_adapter=WindowsNativeAdapter(allow_simulation=True),

@@ -162,8 +162,8 @@ class DocumentIngestionService:
 
     def _parse_docx(self, path: Path, source_id: UUID) -> List[Any]:
         """Extract text paragraphs from Word DOCX XML without external dependencies."""
-        import zipfile
         import xml.etree.ElementTree as ET
+        import zipfile
 
         facts = []
         try:
@@ -202,8 +202,8 @@ class DocumentIngestionService:
 
     def _parse_xlsx(self, path: Path, source_id: UUID) -> List[Any]:
         """Extract tabular rows from Excel XLSX XML without external dependencies."""
-        import zipfile
         import xml.etree.ElementTree as ET
+        import zipfile
 
         facts = []
         try:
@@ -211,13 +211,25 @@ class DocumentIngestionService:
                 shared_strings = []
                 if "xl/sharedStrings.xml" in xlsx_zip.namelist():
                     ss_root = ET.fromstring(xlsx_zip.read("xl/sharedStrings.xml"))
-                    for si in ss_root.findall(".//{http://schemas.openxmlformats.org/spreadsheetml/2006/main}si"):
-                        t_parts = [t.text for t in si.findall(".//{http://schemas.openxmlformats.org/spreadsheetml/2006/main}t") if t.text]
+                    for si in ss_root.findall(
+                        ".//{http://schemas.openxmlformats.org/spreadsheetml/2006/main}si"
+                    ):
+                        t_parts = [
+                            t.text
+                            for t in si.findall(
+                                ".//{http://schemas.openxmlformats.org/spreadsheetml/2006/main}t"
+                            )
+                            if t.text
+                        ]
                         shared_strings.append("".join(t_parts))
 
                 # Process first sheet or all worksheets
                 ns = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
-                sheet_names = [n for n in xlsx_zip.namelist() if n.startswith("xl/worksheets/sheet") and n.endswith(".xml")]
+                sheet_names = [
+                    n
+                    for n in xlsx_zip.namelist()
+                    if n.startswith("xl/worksheets/sheet") and n.endswith(".xml")
+                ]
                 for sheet_path in sheet_names:
                     sheet_root = ET.fromstring(xlsx_zip.read(sheet_path))
                     rows_text = []
@@ -228,7 +240,11 @@ class DocumentIngestionService:
                             v_elem = c_elem.find("s:v", ns)
                             if v_elem is not None and v_elem.text:
                                 val = v_elem.text
-                                if c_type == "s" and val.isdigit() and int(val) < len(shared_strings):
+                                if (
+                                    c_type == "s"
+                                    and val.isdigit()
+                                    and int(val) < len(shared_strings)
+                                ):
                                     row_vals.append(shared_strings[int(val)])
                                 else:
                                     row_vals.append(val)
@@ -260,18 +276,28 @@ class DocumentIngestionService:
 
     def _parse_pptx(self, path: Path, source_id: UUID) -> List[Any]:
         """Extract slide texts from PowerPoint PPTX XML."""
-        import zipfile
         import xml.etree.ElementTree as ET
+        import zipfile
 
         facts = []
         try:
             with zipfile.ZipFile(str(path), "r") as pptx_zip:
                 slide_names = sorted(
-                    [n for n in pptx_zip.namelist() if n.startswith("ppt/slides/slide") and n.endswith(".xml")]
+                    [
+                        n
+                        for n in pptx_zip.namelist()
+                        if n.startswith("ppt/slides/slide") and n.endswith(".xml")
+                    ]
                 )
                 for slide_idx, slide_path in enumerate(slide_names):
                     slide_root = ET.fromstring(pptx_zip.read(slide_path))
-                    texts = [t.text for t in slide_root.findall(".//{http://schemas.openxmlformats.org/drawingml/2006/main}t") if t.text]
+                    texts = [
+                        t.text
+                        for t in slide_root.findall(
+                            ".//{http://schemas.openxmlformats.org/drawingml/2006/main}t"
+                        )
+                        if t.text
+                    ]
                     slide_text = " ".join(texts).strip()
                     if slide_text:
                         fact = self.context_store.record_fact(

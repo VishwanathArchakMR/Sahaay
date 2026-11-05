@@ -9,12 +9,10 @@ Coordinates bounded, least-privilege specialist workers under the direction of t
 - Critic and Verifier (definition-of-done validation and quality audit)
 """
 
-import asyncio
 import logging
 import time
 from enum import Enum
 from typing import Any, Dict, List, Optional
-from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
@@ -114,7 +112,9 @@ class SpecialistCoordinator:
                     )
 
             elif req.role == SpecialistRole.DATA_ANALYST:
-                data_source = req.parameters.get("source") or req.parameters.get("filePath") or req.objective
+                data_source = (
+                    req.parameters.get("source") or req.parameters.get("filePath") or req.objective
+                )
                 analysis_res = await self.executor.execute(
                     "data_analyze_tabular",
                     {"source": data_source, "query": req.parameters.get("query")},
@@ -190,4 +190,3 @@ class SpecialistCoordinator:
 
 
 specialist_coordinator = SpecialistCoordinator()
-

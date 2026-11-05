@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+
 try:
     from pypdf import PdfWriter
 except ImportError:

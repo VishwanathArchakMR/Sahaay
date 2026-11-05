@@ -155,7 +155,9 @@ class NamedPipeClient:
                     raise ConnectionError(f"Pipe broken during read (Win32 Error: {err})")
                 if bytes_avail.value > 0:
                     to_read = min(65536, bytes_avail.value)
-                    success = ReadFile(handle, chunk_buffer, to_read, ctypes.byref(bytes_read), None)
+                    success = ReadFile(
+                        handle, chunk_buffer, to_read, ctypes.byref(bytes_read), None
+                    )
                     if success and bytes_read.value > 0:
                         accum.extend(chunk_buffer.raw[: bytes_read.value])
                         if b"\n" in accum:

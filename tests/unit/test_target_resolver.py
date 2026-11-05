@@ -5,9 +5,7 @@ Verifies target-aware perception, identification of execution target surfaces
 and strict exclusion of Sahaay Electron UI windows to prevent self-observation contamination.
 """
 
-import pytest
 from sahaay_core.perception.target_resolver import (
-    TargetDescriptor,
     TargetResolver,
     TargetSurfaceType,
 )
@@ -32,17 +30,34 @@ def test_sahaay_window_detection_by_title():
     resolver = TargetResolver()
 
     assert resolver.is_sahaay_window(process_name="app", title="Sahaay Desktop Agent") is True
-    assert resolver.is_sahaay_window(process_name="app", title="Developer Tools - localhost:5173") is True
+    assert (
+        resolver.is_sahaay_window(process_name="app", title="Developer Tools - localhost:5173")
+        is True
+    )
     assert resolver.is_sahaay_window(process_name="app", title="Antigravity Workspace") is True
 
 
 def test_external_window_not_flagged_as_sahaay():
     resolver = TargetResolver(known_sahaay_hwnd=99999)
 
-    assert resolver.is_sahaay_window(process_name="notepad.exe", title="Untitled - Notepad", hwnd=101) is False
-    assert resolver.is_sahaay_window(process_name="calculator.exe", title="Calculator", hwnd=102) is False
-    assert resolver.is_sahaay_window(process_name="chrome.exe", title="Google - Google Chrome", hwnd=103) is False
-    assert resolver.is_sahaay_window(process_name="msedge.exe", title="Microsoft Edge", hwnd=104) is False
+    assert (
+        resolver.is_sahaay_window(process_name="notepad.exe", title="Untitled - Notepad", hwnd=101)
+        is False
+    )
+    assert (
+        resolver.is_sahaay_window(process_name="calculator.exe", title="Calculator", hwnd=102)
+        is False
+    )
+    assert (
+        resolver.is_sahaay_window(
+            process_name="chrome.exe", title="Google - Google Chrome", hwnd=103
+        )
+        is False
+    )
+    assert (
+        resolver.is_sahaay_window(process_name="msedge.exe", title="Microsoft Edge", hwnd=104)
+        is False
+    )
     assert resolver.is_sahaay_window(process_name="code.exe", title="VS Code", hwnd=105) is False
 
 
@@ -122,4 +137,3 @@ def test_resolve_target_creative_canvas():
 
     assert target.surface_type == TargetSurfaceType.CREATIVE_CANVAS
     assert target.is_sahaay_excluded is True
-

@@ -12,7 +12,7 @@ Provides a robust, secure SSL context that:
 import os
 import ssl
 import sys
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Optional, Tuple
 
 import certifi
 import httpx
@@ -67,23 +67,33 @@ def classify_meta_exception(ex: Exception) -> Tuple[str, str]:
     """
     err_str = str(ex)
 
-    if isinstance(ex, ssl.SSLCertVerificationError) or "CERTIFICATE_VERIFY_FAILED" in err_str or "certificate verify failed" in err_str.lower():
+    if (
+        isinstance(ex, ssl.SSLCertVerificationError)
+        or "CERTIFICATE_VERIFY_FAILED" in err_str
+        or "certificate verify failed" in err_str.lower()
+    ):
         return (
             "TLS_ERROR",
             f"TLS certificate verification failed: {err_str}. Ensure the server presents a valid certificate chain and system root certificates are up to date.",
         )
 
-    if isinstance(ex, (httpx.ConnectTimeout, httpx.ReadTimeout, TimeoutError)) or "timed out" in err_str.lower():
+    if (
+        isinstance(ex, (httpx.ConnectTimeout, httpx.ReadTimeout, TimeoutError))
+        or "timed out" in err_str.lower()
+    ):
         return (
             "TIMEOUT_ERROR",
             f"Connection timed out contacting Meta API: {err_str}",
         )
 
-    if isinstance(ex, (httpx.ConnectError, ConnectionError, OSError)) or "getaddrinfo failed" in err_str.lower() or "connection refused" in err_str.lower():
+    if (
+        isinstance(ex, (httpx.ConnectError, ConnectionError, OSError))
+        or "getaddrinfo failed" in err_str.lower()
+        or "connection refused" in err_str.lower()
+    ):
         return (
             "NETWORK_ERROR",
             f"Network connection to Meta API failed: {err_str}. Check your internet connection or proxy settings.",
         )
 
     return ("API_ERROR", err_str)
-

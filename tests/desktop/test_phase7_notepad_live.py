@@ -19,7 +19,7 @@ def main():
         "http://127.0.0.1:8000/api/v1/sessions",
         data=json.dumps({"sessionName": "phase7-notepad-live"}).encode("utf-8"),
         headers=headers,
-        method="POST"
+        method="POST",
     )
     with urllib.request.urlopen(sess_req) as resp:
         session = json.loads(resp.read().decode("utf-8"))
@@ -30,9 +30,11 @@ def main():
     for scope in ["set_control_text", "launch_application", "windows_native"]:
         grant_req = urllib.request.Request(
             f"http://127.0.0.1:8000/api/v1/sessions/{session_id}/grants",
-            data=json.dumps({"scope": scope, "purpose": "Live Phase 7 acceptance test"}).encode("utf-8"),
+            data=json.dumps({"scope": scope, "purpose": "Live Phase 7 acceptance test"}).encode(
+                "utf-8"
+            ),
             headers=headers,
-            method="POST"
+            method="POST",
         )
         try:
             with urllib.request.urlopen(grant_req) as resp:
@@ -47,13 +49,13 @@ def main():
         "scrollPosition": {"x": 0, "y": 0},
         "documentDimensions": {"width": 1280, "height": 800},
         "visibleTextExcerpt": "Consumer Name: Aarav Sharma\nAccount: BLR-UTIL-98421\nAmount Due: INR 2,450.00\nDue Date: Nov 15, 2026",
-        "sessionId": session_id
+        "sessionId": session_id,
     }
     obs_req = urllib.request.Request(
         "http://127.0.0.1:8000/api/v1/browser/observe",
         data=json.dumps(obs_payload).encode("utf-8"),
         headers=headers,
-        method="POST"
+        method="POST",
     )
     with urllib.request.urlopen(obs_req) as resp:
         print("Observation ingested:", resp.getcode())
@@ -63,13 +65,13 @@ def main():
         "sessionId": session_id,
         "instruction": "Write the webpage summary into Notepad and verify the content.",
         "browserObservationExcerpt": obs_payload["visibleTextExcerpt"],
-        "isFixtureMode": False
+        "isFixtureMode": False,
     }
     b2d_req = urllib.request.Request(
         "http://127.0.0.1:8000/api/v1/workflows/browser-to-desktop",
         data=json.dumps(b2d_payload).encode("utf-8"),
         headers=headers,
-        method="POST"
+        method="POST",
     )
     print("\n--- Executing Browser -> Desktop Cross-Surface Action ---")
     with urllib.request.urlopen(b2d_req) as resp:
@@ -87,7 +89,9 @@ def main():
     # 5. Retrieve Task Passport
     task_id = result.get("taskId")
     if task_id:
-        pass_req = urllib.request.Request(f"http://127.0.0.1:8000/api/v1/tasks/{task_id}/passport", headers=headers)
+        pass_req = urllib.request.Request(
+            f"http://127.0.0.1:8000/api/v1/tasks/{task_id}/passport", headers=headers
+        )
         with urllib.request.urlopen(pass_req) as resp:
             passport = json.loads(resp.read().decode("utf-8"))
         print("\n--- Task Passport ---")
@@ -95,6 +99,7 @@ def main():
         print(f"Total Milestones: {passport.get('totalMilestones')}")
         for m in passport.get("milestones", []):
             print(f"  [{m.get('status')}] {m.get('title')}: {m.get('description')}")
+
 
 if __name__ == "__main__":
     main()

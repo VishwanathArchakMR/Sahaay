@@ -1,6 +1,5 @@
 """Health Endpoint for Sahaay Core Backend."""
 
-import asyncio
 import sys
 from datetime import datetime, timezone
 
@@ -70,7 +69,10 @@ def get_health() -> HealthResponse:
         },
         "documentDataServices": {"status": "READY", "engine": "sqlite_in_memory_openxml"},
         "skillsCatalog": {"status": "READY", "loadedCount": len(skills_manager.list_skills())},
-        "capabilitiesCatalog": {"status": "READY", "totalRegistered": len(capability_registry.list_capabilities())},
+        "capabilitiesCatalog": {
+            "status": "READY",
+            "totalRegistered": len(capability_registry.list_capabilities()),
+        },
     }
 
     return HealthResponse(

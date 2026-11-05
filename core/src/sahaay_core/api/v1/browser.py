@@ -63,6 +63,7 @@ class ExecuteScrollActionRequest(BaseModel):
 async def get_active_observation() -> Dict[str, Any]:
     """Retrieve the latest captured observation state and staleness flag for the active browser tab."""
     from datetime import datetime, timezone
+
     is_bridge_connected = adapter.is_connected()
     is_tab_attached = adapter.is_browser_attached() if is_bridge_connected else False
 
@@ -73,7 +74,9 @@ async def get_active_observation() -> Dict[str, Any]:
             if live_obs and live_obs.get("url"):
                 active_tab_state["url"] = live_obs.get("url")
                 active_tab_state["title"] = live_obs.get("title")
-                active_tab_state["capturedAt"] = live_obs.get("capturedAt") or datetime.now(timezone.utc).isoformat()
+                active_tab_state["capturedAt"] = (
+                    live_obs.get("capturedAt") or datetime.now(timezone.utc).isoformat()
+                )
                 active_tab_state["visibleTextExcerpt"] = live_obs.get("visibleTextExcerpt", "")
         except Exception:
             pass

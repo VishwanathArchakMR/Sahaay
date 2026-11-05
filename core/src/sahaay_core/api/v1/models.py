@@ -4,7 +4,7 @@ Exposes endpoints for Meta hosted models (Muse Spark, Muse Wonder, Muse Voice Tr
 and on-device Local Llama 3.2 3B Instruct runtime lifecycle.
 """
 
-import asyncio
+import logging
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
@@ -29,6 +29,8 @@ from sahaay_core.models.meta.muse_spark import (
 from sahaay_core.models.meta.muse_voice import MuseVoiceClient, VoiceTranscriptionResult
 from sahaay_core.models.meta.muse_wonder import MuseWonderClient
 from sahaay_core.models.meta.sam_client import Sam31Client
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/models", tags=["Models"])
 
@@ -128,11 +130,7 @@ async def get_models_status() -> Dict[str, Any]:
 
     # Live probe of system bridge and pipe connections
     is_native_host_up = browser_adapter.is_connected()
-    is_ext_attached = (
-        browser_adapter.is_browser_attached()
-        if is_native_host_up
-        else False
-    )
+    is_ext_attached = browser_adapter.is_browser_attached() if is_native_host_up else False
     is_companion_up = windows_adapter.is_connected()
 
     # Diagnostics breakdown from connectivity probe
@@ -151,17 +149,23 @@ async def get_models_status() -> Dict[str, Any]:
             "remediationGuidance": last_meta_connectivity_result.get("remediationGuidance"),
             "statusCode": last_meta_connectivity_result.get(
                 "statusCode",
-                200 if meta_status in ("READY", "AUTHENTICATED", "MODEL_REQUEST_VERIFIED", "GENERATION_VERIFIED") else 0,
+                200
+                if meta_status
+                in ("READY", "AUTHENTICATED", "MODEL_REQUEST_VERIFIED", "GENERATION_VERIFIED")
+                else 0,
             ),
             "httpResult": last_meta_connectivity_result.get(
                 "httpResult",
                 "HTTP 200 OK"
-                if meta_status in ("READY", "AUTHENTICATED", "MODEL_REQUEST_VERIFIED", "GENERATION_VERIFIED")
+                if meta_status
+                in ("READY", "AUTHENTICATED", "MODEL_REQUEST_VERIFIED", "GENERATION_VERIFIED")
                 else meta_status,
             ),
             "error": last_meta_connectivity_result.get("error"),
             "diagnostics": {
-                "credential": diag.get("credential", "Configured" if meta_client.is_configured else "Not Configured"),
+                "credential": diag.get(
+                    "credential", "Configured" if meta_client.is_configured else "Not Configured"
+                ),
                 "tlsConnection": diag.get("tlsConnection", "Untested"),
                 "apiAuthentication": diag.get("apiAuthentication", "Untested"),
                 "catalogueAvailability": diag.get("catalogueAvailability", "Untested"),
@@ -173,19 +177,25 @@ async def get_models_status() -> Dict[str, Any]:
             "models": {
                 "museSpark": {
                     "id": settings.muse_spark_model_id,
-                    "status": "GENERATION_VERIFIED" if last_meta_connectivity_result.get("generationVerified") else meta_status,
+                    "status": "GENERATION_VERIFIED"
+                    if last_meta_connectivity_result.get("generationVerified")
+                    else meta_status,
                     "role": "Semantic Reasoning & Structured Planning",
                     "diagnostics": diag.get("museSpark", "Untested"),
                 },
                 "museWonder": {
                     "id": settings.muse_wonder_model_id,
-                    "status": "GENERATION_VERIFIED" if last_meta_connectivity_result.get("wonderVerified") else meta_status,
+                    "status": "GENERATION_VERIFIED"
+                    if last_meta_connectivity_result.get("wonderVerified")
+                    else meta_status,
                     "role": "Responses API Visual Computer-Use",
                     "diagnostics": diag.get("museWonder", "Untested"),
                 },
                 "museVoice": {
                     "id": settings.muse_voice_model_id,
-                    "status": "ASR_VERIFIED" if last_meta_connectivity_result.get("voiceVerified") else meta_status,
+                    "status": "ASR_VERIFIED"
+                    if last_meta_connectivity_result.get("voiceVerified")
+                    else meta_status,
                     "role": "Multilingual Speech-to-Text Transcription",
                     "diagnostics": diag.get("museVoice", "Untested"),
                 },
@@ -197,7 +207,9 @@ async def get_models_status() -> Dict[str, Any]:
                 },
                 "sam": {
                     "id": settings.sam_model_id,
-                    "status": "GROUNDING_VERIFIED" if last_meta_connectivity_result.get("samVerified") else meta_status,
+                    "status": "GROUNDING_VERIFIED"
+                    if last_meta_connectivity_result.get("samVerified")
+                    else meta_status,
                     "role": "Visual Grounding & Element Segmentation",
                     "diagnostics": diag.get("sam", "Untested"),
                 },
@@ -325,11 +337,14 @@ async def update_model_credentials(req: UpdateCredentialsRequest) -> Dict[str, A
     Returns verified success only when the authenticated Meta API request genuinely succeeds.
     """
     import os
+
     from sahaay_core.config.settings import REPO_ROOT
 
     new_key = req.modelApiKey.strip()
     if not new_key:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="API key cannot be empty.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="API key cannot be empty."
+        )
 
     # 1. Update in-memory settings and active clients
     settings.model_api_key = new_key
@@ -354,7 +369,9 @@ async def update_model_credentials(req: UpdateCredentialsRequest) -> Dict[str, A
         existing_lines = env_file.read_text(encoding="utf-8").splitlines()
         for idx, line in enumerate(existing_lines):
             stripped = line.strip()
-            if stripped.startswith("MODEL_API_KEY=") or stripped.startswith("SAHAAY_MODEL_API_KEY="):
+            if stripped.startswith("MODEL_API_KEY=") or stripped.startswith(
+                "SAHAAY_MODEL_API_KEY="
+            ):
                 existing_lines[idx] = f"MODEL_API_KEY={new_key}"
                 found = True
                 break
@@ -381,7 +398,9 @@ async def update_model_credentials(req: UpdateCredentialsRequest) -> Dict[str, A
         "modelId": conn.get("modelId", settings.muse_spark_model_id),
         "endpoint": conn.get("endpoint", f"{meta_client.base_url}/models"),
         "statusCode": conn.get("statusCode", 200 if is_verified else 0),
-        "httpResult": conn.get("httpResult", "HTTP 200 OK" if is_verified else "Verification Failed"),
+        "httpResult": conn.get(
+            "httpResult", "HTTP 200 OK" if is_verified else "Verification Failed"
+        ),
         "error": conn.get("error"),
         "availableModels": conn.get("availableModels", []),
         "connectivity": conn,
@@ -411,7 +430,9 @@ async def plan_with_meta_muse_spark(req: StructuredPlanningRequest) -> Structure
 
     grants = []
     if req.sessionId:
-        grants = durable_storage.get_consent_grants_for_session(req.sessionId) or active_grants.get(req.sessionId, [])
+        grants = durable_storage.get_consent_grants_for_session(req.sessionId) or active_grants.get(
+            req.sessionId, []
+        )
         if not grants:
             session = durable_storage.get_session(req.sessionId)
             if session and not session.localOnlyMode:
@@ -443,7 +464,9 @@ async def plan_with_muse_spark(req: ModelPlanningRequest) -> MuseSparkPlan:
 
     grants = []
     if req.sessionId:
-        grants = durable_storage.get_consent_grants_for_session(req.sessionId) or active_grants.get(req.sessionId, [])
+        grants = durable_storage.get_consent_grants_for_session(req.sessionId) or active_grants.get(
+            req.sessionId, []
+        )
         if not grants:
             session = durable_storage.get_session(req.sessionId)
             if session and not session.localOnlyMode:
@@ -505,7 +528,9 @@ async def transcribe_audio(
             from sahaay_core.storage.persistence import durable_storage
 
             parsed_session_id = UUID(sessionId)
-            grants = durable_storage.get_consent_grants_for_session(parsed_session_id) or active_grants.get(parsed_session_id, [])
+            grants = durable_storage.get_consent_grants_for_session(
+                parsed_session_id
+            ) or active_grants.get(parsed_session_id, [])
             if not grants:
                 session = durable_storage.get_session(parsed_session_id)
                 if session and not session.localOnlyMode:

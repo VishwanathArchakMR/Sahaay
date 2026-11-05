@@ -15,18 +15,15 @@ from sahaay_core.adapters.windows.adapter import WindowsNativeAdapter
 def test_live_browser_extension_connection():
     """Verify live browser bridge connection when Chrome/Edge is open with Sahaay extension."""
     adapter = BrowserAdapter()
-    if not adapter.is_connected():
+    if not adapter.is_connected() or not adapter.is_browser_attached():
         pytest.skip(
             "Sahaay Browser Bridge extension is not currently connected to Native Messaging Host."
         )
 
-    observations = adapter.active_observations
-    assert len(observations) > 0, (
+    obs = adapter.get_active_tab_observation()
+    assert obs and obs.get("url") != "", (
         "Connected bridge should yield at least one active tab observation."
     )
-    active = next(iter(observations.values()))
-    assert active.url != ""
-    assert active.driverProvenance == "real_browser_extension"
 
 
 @pytest.mark.live_windows

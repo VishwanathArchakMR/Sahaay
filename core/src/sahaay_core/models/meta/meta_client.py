@@ -76,7 +76,9 @@ class MetaApiResponse(BaseModel):
         raise KeyError(key)
 
 
-def _generate_synthetic_pcm_wav(duration_sec: float = 0.2, freq: float = 440.0, rate: int = 16000) -> bytes:
+def _generate_synthetic_pcm_wav(
+    duration_sec: float = 0.2, freq: float = 440.0, rate: int = 16000
+) -> bytes:
     """Generate minimal valid 16kHz mono 16-bit PCM WAV for probe checks."""
     buf = io.BytesIO()
     with wave.open(buf, "wb") as w:
@@ -228,7 +230,9 @@ class MetaClient:
                     await asyncio.sleep(0.5 * (2 ** (attempt - 1)))
                     continue
                 category, msg = classify_meta_exception(ex)
-                raise ModelProviderError(f"Meta Model API connection error ({category}): {msg}") from ex
+                raise ModelProviderError(
+                    f"Meta Model API connection error ({category}): {msg}"
+                ) from ex
 
         raise ModelProviderError(
             f"Meta Model API request failed after {self.max_retries} attempts: {last_exception}"
@@ -388,7 +392,11 @@ class MetaClient:
                 body = cat_res.json()
                 if isinstance(body, dict) and "error" in body:
                     err_obj = body["error"]
-                    err_detail = err_obj.get("message", err_detail) if isinstance(err_obj, dict) else str(err_obj)
+                    err_detail = (
+                        err_obj.get("message", err_detail)
+                        if isinstance(err_obj, dict)
+                        else str(err_obj)
+                    )
             except Exception:
                 pass
 
@@ -468,8 +476,14 @@ class MetaClient:
         available_models: List[str] = []
         try:
             cat_body = cat_res.json()
-            if isinstance(cat_body, dict) and "data" in cat_body and isinstance(cat_body["data"], list):
-                available_models = [m.get("id") for m in cat_body["data"] if isinstance(m, dict) and "id" in m]
+            if (
+                isinstance(cat_body, dict)
+                and "data" in cat_body
+                and isinstance(cat_body["data"], list)
+            ):
+                available_models = [
+                    m.get("id") for m in cat_body["data"] if isinstance(m, dict) and "id" in m
+                ]
         except Exception:
             pass
 
@@ -520,7 +534,9 @@ class MetaClient:
                 "temperature": 0.1,
             }
             if client_override:
-                gen_res = await client_override.post(chat_url, headers=headers, json=gen_payload, timeout=15.0)
+                gen_res = await client_override.post(
+                    chat_url, headers=headers, json=gen_payload, timeout=15.0
+                )
             else:
                 async with create_meta_http_client(timeout=15.0) as client:
                     gen_res = await client.post(chat_url, headers=headers, json=gen_payload)
@@ -528,7 +544,9 @@ class MetaClient:
             if gen_res.status_code == 200:
                 spark_gen_ok = True
             else:
-                gen_err = f"Generation probe returned HTTP {gen_res.status_code}: {gen_res.text[:120]}"
+                gen_err = (
+                    f"Generation probe returned HTTP {gen_res.status_code}: {gen_res.text[:120]}"
+                )
         except Exception as ex_gen:
             gen_err = str(ex_gen)
 
@@ -538,23 +556,27 @@ class MetaClient:
                 tool_payload = {
                     "model": spark_id,
                     "messages": [{"role": "user", "content": "ping"}],
-                    "tools": [{
-                        "type": "function",
-                        "function": {
-                            "name": "probe_check",
-                            "description": "Probe check",
-                            "parameters": {"type": "object", "properties": {}},
-                        },
-                    }],
+                    "tools": [
+                        {
+                            "type": "function",
+                            "function": {
+                                "name": "probe_check",
+                                "description": "Probe check",
+                                "parameters": {"type": "object", "properties": {}},
+                            },
+                        }
+                    ],
                     "tool_choice": "auto",
                     "max_tokens": 5,
                 }
                 if client_override:
-                    tool_res = await client_override.post(chat_url, headers=headers, json=tool_payload, timeout=15.0)
+                    tool_res = await client_override.post(
+                        chat_url, headers=headers, json=tool_payload, timeout=15.0
+                    )
                 else:
                     async with create_meta_http_client(timeout=15.0) as client:
                         tool_res = await client.post(chat_url, headers=headers, json=tool_payload)
-                tool_calling_ok = (tool_res.status_code == 200)
+                tool_calling_ok = tool_res.status_code == 200
             except Exception:
                 tool_calling_ok = False
 
@@ -569,11 +591,13 @@ class MetaClient:
                     "temperature": 0.1,
                 }
                 if client_override:
-                    w_res = await client_override.post(chat_url, headers=headers, json=wonder_payload, timeout=15.0)
+                    w_res = await client_override.post(
+                        chat_url, headers=headers, json=wonder_payload, timeout=15.0
+                    )
                 else:
                     async with create_meta_http_client(timeout=15.0) as client:
                         w_res = await client.post(chat_url, headers=headers, json=wonder_payload)
-                wonder_ok = (w_res.status_code == 200)
+                wonder_ok = w_res.status_code == 200
             except Exception:
                 wonder_ok = False
 
@@ -584,16 +608,25 @@ class MetaClient:
                 asr_url = f"{self.base_url}/asr/transcribe"
                 sample_wav = _generate_synthetic_pcm_wav(duration_sec=0.2)
                 v_files = {
-                    "request": (None, json.dumps({"model": voice_id, "audioEncoding": "WAV", "language": "en"}), "application/json"),
+                    "request": (
+                        None,
+                        json.dumps({"model": voice_id, "audioEncoding": "WAV", "language": "en"}),
+                        "application/json",
+                    ),
                     "audio": ("probe.wav", sample_wav, "audio/wav"),
                 }
-                v_headers = {"Authorization": f"Bearer {self.api_key.strip()}", "User-Agent": "Sahaay-Desktop-Agent/0.4.0"}
+                v_headers = {
+                    "Authorization": f"Bearer {self.api_key.strip()}",
+                    "User-Agent": "Sahaay-Desktop-Agent/0.4.0",
+                }
                 if client_override:
-                    v_res = await client_override.post(asr_url, headers=v_headers, files=v_files, timeout=15.0)
+                    v_res = await client_override.post(
+                        asr_url, headers=v_headers, files=v_files, timeout=15.0
+                    )
                 else:
                     async with create_meta_http_client(timeout=15.0) as client:
                         v_res = await client.post(asr_url, headers=v_headers, files=v_files)
-                voice_ok = (v_res.status_code == 200)
+                voice_ok = v_res.status_code == 200
             except Exception:
                 voice_ok = False
 
@@ -605,20 +638,27 @@ class MetaClient:
                 tiny_png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
                 sam_payload = {
                     "model": sam_id,
-                    "input": [{
-                        "role": "user",
-                        "content": [
-                            {"type": "input_text", "text": "button"},
-                            {"type": "input_image", "image_url": f"data:image/png;base64,{tiny_png_b64}"},
-                        ],
-                    }],
+                    "input": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "input_text", "text": "button"},
+                                {
+                                    "type": "input_image",
+                                    "image_url": f"data:image/png;base64,{tiny_png_b64}",
+                                },
+                            ],
+                        }
+                    ],
                 }
                 if client_override:
-                    sam_res = await client_override.post(sam_url, headers=headers, json=sam_payload, timeout=15.0)
+                    sam_res = await client_override.post(
+                        sam_url, headers=headers, json=sam_payload, timeout=15.0
+                    )
                 else:
                     async with create_meta_http_client(timeout=15.0) as client:
                         sam_res = await client.post(sam_url, headers=headers, json=sam_payload)
-                sam_ok = (sam_res.status_code == 200)
+                sam_ok = sam_res.status_code == 200
             except Exception:
                 sam_ok = False
 
@@ -628,7 +668,9 @@ class MetaClient:
             summary_msg = f"Meta API verified: TLS valid, catalogue verified ({len(available_models)} models), Spark live generation and tool-calling verified."
         else:
             overall_status = "AUTHENTICATED"
-            summary_msg = f"Meta API authenticated, but generation failed for '{spark_id}': {gen_err}"
+            summary_msg = (
+                f"Meta API authenticated, but generation failed for '{spark_id}': {gen_err}"
+            )
 
         # Redact any accidental secret reflection
         cleaned_msg = re.sub(r"Bearer\s+[^\s]+", "Bearer [REDACTED]", summary_msg)
@@ -651,19 +693,29 @@ class MetaClient:
             "endpoint": chat_url,
             "modelId": spark_id,
             "statusCode": 200,
-            "httpResult": "HTTP 200 OK (Generation Verified)" if spark_gen_ok else "HTTP 200 OK (Catalogue Only)",
+            "httpResult": "HTTP 200 OK (Generation Verified)"
+            if spark_gen_ok
+            else "HTTP 200 OK (Catalogue Only)",
             "availableModels": available_models,
             "modelsCount": len(available_models),
             "error": gen_err,
-            "remediationGuidance": None if spark_gen_ok else "Check account entitlements or quota for chat/completions.",
+            "remediationGuidance": None
+            if spark_gen_ok
+            else "Check account entitlements or quota for chat/completions.",
             "diagnostics": {
                 "credential": "Configured",
                 "tlsConnection": "Verified",
                 "apiAuthentication": "Verified",
                 "catalogueAvailability": f"Verified ({len(available_models)} models)",
                 "museSpark": "Generation Verified" if spark_gen_ok else "Generation Failed",
-                "museWonder": "Generation Verified" if wonder_ok else ("Available" if wonder_id in available_models else "Unavailable"),
-                "museVoice": "ASR Verified" if voice_ok else ("Available" if voice_id in available_models else "Unavailable"),
-                "sam": "Grounding Verified" if sam_ok else ("Available" if sam_id in available_models else "Unavailable"),
+                "museWonder": "Generation Verified"
+                if wonder_ok
+                else ("Available" if wonder_id in available_models else "Unavailable"),
+                "museVoice": "ASR Verified"
+                if voice_ok
+                else ("Available" if voice_id in available_models else "Unavailable"),
+                "sam": "Grounding Verified"
+                if sam_ok
+                else ("Available" if sam_id in available_models else "Unavailable"),
             },
         }

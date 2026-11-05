@@ -73,25 +73,31 @@ class MissionStrategy(BaseModel):
             if p.expected_deliverable:
                 lines.append(f"    - Deliverable: {p.expected_deliverable}")
 
-        lines.extend([
-            "",
-            "DEFINITION OF DONE (Acceptance Criteria):",
-        ])
+        lines.extend(
+            [
+                "",
+                "DEFINITION OF DONE (Acceptance Criteria):",
+            ]
+        )
         for dod in self.definition_of_done:
             lines.append(f"  [ ] {dod}")
 
-        lines.extend([
-            "",
-            "INDEPENDENT VERIFICATION CRITERIA:",
-        ])
+        lines.extend(
+            [
+                "",
+                "INDEPENDENT VERIFICATION CRITERIA:",
+            ]
+        )
         for vc in self.verification_criteria:
             lines.append(f"  * {vc}")
 
         if self.failure_alternatives:
-            lines.extend([
-                "",
-                "RECOVERY & FALLBACK ALTERNATIVES:",
-            ])
+            lines.extend(
+                [
+                    "",
+                    "RECOVERY & FALLBACK ALTERNATIVES:",
+                ]
+            )
             for alt in self.failure_alternatives:
                 lines.append(f"  * {alt}")
 
@@ -126,12 +132,27 @@ class MissionStrategist:
         # Classify task depth
         depth: Literal["DIRECT_OPERATION", "STRUCTURED_TASK", "COMPLEX_MISSION"]
         compound_indicators = [
-            " and ", " then ", " after that ", "compare", "analyze", "synthesize",
-            "report", "spreadsheet", "generate document", "extract and", "research",
-            "find out", "multi-step", "audit", "verify and"
+            " and ",
+            " then ",
+            " after that ",
+            "compare",
+            "analyze",
+            "synthesize",
+            "report",
+            "spreadsheet",
+            "generate document",
+            "extract and",
+            "research",
+            "find out",
+            "multi-step",
+            "audit",
+            "verify and",
         ]
         if any(ci in goal_lower for ci in compound_indicators):
-            if any(ci in goal_lower for ci in ["report", "audit", "spreadsheet", "compare", "synthesize", "research"]):
+            if any(
+                ci in goal_lower
+                for ci in ["report", "audit", "spreadsheet", "compare", "synthesize", "research"]
+            ):
                 depth = "COMPLEX_MISSION"
             else:
                 depth = "STRUCTURED_TASK"
@@ -162,6 +183,7 @@ class MissionStrategist:
 
         # Use Muse Spark to enrich and formulate deep strategic plan if available and online
         import sys
+
         is_testing = getattr(settings, "is_testing", False) or "pytest" in sys.modules
         is_model_usable = (
             allow_model_call
@@ -204,7 +226,11 @@ class MissionStrategist:
                         "temperature": 0.1,
                     },
                 )
-                raw_data = raw_resp.data if hasattr(raw_resp, "data") else (raw_resp if isinstance(raw_resp, dict) else {})
+                raw_data = (
+                    raw_resp.data
+                    if hasattr(raw_resp, "data")
+                    else (raw_resp if isinstance(raw_resp, dict) else {})
+                )
                 choices = raw_data.get("choices", [])
                 if choices:
                     content_str = choices[0].get("message", {}).get("content", "")
@@ -227,12 +253,17 @@ class MissionStrategist:
                         failure_alternatives = parsed["failure_alternatives"]
 
                     from sahaay_core.capabilities import capability_registry
+
                     valid_caps = {c.capability_id for c in capability_registry.list_capabilities()}
 
                     raw_phases = parsed.get("execution_phases", [])
                     for idx, ph in enumerate(raw_phases, 1):
                         req_caps = ph.get("required_capabilities", [])
-                        clean_caps = [c for c in req_caps if c in valid_caps or c.startswith(("browser_", "windows_", "file_"))]
+                        clean_caps = [
+                            c
+                            for c in req_caps
+                            if c in valid_caps or c.startswith(("browser_", "windows_", "file_"))
+                        ]
                         strategy_phases.append(
                             MissionPhase(
                                 phase_index=ph.get("phase_index", idx),
@@ -244,7 +275,9 @@ class MissionStrategist:
                         )
                     strategy_source = "MUSE_SPARK"
             except Exception as ex:
-                logger.warning("Muse Spark strategic analysis failed, using deterministic blueprint: %s", ex)
+                logger.warning(
+                    "Muse Spark strategic analysis failed, using deterministic blueprint: %s", ex
+                )
                 strategy_source = "DETERMINISTIC_BLUEPRINT"
         else:
             strategy_source = "DETERMINISTIC_BLUEPRINT"
@@ -261,14 +294,18 @@ class MissionStrategist:
                         expected_deliverable="Target state achieved and verified",
                     )
                 )
-                execution_approach = f"Execute direct single-step capability and confirm completion."
+                execution_approach = "Execute direct single-step capability and confirm completion."
             else:
                 strategy_phases.append(
                     MissionPhase(
                         phase_index=1,
                         name="Environment Perception & Discovery",
                         description="Observe active browser tab or desktop application state and extract initial context.",
-                        required_capabilities=["browser_get_active_tab", "windows_inspect_window", "browser_tab_observe"],
+                        required_capabilities=[
+                            "browser_get_active_tab",
+                            "windows_inspect_window",
+                            "browser_tab_observe",
+                        ],
                         expected_deliverable="Current workspace state observed and logged",
                     )
                 )
@@ -286,7 +323,11 @@ class MissionStrategist:
                         phase_index=3,
                         name="Independent Verification & Artifact Finalization",
                         description="Read back resulting state, generate any requested artifacts, and confirm postcondition.",
-                        required_capabilities=["file_create_write", "artifact_generate_document", "verify_readback"],
+                        required_capabilities=[
+                            "file_create_write",
+                            "artifact_generate_document",
+                            "verify_readback",
+                        ],
                         expected_deliverable="Deliverables recorded and verified",
                     )
                 )
@@ -310,7 +351,8 @@ class MissionStrategist:
             required_capabilities=required_caps,
             dependencies=[],
             expected_deliverables=deliverables or ["Verified task result"],
-            verification_criteria=verification_criteria or ["State transition confirmed by readback or telemetry."],
+            verification_criteria=verification_criteria
+            or ["State transition confirmed by readback or telemetry."],
             failure_alternatives=failure_alternatives,
         )
 

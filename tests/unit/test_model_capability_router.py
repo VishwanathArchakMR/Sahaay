@@ -6,8 +6,8 @@ And strict proposal validation against the Central Capability Registry.
 """
 
 from unittest.mock import MagicMock
-import pytest
 
+import pytest
 from sahaay_core.capabilities.models import CapabilityDescriptor
 from sahaay_core.capabilities.registry import capability_registry
 from sahaay_core.contracts.models import ActionTypeEnum
@@ -115,6 +115,8 @@ def test_proposal_validation_registered_tool(mock_router):
 
 
 def test_proposal_validation_unregistered_tool_rejected(mock_router):
-    is_valid, err = mock_router.validate_model_proposal("completely_hallucinated_tool_xyz", {"foo": "bar"})
+    is_valid, err = mock_router.validate_model_proposal(
+        "completely_hallucinated_tool_xyz", {"foo": "bar"}
+    )
     assert is_valid is False
     assert "unregistered" in err.lower()

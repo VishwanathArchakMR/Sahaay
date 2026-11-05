@@ -3,20 +3,19 @@
 import io
 import ssl
 import wave
-import pytest
-import httpx
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
-from sahaay_core.models.meta.transport import (
-    get_meta_ssl_context,
-    create_meta_http_client,
-    classify_meta_exception,
-)
+import httpx
+import pytest
 from sahaay_core.models.meta.meta_client import MetaClient
 from sahaay_core.models.meta.muse_voice import (
     detect_audio_format,
     normalize_wav_for_meta,
-    MuseVoiceClient,
+)
+from sahaay_core.models.meta.transport import (
+    classify_meta_exception,
+    create_meta_http_client,
+    get_meta_ssl_context,
 )
 
 
@@ -36,12 +35,16 @@ def test_create_meta_http_client_factory():
 
 def test_classify_meta_exception_tls_error():
     """Verify SSLCertVerificationError and CERTIFICATE_VERIFY_FAILED map to TLS_ERROR."""
-    err = ssl.SSLCertVerificationError("certificate verify failed: unable to get local issuer certificate")
+    err = ssl.SSLCertVerificationError(
+        "certificate verify failed: unable to get local issuer certificate"
+    )
     category, msg = classify_meta_exception(err)
     assert category == "TLS_ERROR"
     assert "TLS certificate verification failed" in msg
 
-    httpx_err = httpx.ConnectError("[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1000)")
+    httpx_err = httpx.ConnectError(
+        "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1000)"
+    )
     category, msg = classify_meta_exception(httpx_err)
     assert category == "TLS_ERROR"
     assert "TLS certificate verification failed" in msg
@@ -181,4 +184,3 @@ def test_audio_format_detection_and_wav_normalization():
         assert w.getnchannels() == 1
         assert w.getsampwidth() == 2
         assert w.getframerate() == 16000
-

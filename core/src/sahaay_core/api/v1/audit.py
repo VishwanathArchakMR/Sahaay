@@ -48,12 +48,14 @@ async def get_system_logs(
                         continue
                     if component and component.lower() not in cmp.lower():
                         continue
-                    entries.append({
-                        "timestamp": ts,
-                        "level": lvl,
-                        "component": cmp,
-                        "message": msg,
-                    })
+                    entries.append(
+                        {
+                            "timestamp": ts,
+                            "level": lvl,
+                            "component": cmp,
+                            "message": msg,
+                        }
+                    )
                     if len(entries) >= limit:
                         break
         except Exception:

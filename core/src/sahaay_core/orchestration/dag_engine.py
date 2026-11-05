@@ -473,13 +473,19 @@ class TaskDagEngine:
                     if not text_to_extract and isinstance(exec_data.get("facts"), list):
                         facts_list = exec_data["facts"]
                         snippets = [
-                            f["content"] for f in facts_list if isinstance(f, dict) and f.get("content")
+                            f["content"]
+                            for f in facts_list
+                            if isinstance(f, dict) and f.get("content")
                         ]
                         if snippets:
                             text_to_extract = "\n".join(snippets)
                             accumulated_facts["extracted_summary"] = "\n".join(snippets[:5])
-                            accumulated_facts[f"{node.step_id}_extracted_summary"] = "\n".join(snippets[:5])
-                            accumulated_facts[f"{node.step_id}.extracted_summary"] = "\n".join(snippets[:5])
+                            accumulated_facts[f"{node.step_id}_extracted_summary"] = "\n".join(
+                                snippets[:5]
+                            )
+                            accumulated_facts[f"{node.step_id}.extracted_summary"] = "\n".join(
+                                snippets[:5]
+                            )
                     if (
                         text_to_extract
                         and isinstance(text_to_extract, str)

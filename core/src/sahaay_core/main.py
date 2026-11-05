@@ -1,8 +1,10 @@
 """Sahaay Core Backend Main Application."""
 
 import os
+
 try:
     import certifi
+
     os.environ.setdefault("SSL_CERT_FILE", certifi.where())
 except ImportError:
     pass
@@ -11,7 +13,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncGenerator, Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, status
+from fastapi import FastAPI, File, Form, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -171,11 +173,12 @@ async def root():
 
 @app.post("/api/v1/voice/transcribe")
 async def voice_transcribe_alias(
-    file: UploadFile = File(...),
-    languageHints: str = Form("kn,hi,en"),
-    sessionId: Optional[str] = Form(None),
+    file: UploadFile = File(...),  # noqa: B008
+    languageHints: str = Form("kn,hi,en"),  # noqa: B008
+    sessionId: Optional[str] = Form(None),  # noqa: B008
 ):
     from sahaay_core.api.v1.models import transcribe_audio
+
     return await transcribe_audio(file=file, languageHints=languageHints, sessionId=sessionId)
 
 

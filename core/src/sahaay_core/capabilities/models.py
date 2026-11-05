@@ -86,10 +86,12 @@ class CapabilityDescriptor(BaseModel):
         default=None, description="Registered executable handler/engine"
     )
     observation_requirements: List[str] = Field(
-        default_factory=list, description="Target observation prerequisites (e.g. semantic_uia, visual_window, browser_dom, filesystem)"
+        default_factory=list,
+        description="Target observation prerequisites (e.g. semantic_uia, visual_window, browser_dom, filesystem)",
     )
     verification_strategy: Optional[str] = Field(
-        default=None, description="Independent verification strategy (e.g. readback_control, match_url, file_existence, hash_comparison)"
+        default=None,
+        description="Independent verification strategy (e.g. readback_control, match_url, file_existence, hash_comparison)",
     )
     failure_modes: List[str] = Field(
         default_factory=list, description="Anticipated failure modes and recovery hints"

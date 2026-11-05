@@ -324,6 +324,7 @@ async def get_task_passport_endpoint(task_id: str):
         task = None
         try:
             from uuid import UUID as PyUUID
+
             task = orchestrator.get_task(PyUUID(task_id))
         except (ValueError, TypeError):
             pass
@@ -336,7 +337,9 @@ async def get_task_passport_endpoint(task_id: str):
             "taskId": str(task.taskId),
             "goal": task.goal,
             "workflowMode": "do",
-            "verificationStatus": "VERIFIED" if task.status == TaskStatusEnum.COMPLETED else ("FAILED" if task.status == TaskStatusEnum.FAILED else "UNVERIFIED"),
+            "verificationStatus": "VERIFIED"
+            if task.status == TaskStatusEnum.COMPLETED
+            else ("FAILED" if task.status == TaskStatusEnum.FAILED else "UNVERIFIED"),
             "summaryNotice": task.summary or f"Task is {task.status.value}",
             "summary": task.summary or f"Task is {task.status.value}",
             "targetAppOrUrl": "Windows / Browser",
@@ -345,7 +348,9 @@ async def get_task_passport_endpoint(task_id: str):
                     "milestoneId": f"m-{i}",
                     "title": ev.get("stage", "STAGE"),
                     "description": ev.get("message", ""),
-                    "status": "COMPLETED" if ev.get("eventType") in ("task.completed", "action.executed") else "IN_PROGRESS",
+                    "status": "COMPLETED"
+                    if ev.get("eventType") in ("task.completed", "action.executed")
+                    else "IN_PROGRESS",
                     "timestamp": ev.get("timestamp", ""),
                 }
                 for i, ev in enumerate(events)
@@ -380,7 +385,9 @@ async def stream_task_events(task_id: UUID):
     """Real-time SSE event stream for live task progress on desktop and browser."""
     import asyncio
     import json
+
     from fastapi.responses import StreamingResponse
+
     from sahaay_core.storage.persistence import durable_storage
 
     async def event_generator():
@@ -397,7 +404,10 @@ async def stream_task_events(task_id: UUID):
                     yield f"data: {json.dumps(ev)}\n\n"
                 last_count = len(events)
                 # If terminal event observed, end stream
-                if any(ev.get("eventType") in ("task.completed", "task.failed", "task.cancelled") for ev in new_events):
+                if any(
+                    ev.get("eventType") in ("task.completed", "task.failed", "task.cancelled")
+                    for ev in new_events
+                ):
                     break
             await asyncio.sleep(poll_interval)
             elapsed += poll_interval

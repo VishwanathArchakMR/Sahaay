@@ -76,4 +76,3 @@ def test_action_gate_allows_browser_play_media():
     )
     decision = ActionGate.evaluate(action=action, active_grants=[grant])
     assert decision.decision == PolicyDecisionEnum.ALLOW
-

@@ -21,11 +21,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-import httpx
-
 from sahaay_core.config.settings import settings
 from sahaay_core.contracts.models import ConsentGrant
-from sahaay_core.models.meta.transport import create_meta_http_client, classify_meta_exception
+from sahaay_core.models.meta.transport import create_meta_http_client
 from sahaay_core.privacy.privacy_gateway import PrivacyGateway
 
 logger = logging.getLogger(__name__)
@@ -272,8 +270,16 @@ class MuseImageClient:
         )
 
         # If online and configured, call Meta Muse Image endpoint
-        is_testing = getattr(settings, "is_testing", False) or "pytest" in sys.modules or os.getenv("SAHAAY_ALLOW_SIMULATION", "false").lower() in ("1", "true", "yes")
-        if self.is_configured and not getattr(settings, "local_only_mode", False) and not is_testing:
+        is_testing = (
+            getattr(settings, "is_testing", False)
+            or "pytest" in sys.modules
+            or os.getenv("SAHAAY_ALLOW_SIMULATION", "false").lower() in ("1", "true", "yes")
+        )
+        if (
+            self.is_configured
+            and not getattr(settings, "local_only_mode", False)
+            and not is_testing
+        ):
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
@@ -314,7 +320,9 @@ class MuseImageClient:
                                 "driverProvenance": "meta_muse_image",
                             }
             except Exception as ex:
-                logger.warning("Online Muse Image styling call failed (%s); reverting to vector fallback.", ex)
+                logger.warning(
+                    "Online Muse Image styling call failed (%s); reverting to vector fallback.", ex
+                )
 
         # Fallback vector / styled SVG
         svg_content = self._generate_styled_vector_svg(subject, style_clean)

@@ -62,9 +62,7 @@ class CapabilityRegistry:
             )
         return tools
 
-    def get_tool_definitions_for_task(
-        self, goal: str, context: str = ""
-    ) -> List[Dict[str, Any]]:
+    def get_tool_definitions_for_task(self, goal: str, context: str = "") -> List[Dict[str, Any]]:
         """Dynamically provides all ready system tools for autonomous planning."""
         return self.to_model_tool_definitions()
 
@@ -689,7 +687,11 @@ class CapabilityRegistry:
                 capability_id="browser_input_text",
                 name="Type Text into Browser Element",
                 description="Type text into an editable element (contenteditable composer, input, or textarea) in the active browser tab.",
-                example_requests=["Type message into LinkedIn composer", "Type message in WhatsApp Web", "Enter text into input field"],
+                example_requests=[
+                    "Type message into LinkedIn composer",
+                    "Type message in WhatsApp Web",
+                    "Enter text into input field",
+                ],
                 supported_surfaces=["browser_tab"],
                 adapter="browser_extension_bridge",
                 input_schema={
@@ -729,7 +731,11 @@ class CapabilityRegistry:
                 capability_id="browser_open_tab",
                 name="Open Browser Tab",
                 description="Open a new browser tab at a specified URL and return the tab URL and title.",
-                example_requests=["Open Amazon in my browser", "Open YouTube", "Navigate to google.com"],
+                example_requests=[
+                    "Open Amazon in my browser",
+                    "Open YouTube",
+                    "Navigate to google.com",
+                ],
                 supported_surfaces=["browser_tab"],
                 adapter="browser_extension_bridge",
                 input_schema={
@@ -739,7 +745,11 @@ class CapabilityRegistry:
                 },
                 output_schema={
                     "type": "object",
-                    "properties": {"url": {"type": "string"}, "title": {"type": "string"}, "tabId": {"type": "integer"}},
+                    "properties": {
+                        "url": {"type": "string"},
+                        "title": {"type": "string"},
+                        "tabId": {"type": "integer"},
+                    },
                 },
                 preconditions=["Browser extension connected"],
                 required_permission_scopes=["action:browser_tab"],
@@ -760,7 +770,11 @@ class CapabilityRegistry:
                 capability_id="browser_navigate",
                 name="Navigate Browser Tab",
                 description="Navigate the active browser tab to a specified URL.",
-                example_requests=["Go to amazon.com", "Navigate to YouTube", "Open https://google.com"],
+                example_requests=[
+                    "Go to amazon.com",
+                    "Navigate to YouTube",
+                    "Open https://google.com",
+                ],
                 supported_surfaces=["browser_tab"],
                 adapter="browser_extension_bridge",
                 input_schema={
@@ -791,7 +805,10 @@ class CapabilityRegistry:
                 capability_id="browser_search_in_tab",
                 name="Search In Browser Tab",
                 description="Type a search query into the active browser tab search input and submit.",
-                example_requests=["Search YouTube for AI agent tutorials", "Search Amazon for headphones"],
+                example_requests=[
+                    "Search YouTube for AI agent tutorials",
+                    "Search Amazon for headphones",
+                ],
                 supported_surfaces=["browser_tab"],
                 adapter="browser_extension_bridge",
                 input_schema={
@@ -803,7 +820,10 @@ class CapabilityRegistry:
                     "type": "object",
                     "properties": {"query": {"type": "string"}, "success": {"type": "boolean"}},
                 },
-                preconditions=["Browser extension connected", "Active browser tab with search input"],
+                preconditions=[
+                    "Browser extension connected",
+                    "Active browser tab with search input",
+                ],
                 required_permission_scopes=["action:browser_tab"],
                 risk_category=RiskCategory.LOW,
                 requires_human_confirmation=False,
@@ -822,14 +842,23 @@ class CapabilityRegistry:
                 capability_id="browser_play_media",
                 name="Play Media in Browser",
                 description="Search, select, and initiate verified video or audio playback on YouTube or media sites.",
-                example_requests=["Play song on YouTube", "Play the most famous song in Kannada on YouTube"],
+                example_requests=[
+                    "Play song on YouTube",
+                    "Play the most famous song in Kannada on YouTube",
+                ],
                 supported_surfaces=["browser_tab"],
                 adapter="browser_extension_bridge",
                 input_schema={
                     "type": "object",
                     "properties": {
-                        "query": {"type": "string", "description": "Song title, artist, or video search query"},
-                        "video_url": {"type": "string", "description": "Optional direct YouTube video URL"},
+                        "query": {
+                            "type": "string",
+                            "description": "Song title, artist, or video search query",
+                        },
+                        "video_url": {
+                            "type": "string",
+                            "description": "Optional direct YouTube video URL",
+                        },
                     },
                     "required": ["query"],
                 },
@@ -842,7 +871,10 @@ class CapabilityRegistry:
                         "playbackState": {"type": "string"},
                     },
                 },
-                preconditions=["Browser extension connected", "Active browser tab or internet access"],
+                preconditions=[
+                    "Browser extension connected",
+                    "Active browser tab or internet access",
+                ],
                 required_permission_scopes=["action:browser_tab"],
                 risk_category=RiskCategory.LOW,
                 requires_human_confirmation=False,
@@ -906,7 +938,10 @@ class CapabilityRegistry:
                     "type": "object",
                     "properties": {
                         "path": {"type": "string", "description": "Path to the file to read"},
-                        "maxLines": {"type": "integer", "description": "Maximum lines to read (default 200)"},
+                        "maxLines": {
+                            "type": "integer",
+                            "description": "Maximum lines to read (default 200)",
+                        },
                     },
                     "required": ["path"],
                 },
@@ -943,10 +978,22 @@ class CapabilityRegistry:
                 input_schema={
                     "type": "object",
                     "properties": {
-                        "path": {"type": "string", "description": "Directory path or user folder name (e.g. 'Downloads', 'Desktop', 'Documents', or path; defaults to current project)"},
-                        "recursive": {"type": "boolean", "description": "Whether to list subdirectories"},
-                        "limit": {"type": "integer", "description": "Maximum number of files to return (e.g. 5, 10)"},
-                        "sort_by": {"type": "string", "description": "Sort order: 'modified', 'size', or 'name' (defaults to 'modified' descending)"},
+                        "path": {
+                            "type": "string",
+                            "description": "Directory path or user folder name (e.g. 'Downloads', 'Desktop', 'Documents', or path; defaults to current project)",
+                        },
+                        "recursive": {
+                            "type": "boolean",
+                            "description": "Whether to list subdirectories",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of files to return (e.g. 5, 10)",
+                        },
+                        "sort_by": {
+                            "type": "string",
+                            "description": "Sort order: 'modified', 'size', or 'name' (defaults to 'modified' descending)",
+                        },
                     },
                 },
                 output_schema={
@@ -972,14 +1019,24 @@ class CapabilityRegistry:
                 capability_id="document_ingest_file",
                 name="Ingest and Parse Document",
                 description="Safely extract structured text, metadata, and facts from a user file (.pdf, .docx, .xlsx, .pptx, .csv, .md, .txt, code).",
-                example_requests=["Ingest invoice.pdf", "Parse quarterly_report.docx", "Load dataset.xlsx"],
+                example_requests=[
+                    "Ingest invoice.pdf",
+                    "Parse quarterly_report.docx",
+                    "Load dataset.xlsx",
+                ],
                 supported_surfaces=["local_store"],
                 adapter="document_ingestion_service",
                 input_schema={
                     "type": "object",
                     "properties": {
-                        "path": {"type": "string", "description": "Absolute or workspace path to document"},
-                        "title": {"type": "string", "description": "Optional human-friendly document title"},
+                        "path": {
+                            "type": "string",
+                            "description": "Absolute or workspace path to document",
+                        },
+                        "title": {
+                            "type": "string",
+                            "description": "Optional human-friendly document title",
+                        },
                     },
                     "required": ["path"],
                 },
@@ -1010,7 +1067,10 @@ class CapabilityRegistry:
                 capability_id="document_search_knowledge",
                 name="Search Ingested Knowledge",
                 description="Search structured facts across all ingested project documents by keywords and semantic matching with citations.",
-                example_requests=["Find payment terms in contract", "Search for warranty period in manual"],
+                example_requests=[
+                    "Find payment terms in contract",
+                    "Search for warranty period in manual",
+                ],
                 supported_surfaces=["local_store"],
                 adapter="context_store_adapter",
                 input_schema={
@@ -1043,14 +1103,20 @@ class CapabilityRegistry:
                 capability_id="document_compare_sources",
                 name="Compare Documents and Detect Inconsistencies",
                 description="Compare statements across multiple ingested documents, identifying contradictions, price differences, or gaps.",
-                example_requests=["Find discrepancies between invoice and purchase order", "Compare specifications"],
+                example_requests=[
+                    "Find discrepancies between invoice and purchase order",
+                    "Compare specifications",
+                ],
                 supported_surfaces=["local_store"],
                 adapter="document_comparison_service",
                 input_schema={
                     "type": "object",
                     "properties": {
                         "query": {"type": "string", "description": "Topic or fields to compare"},
-                        "sourcePaths": {"type": "array", "description": "List of file paths to compare"},
+                        "sourcePaths": {
+                            "type": "array",
+                            "description": "List of file paths to compare",
+                        },
                     },
                     "required": ["query"],
                 },
@@ -1080,14 +1146,20 @@ class CapabilityRegistry:
                 capability_id="data_analyze_tabular",
                 name="Analyze Tabular Data",
                 description="Perform deterministic mathematical, statistical, and SQL analysis on CSV, XLSX, or JSON tables (sums, averages, grouping, filtering).",
-                example_requests=["Calculate total revenue and average margin from sales.csv", "Analyze expense spreadsheet"],
+                example_requests=[
+                    "Calculate total revenue and average margin from sales.csv",
+                    "Analyze expense spreadsheet",
+                ],
                 supported_surfaces=["local_store"],
                 adapter="data_analysis_runtime",
                 input_schema={
                     "type": "object",
                     "properties": {
                         "source": {"type": "string", "description": "File path or CSV data string"},
-                        "query": {"type": "string", "description": "Optional SQL query over 'data_table'"},
+                        "query": {
+                            "type": "string",
+                            "description": "Optional SQL query over 'data_table'",
+                        },
                     },
                     "required": ["source"],
                 },
@@ -1117,7 +1189,10 @@ class CapabilityRegistry:
                 capability_id="artifact_generate_document",
                 name="Generate Word or Markdown Document",
                 description="Create a real editable Word (.docx) or Markdown (.md) document with title, executive summary, sections, and citations.",
-                example_requests=["Create a complete research report on my Desktop", "Prepare project audit document"],
+                example_requests=[
+                    "Create a complete research report on my Desktop",
+                    "Prepare project audit document",
+                ],
                 supported_surfaces=["local_store"],
                 adapter="artifact_generator_service",
                 input_schema={
@@ -1128,9 +1203,18 @@ class CapabilityRegistry:
                             "type": "array",
                             "description": "List of sections with 'heading' and 'content'",
                         },
-                        "outputPath": {"type": "string", "description": "Target file path (e.g. '~/Desktop/report.docx')"},
-                        "format": {"type": "string", "description": "'docx' or 'md' (default 'docx')"},
-                        "sources": {"type": "array", "description": "Optional list of citation strings"},
+                        "outputPath": {
+                            "type": "string",
+                            "description": "Target file path (e.g. '~/Desktop/report.docx')",
+                        },
+                        "format": {
+                            "type": "string",
+                            "description": "'docx' or 'md' (default 'docx')",
+                        },
+                        "sources": {
+                            "type": "array",
+                            "description": "Optional list of citation strings",
+                        },
                     },
                     "required": ["title", "sections", "outputPath"],
                 },
@@ -1161,7 +1245,10 @@ class CapabilityRegistry:
                 capability_id="artifact_generate_spreadsheet",
                 name="Generate Excel Workbook",
                 description="Create a real editable Excel (.xlsx) or CSV workbook with headers, rows, and mathematical formulas (e.g. SUM, AVERAGE).",
-                example_requests=["Create a product comparison sheet on Desktop", "Export financial budget.xlsx"],
+                example_requests=[
+                    "Create a product comparison sheet on Desktop",
+                    "Export financial budget.xlsx",
+                ],
                 supported_surfaces=["local_store"],
                 adapter="artifact_generator_service",
                 input_schema={
@@ -1170,8 +1257,14 @@ class CapabilityRegistry:
                         "title": {"type": "string", "description": "Workbook title"},
                         "headers": {"type": "array", "description": "Column header names"},
                         "rows": {"type": "array", "description": "2D list of row values"},
-                        "outputPath": {"type": "string", "description": "Target file path (e.g. '~/Desktop/budget.xlsx')"},
-                        "format": {"type": "string", "description": "'xlsx' or 'csv' (default 'xlsx')"},
+                        "outputPath": {
+                            "type": "string",
+                            "description": "Target file path (e.g. '~/Desktop/budget.xlsx')",
+                        },
+                        "format": {
+                            "type": "string",
+                            "description": "'xlsx' or 'csv' (default 'xlsx')",
+                        },
                     },
                     "required": ["title", "headers", "rows", "outputPath"],
                 },
@@ -1202,14 +1295,23 @@ class CapabilityRegistry:
                 capability_id="research_web_multihop",
                 name="Conduct Multi-Hop Web Research",
                 description="Search the web, fetch top primary sources with SSRF defense, extract factual statements, and return cited evidence.",
-                example_requests=["Research market trends in EV batteries", "Find official documentation for React 19"],
+                example_requests=[
+                    "Research market trends in EV batteries",
+                    "Find official documentation for React 19",
+                ],
                 supported_surfaces=["internet"],
                 adapter="internet_research_manager",
                 input_schema={
                     "type": "object",
                     "properties": {
-                        "query": {"type": "string", "description": "Search query or research question"},
-                        "maxResults": {"type": "integer", "description": "Number of sources to retrieve (default 4)"},
+                        "query": {
+                            "type": "string",
+                            "description": "Search query or research question",
+                        },
+                        "maxResults": {
+                            "type": "integer",
+                            "description": "Number of sources to retrieve (default 4)",
+                        },
                     },
                     "required": ["query"],
                 },
@@ -1245,7 +1347,10 @@ class CapabilityRegistry:
                 input_schema={
                     "type": "object",
                     "properties": {
-                        "hwnd": {"type": "integer", "description": "Optional window handle (defaults to foreground window)"},
+                        "hwnd": {
+                            "type": "integer",
+                            "description": "Optional window handle (defaults to foreground window)",
+                        },
                     },
                 },
                 output_schema={
@@ -1277,8 +1382,14 @@ class CapabilityRegistry:
                 input_schema={
                     "type": "object",
                     "properties": {
-                        "controlName": {"type": "string", "description": "Accessible name of the control"},
-                        "automationId": {"type": "string", "description": "Optional AutomationId of the control"},
+                        "controlName": {
+                            "type": "string",
+                            "description": "Accessible name of the control",
+                        },
+                        "automationId": {
+                            "type": "string",
+                            "description": "Optional AutomationId of the control",
+                        },
                         "hwnd": {"type": "integer", "description": "Optional target window handle"},
                     },
                     "required": ["controlName"],
@@ -1337,15 +1448,28 @@ class CapabilityRegistry:
                 capability_id="browser_get_page_content",
                 name="Get Browser Page Content",
                 description="Read full or chunked visible text and accessible interactive controls from the active browser tab.",
-                example_requests=["Read full article from webpage", "Inspect page controls and sections", "Search webpage for terms"],
+                example_requests=[
+                    "Read full article from webpage",
+                    "Inspect page controls and sections",
+                    "Search webpage for terms",
+                ],
                 supported_surfaces=["browser_tab"],
                 adapter="browser_extension_bridge",
                 input_schema={
                     "type": "object",
                     "properties": {
-                        "chunkIndex": {"type": "integer", "description": "0-based chunk index to read"},
-                        "chunkSize": {"type": "integer", "description": "Characters per chunk (default 4000)"},
-                        "query": {"type": "string", "description": "Optional keyword filter to match relevant page text"},
+                        "chunkIndex": {
+                            "type": "integer",
+                            "description": "0-based chunk index to read",
+                        },
+                        "chunkSize": {
+                            "type": "integer",
+                            "description": "Characters per chunk (default 4000)",
+                        },
+                        "query": {
+                            "type": "string",
+                            "description": "Optional keyword filter to match relevant page text",
+                        },
                     },
                 },
                 output_schema={
@@ -1379,17 +1503,37 @@ class CapabilityRegistry:
                 capability_id="workspace_run_code",
                 name="Run Controlled Project Code",
                 description="Execute a Python script or code snippet in an authorized workspace without arbitrary shell injection.",
-                example_requests=["Run Python script in workspace", "Execute test script and verify stdout", "Write and run hello world"],
+                example_requests=[
+                    "Run Python script in workspace",
+                    "Execute test script and verify stdout",
+                    "Write and run hello world",
+                ],
                 supported_surfaces=["local_store"],
                 adapter="workspace_code_runner",
                 input_schema={
                     "type": "object",
                     "properties": {
-                        "scriptPath": {"type": "string", "description": "Relative or absolute path to .py script in workspace"},
-                        "code": {"type": "string", "description": "Optional inline Python code to write and execute"},
-                        "workspacePath": {"type": "string", "description": "Optional workspace root directory"},
-                        "args": {"type": "array", "items": {"type": "string"}, "description": "Command line arguments for script"},
-                        "timeoutSeconds": {"type": "number", "description": "Timeout in seconds (default 30)"},
+                        "scriptPath": {
+                            "type": "string",
+                            "description": "Relative or absolute path to .py script in workspace",
+                        },
+                        "code": {
+                            "type": "string",
+                            "description": "Optional inline Python code to write and execute",
+                        },
+                        "workspacePath": {
+                            "type": "string",
+                            "description": "Optional workspace root directory",
+                        },
+                        "args": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Command line arguments for script",
+                        },
+                        "timeoutSeconds": {
+                            "type": "number",
+                            "description": "Timeout in seconds (default 30)",
+                        },
                     },
                 },
                 output_schema={
@@ -1404,7 +1548,10 @@ class CapabilityRegistry:
                         "durationMs": {"type": "number"},
                     },
                 },
-                preconditions=["Script exists or code is provided", "Path is inside authorized workspace"],
+                preconditions=[
+                    "Script exists or code is provided",
+                    "Path is inside authorized workspace",
+                ],
                 required_permission_scopes=["execute:code"],
                 risk_category=RiskCategory.MEDIUM,
                 requires_human_confirmation=False,
@@ -1423,15 +1570,28 @@ class CapabilityRegistry:
                 capability_id="workspace_index_directory",
                 name="Index Project Folder",
                 description="Scan and index files in an authorized project folder, computing SHA-256 hashes and directory tree.",
-                example_requests=["Index project directory", "Scan workspace folder and summarize files", "Analyze code repository"],
+                example_requests=[
+                    "Index project directory",
+                    "Scan workspace folder and summarize files",
+                    "Analyze code repository",
+                ],
                 supported_surfaces=["local_store"],
                 adapter="workspace_indexer",
                 input_schema={
                     "type": "object",
                     "properties": {
-                        "directoryPath": {"type": "string", "description": "Path to local folder to index"},
-                        "maxDepth": {"type": "integer", "description": "Maximum directory depth (default 4)"},
-                        "maxFiles": {"type": "integer", "description": "Maximum files to index (default 150)"},
+                        "directoryPath": {
+                            "type": "string",
+                            "description": "Path to local folder to index",
+                        },
+                        "maxDepth": {
+                            "type": "integer",
+                            "description": "Maximum directory depth (default 4)",
+                        },
+                        "maxFiles": {
+                            "type": "integer",
+                            "description": "Maximum files to index (default 150)",
+                        },
                     },
                     "required": ["directoryPath"],
                 },
@@ -1463,14 +1623,24 @@ class CapabilityRegistry:
                 capability_id="image_edit_style",
                 name="Edit and Style Image",
                 description="Apply artistic styles (retro, vintage, synthwave, neon) to user or workspace images using Meta muse-image-1.0 and vector stylizers.",
-                example_requests=["Edit the image in retro style", "Style this photo in vintage aesthetic", "Apply synthwave styling to image"],
+                example_requests=[
+                    "Edit the image in retro style",
+                    "Style this photo in vintage aesthetic",
+                    "Apply synthwave styling to image",
+                ],
                 supported_surfaces=["local_store", "artifact_store"],
                 adapter="meta_muse_image",
                 input_schema={
                     "type": "object",
                     "properties": {
-                        "imagePath": {"type": "string", "description": "Path to local or artifact image to style"},
-                        "styleInstruction": {"type": "string", "description": "Artistic style to apply (e.g. retro, synthwave, vintage)"},
+                        "imagePath": {
+                            "type": "string",
+                            "description": "Path to local or artifact image to style",
+                        },
+                        "styleInstruction": {
+                            "type": "string",
+                            "description": "Artistic style to apply (e.g. retro, synthwave, vintage)",
+                        },
                     },
                     "required": ["styleInstruction"],
                 },

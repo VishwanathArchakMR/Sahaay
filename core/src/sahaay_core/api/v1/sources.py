@@ -215,13 +215,15 @@ async def search_sources(req: SearchSourcesRequest) -> Dict[str, Any]:
 
 @router.post("/upload-and-ingest", status_code=status.HTTP_201_CREATED)
 async def upload_and_ingest_file(
-    file: UploadFile = File(...),
-    customTitle: Optional[str] = Form(None),
-    taskId: Optional[str] = Form(None),
+    file: UploadFile = File(...),  # noqa: B008
+    customTitle: Optional[str] = Form(None),  # noqa: B008
+    taskId: Optional[str] = Form(None),  # noqa: B008
 ) -> Dict[str, Any]:
     """Upload a file directly (e.g. from browser extension side panel) and ingest into context."""
     from uuid import uuid4
+
     from sahaay_core.config.settings import settings
+
     upload_dir = settings.storage_dir / "uploads"
     upload_dir.mkdir(parents=True, exist_ok=True)
     file_path = upload_dir / f"{uuid4().hex}_{file.filename}"

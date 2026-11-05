@@ -91,10 +91,11 @@ def register_or_update_passport(
 
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-    is_retrieval_only = (
-        workflow_mode in ("system_introspection", "retrieval_grounding", "ask")
-        or direction in ("Local System Introspection", "Local Document Extraction")
-    )
+    is_retrieval_only = workflow_mode in (
+        "system_introspection",
+        "retrieval_grounding",
+        "ask",
+    ) or direction in ("Local System Introspection", "Local Document Extraction")
 
     # 1. Source Milestone
     m1 = MilestoneCard(
@@ -143,7 +144,10 @@ def register_or_update_passport(
             is_ai_generated=False,
             ai_label="Vector Illustration",
             timestamp=now,
-            technical_details={"verification_status": verification_status, "evidence_id": evidence_id},
+            technical_details={
+                "verification_status": verification_status,
+                "evidence_id": evidence_id,
+            },
         )
         milestones = [m1, m2, m3]
     else:
@@ -212,7 +216,10 @@ def register_or_update_passport(
             is_ai_generated=False,
             ai_label="Vector Illustration",
             timestamp=now,
-            technical_details={"verification_status": verification_status, "evidence_id": evidence_id},
+            technical_details={
+                "verification_status": verification_status,
+                "evidence_id": evidence_id,
+            },
         )
         milestones = [m1, m2, m3, m4, m5]
 

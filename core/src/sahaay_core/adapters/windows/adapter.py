@@ -4,11 +4,15 @@ Coordinates with Sahaay.Controller C# daemon via authenticated local Named Pipe.
 Enforces strict driver provenance: distinguishes real native execution from offline simulation.
 """
 
+import logging
 import os
 import sys
+import time
 from typing import Any, Dict, List, Optional
 
 from sahaay_core.adapters.windows.named_pipe_client import NamedPipeClient
+
+logger = logging.getLogger(__name__)
 
 
 class WindowsNativeAdapter:
@@ -23,7 +27,9 @@ class WindowsNativeAdapter:
         if allow_simulation is None:
             # In production runtime, simulation is strictly disabled (fails closed).
             # Simulation is only allowed if explicitly requested or during offline pytest runs.
-            is_testing = "pytest" in sys.modules or os.getenv("SAHAAY_ALLOW_SIMULATION", "false").lower() in ("1", "true", "yes")
+            is_testing = "pytest" in sys.modules or os.getenv(
+                "SAHAAY_ALLOW_SIMULATION", "false"
+            ).lower() in ("1", "true", "yes")
             self.allow_simulation = is_testing
         else:
             self.allow_simulation = allow_simulation
@@ -134,7 +140,10 @@ class WindowsNativeAdapter:
             if active and int(active.get("hwnd", 0)) > 0:
                 proc = (active.get("processName") or "").lower()
                 title = (active.get("title") or "").lower()
-                if not any(x in proc for x in ["electron", "sahaay", "node"]) and "sahaay" not in title:
+                if (
+                    not any(x in proc for x in ["electron", "sahaay", "node"])
+                    and "sahaay" not in title
+                ):
                     hwnd = int(active["hwnd"])
 
         if hwnd <= 0:
@@ -163,29 +172,37 @@ class WindowsNativeAdapter:
         # Native GDI / GDI+ direct screen capture fallback (100% reliable on Windows)
         if sys.platform == "win32":
             try:
-                import ctypes, os, uuid
+                import ctypes
+                import os
+                import uuid
                 from ctypes import wintypes
+
                 user32 = ctypes.windll.user32
                 gdi32 = ctypes.windll.gdi32
                 gdiplus = ctypes.windll.gdiplus
 
                 class GdiplusStartupInput(ctypes.Structure):
                     _fields_ = [
-                        ('GdiplusVersion', wintypes.DWORD),
-                        ('DebugEventCallback', ctypes.c_void_p),
-                        ('SuppressBackgroundThread', wintypes.BOOL),
-                        ('SuppressExternalCodecs', wintypes.BOOL)
+                        ("GdiplusVersion", wintypes.DWORD),
+                        ("DebugEventCallback", ctypes.c_void_p),
+                        ("SuppressBackgroundThread", wintypes.BOOL),
+                        ("SuppressExternalCodecs", wintypes.BOOL),
                     ]
 
                 class CLSID(ctypes.Structure):
                     _fields_ = [
-                        ('Data1', wintypes.DWORD),
-                        ('Data2', wintypes.WORD),
-                        ('Data3', wintypes.WORD),
-                        ('Data4', ctypes.c_byte * 8)
+                        ("Data1", wintypes.DWORD),
+                        ("Data2", wintypes.WORD),
+                        ("Data3", wintypes.WORD),
+                        ("Data4", ctypes.c_byte * 8),
                     ]
 
-                png_clsid = CLSID(0x557cf406, 0x1a04, 0x11d3, (ctypes.c_byte * 8)(0x9a, 0x73, 0x00, 0x00, 0xf8, 0x1e, 0xf3, 0x2e))
+                png_clsid = CLSID(
+                    0x557CF406,
+                    0x1A04,
+                    0x11D3,
+                    (ctypes.c_byte * 8)(0x9A, 0x73, 0x00, 0x00, 0xF8, 0x1E, 0xF3, 0x2E),
+                )
                 token = ctypes.c_ulong()
                 startup_input = GdiplusStartupInput(1, None, False, False)
                 gdiplus.GdiplusStartup(ctypes.byref(token), ctypes.byref(startup_input), None)
@@ -204,7 +221,9 @@ class WindowsNativeAdapter:
                 out_directory = output_dir or os.path.abspath("data/temp_media")
                 os.makedirs(out_directory, exist_ok=True)
                 file_path = os.path.join(out_directory, f"screen_{uuid.uuid4().hex[:8]}.png")
-                save_status = gdiplus.GdipSaveImageToFile(gp_bitmap, file_path, ctypes.byref(png_clsid), None)
+                save_status = gdiplus.GdipSaveImageToFile(
+                    gp_bitmap, file_path, ctypes.byref(png_clsid), None
+                )
 
                 gdiplus.GdipDisposeImage(gp_bitmap)
                 gdi32.DeleteObject(hbm)
@@ -313,6 +332,7 @@ class WindowsNativeAdapter:
         if sys.platform == "win32" and hwnd > 0:
             try:
                 import subprocess
+
                 ps_code = rf"""
 Add-Type @'
 using System;
@@ -355,11 +375,17 @@ if ($root) {{
     }}
 }}
 """
-                out = subprocess.check_output(
-                    ["powershell", "-NoProfile", "-Command", ps_code],
-                    timeout=3.0,
-                ).decode("utf-8", errors="ignore").strip()
-                lines = [ln.strip() for ln in out.splitlines() if ln.strip() and ln.strip() != "False"]
+                out = (
+                    subprocess.check_output(
+                        ["powershell", "-NoProfile", "-Command", ps_code],
+                        timeout=3.0,
+                    )
+                    .decode("utf-8", errors="ignore")
+                    .strip()
+                )
+                lines = [
+                    ln.strip() for ln in out.splitlines() if ln.strip() and ln.strip() != "False"
+                ]
                 read_val = lines[-1] if lines else ""
                 if read_val:
                     return {
@@ -427,6 +453,7 @@ if ($root) {{
     def launch_application(self, application: str) -> Dict[str, Any]:
         """Launch an authorized application (calc, notepad, explorer, chrome, edge, code/VS Code, etc.)."""
         import shutil
+
         app_norm = application.lower().strip()
         exe_name = self.AUTHORIZED_LAUNCH_APPS.get(app_norm)
         if not exe_name:
@@ -439,8 +466,16 @@ if ($root) {{
             local_app_data = os.environ.get("LOCALAPPDATA", "")
             vscode_candidates = [
                 os.path.join(local_app_data, "Programs", "Microsoft VS Code", "Code.exe"),
-                os.path.join(os.environ.get("ProgramFiles", "C:\\Program Files"), "Microsoft VS Code", "Code.exe"),
-                os.path.join(os.environ.get("ProgramFiles(x86)", "C:\\Program Files (x86)"), "Microsoft VS Code", "Code.exe"),
+                os.path.join(
+                    os.environ.get("ProgramFiles", "C:\\Program Files"),
+                    "Microsoft VS Code",
+                    "Code.exe",
+                ),
+                os.path.join(
+                    os.environ.get("ProgramFiles(x86)", "C:\\Program Files (x86)"),
+                    "Microsoft VS Code",
+                    "Code.exe",
+                ),
             ]
             for cand in vscode_candidates:
                 if os.path.exists(cand):
@@ -451,7 +486,9 @@ if ($root) {{
         if not exe_name:
             # Check safe system PATH for safe registered application
             which_res = shutil.which(app_norm) or shutil.which(f"{app_norm}.exe")
-            if which_res and not any(f in which_res.lower() for f in ["powershell", "cmd.exe", "bash", "sh"]):
+            if which_res and not any(
+                f in which_res.lower() for f in ["powershell", "cmd.exe", "bash", "sh"]
+            ):
                 exe_name = which_res
                 resolved_path = which_res
 
@@ -476,6 +513,7 @@ if ($root) {{
         # Native companion unavailable: safely spawn verified application executable directly
         try:
             import subprocess
+
             proc_target = resolved_path or exe_name
             proc = subprocess.Popen([proc_target], shell=False)
             time.sleep(1.0)
@@ -495,7 +533,10 @@ if ($root) {{
                 for w in wins:
                     w_proc = w.get("processName", "").lower()
                     w_title = w.get("title", "").lower()
-                    if any(st in w_proc or st in w_title for st in search_terms) and w.get("hwnd", 0) > 0:
+                    if (
+                        any(st in w_proc or st in w_title for st in search_terms)
+                        and w.get("hwnd", 0) > 0
+                    ):
                         hwnd = int(w.get("hwnd", 0))
                         title = w.get("title", "")
                         process_name = w.get("processName", "")
@@ -555,9 +596,9 @@ if ($root) {{
                 "clicked": True,
                 "hwnd": hwnd,
                 "targetId": target_id,
-                "driverProvenance": "offline_simulation",
-                "offlineSimulation": True,
-                "driverProvenance": "test_fixture" if self.allow_simulation else "offline_simulation",
+                "driverProvenance": "test_fixture"
+                if self.allow_simulation
+                else "offline_simulation",
                 "offlineSimulation": self.allow_simulation,
             }
 
@@ -650,7 +691,18 @@ if ($root) {{
                 proc_name = (active_win.get("processName") or "").lower()
                 win_title = (active_win.get("title") or "").lower()
                 if (
-                    any(x in proc_name for x in ["electron", "sahaay", "node", "cmd", "powershell", "pwsh", "conhost"])
+                    any(
+                        x in proc_name
+                        for x in [
+                            "electron",
+                            "sahaay",
+                            "node",
+                            "cmd",
+                            "powershell",
+                            "pwsh",
+                            "conhost",
+                        ]
+                    )
                     or "sahaay" in win_title
                     or win_title == "program manager"
                 ):

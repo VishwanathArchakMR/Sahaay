@@ -7,18 +7,15 @@ Verifies the 4 distinct observation modes across execution surfaces:
 - Mode D: File / Workspace Observation (File system inspection, line counts, SHA-256)
 """
 
-import os
 from unittest.mock import MagicMock
-import pytest
 
+import pytest
 from sahaay_core.perception.observation_coordinator import (
     ObservationCoordinator,
     ObservationMode,
-    StructuredObservation,
 )
 from sahaay_core.perception.target_resolver import (
     TargetDescriptor,
-    TargetResolver,
     TargetSurfaceType,
 )
 
@@ -35,7 +32,12 @@ def mock_adapters():
 def test_mode_a_semantic_uia(mock_adapters):
     win_mock, br_mock, resolver_mock = mock_adapters
     win_mock.inspect_window_elements.return_value = [
-        {"controlType": "Edit", "name": "Text Editor", "hasKeyboardFocus": True, "value": "Hello world"},
+        {
+            "controlType": "Edit",
+            "name": "Text Editor",
+            "hasKeyboardFocus": True,
+            "value": "Hello world",
+        },
         {"controlType": "Button", "name": "Save", "hasKeyboardFocus": False},
     ]
 

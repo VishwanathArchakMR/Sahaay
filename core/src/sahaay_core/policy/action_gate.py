@@ -208,9 +208,18 @@ class ActionGate:
 
         # 3b. Consequential action check: Financial commitments, checkout, and destructive operations require human confirmation
         consequential_patterns = [
-            "checkout", "place_order", "complete_order", "submit_payment",
-            "buy_now", "pay_now", "confirm_purchase", "authorize_payment",
-            "credit_card", "rmdir /s", "delete_all", "drop database"
+            "checkout",
+            "place_order",
+            "complete_order",
+            "submit_payment",
+            "buy_now",
+            "pay_now",
+            "confirm_purchase",
+            "authorize_payment",
+            "credit_card",
+            "rmdir /s",
+            "delete_all",
+            "drop database",
         ]
         if any(cp in target_lower for cp in consequential_patterns):
             return PolicyDecision(
@@ -231,60 +240,68 @@ class ActionGate:
                     grant.scope in ("*", "all")
                     or grant.scope == required_scope
                     or grant.scope == action.actionType.value
-                    or (grant.scope in ("computer_use", "desktop_automation") and action.actionType in (
-                        ActionTypeEnum.LAUNCH_APPLICATION,
-                        ActionTypeEnum.FOCUS_WINDOW,
-                        ActionTypeEnum.CLICK_DESKTOP_CONTROL,
-                        ActionTypeEnum.TYPE_DESKTOP_TEXT,
-                        ActionTypeEnum.SET_CONTROL_TEXT,
-                        ActionTypeEnum.GET_CONTROL_TEXT,
-                        ActionTypeEnum.SET_SYSTEM_VOLUME,
-                        ActionTypeEnum.GET_SYSTEM_VOLUME,
-                        ActionTypeEnum.WINDOWS_LAUNCH_APP,
-                        ActionTypeEnum.WINDOWS_SET_CONTROL_TEXT,
-                        ActionTypeEnum.WINDOWS_CLICK_CONTROL,
-                        ActionTypeEnum.WINDOWS_INVOKE_CONTROL,
-                        ActionTypeEnum.WINDOWS_SET_VOLUME,
-                        ActionTypeEnum.WINDOWS_GET_VOLUME,
-                        ActionTypeEnum.WINDOWS_ENUMERATE_CONTROLS,
-                        ActionTypeEnum.WINDOWS_INSPECT_WINDOW,
-                        ActionTypeEnum.WINDOWS_GET_CONTROL_TEXT,
-                        ActionTypeEnum.FILE_CREATE_WRITE,
-                        ActionTypeEnum.FILE_READ,
-                        ActionTypeEnum.FILE_LIST_DIRECTORY,
-                        ActionTypeEnum.WORKSPACE_RUN_CODE,
-                        ActionTypeEnum.WORKSPACE_INDEX_DIRECTORY,
-                        ActionTypeEnum.ARTIFACT_GENERATE,
-                        ActionTypeEnum.ARTIFACT_GENERATE_DOCUMENT,
-                        ActionTypeEnum.ARTIFACT_GENERATE_SPREADSHEET,
-                        ActionTypeEnum.DATA_ANALYZE_TABULAR,
-                        ActionTypeEnum.STATE_MUTATION,
-                        ActionTypeEnum.GENERIC_CAPABILITY_ACTION,
-                    ))
-                    or (grant.scope in ("computer_use", "browser_automation") and action.actionType in (
-                        ActionTypeEnum.NAVIGATE_BROWSER_TAB,
-                        ActionTypeEnum.CLICK_BROWSER_ELEMENT,
-                        ActionTypeEnum.INPUT_BROWSER_TEXT,
-                        ActionTypeEnum.FILL_FORM_FIELDS,
-                        ActionTypeEnum.GET_FIELD_VALUES,
-                        ActionTypeEnum.SCROLL_BROWSER_TAB,
-                        ActionTypeEnum.GET_ACTIVE_TAB_INFO,
-                        ActionTypeEnum.GET_TAB_CONTENT,
-                        ActionTypeEnum.BROWSER_OPEN_TAB,
-                        ActionTypeEnum.BROWSER_NAVIGATE,
-                        ActionTypeEnum.BROWSER_CLICK_ELEMENT,
-                        ActionTypeEnum.BROWSER_FILL_FORM,
-                        ActionTypeEnum.BROWSER_SCROLL_TAB,
-                        ActionTypeEnum.BROWSER_SEARCH_IN_TAB,
-                        ActionTypeEnum.BROWSER_PLAY_MEDIA,
-                        ActionTypeEnum.BROWSER_GET_ACTIVE_TAB,
-                        ActionTypeEnum.BROWSER_GET_PAGE_CONTENT,
-                        ActionTypeEnum.BROWSER_TAB_OBSERVE,
-                        ActionTypeEnum.BROWSER_GET_VALUES,
-                        ActionTypeEnum.RESEARCH_WEB_SEARCH,
-                        ActionTypeEnum.RESEARCH_FETCH_PAGE,
-                        ActionTypeEnum.RESEARCH_WEB_MULTIHOP,
-                    ))
+                    or (
+                        grant.scope in ("computer_use", "desktop_automation")
+                        and action.actionType
+                        in (
+                            ActionTypeEnum.LAUNCH_APPLICATION,
+                            ActionTypeEnum.FOCUS_WINDOW,
+                            ActionTypeEnum.CLICK_DESKTOP_CONTROL,
+                            ActionTypeEnum.TYPE_DESKTOP_TEXT,
+                            ActionTypeEnum.SET_CONTROL_TEXT,
+                            ActionTypeEnum.GET_CONTROL_TEXT,
+                            ActionTypeEnum.SET_SYSTEM_VOLUME,
+                            ActionTypeEnum.GET_SYSTEM_VOLUME,
+                            ActionTypeEnum.WINDOWS_LAUNCH_APP,
+                            ActionTypeEnum.WINDOWS_SET_CONTROL_TEXT,
+                            ActionTypeEnum.WINDOWS_CLICK_CONTROL,
+                            ActionTypeEnum.WINDOWS_INVOKE_CONTROL,
+                            ActionTypeEnum.WINDOWS_SET_VOLUME,
+                            ActionTypeEnum.WINDOWS_GET_VOLUME,
+                            ActionTypeEnum.WINDOWS_ENUMERATE_CONTROLS,
+                            ActionTypeEnum.WINDOWS_INSPECT_WINDOW,
+                            ActionTypeEnum.WINDOWS_GET_CONTROL_TEXT,
+                            ActionTypeEnum.FILE_CREATE_WRITE,
+                            ActionTypeEnum.FILE_READ,
+                            ActionTypeEnum.FILE_LIST_DIRECTORY,
+                            ActionTypeEnum.WORKSPACE_RUN_CODE,
+                            ActionTypeEnum.WORKSPACE_INDEX_DIRECTORY,
+                            ActionTypeEnum.ARTIFACT_GENERATE,
+                            ActionTypeEnum.ARTIFACT_GENERATE_DOCUMENT,
+                            ActionTypeEnum.ARTIFACT_GENERATE_SPREADSHEET,
+                            ActionTypeEnum.DATA_ANALYZE_TABULAR,
+                            ActionTypeEnum.STATE_MUTATION,
+                            ActionTypeEnum.GENERIC_CAPABILITY_ACTION,
+                        )
+                    )
+                    or (
+                        grant.scope in ("computer_use", "browser_automation")
+                        and action.actionType
+                        in (
+                            ActionTypeEnum.NAVIGATE_BROWSER_TAB,
+                            ActionTypeEnum.CLICK_BROWSER_ELEMENT,
+                            ActionTypeEnum.INPUT_BROWSER_TEXT,
+                            ActionTypeEnum.FILL_FORM_FIELDS,
+                            ActionTypeEnum.GET_FIELD_VALUES,
+                            ActionTypeEnum.SCROLL_BROWSER_TAB,
+                            ActionTypeEnum.GET_ACTIVE_TAB_INFO,
+                            ActionTypeEnum.GET_TAB_CONTENT,
+                            ActionTypeEnum.BROWSER_OPEN_TAB,
+                            ActionTypeEnum.BROWSER_NAVIGATE,
+                            ActionTypeEnum.BROWSER_CLICK_ELEMENT,
+                            ActionTypeEnum.BROWSER_FILL_FORM,
+                            ActionTypeEnum.BROWSER_SCROLL_TAB,
+                            ActionTypeEnum.BROWSER_SEARCH_IN_TAB,
+                            ActionTypeEnum.BROWSER_PLAY_MEDIA,
+                            ActionTypeEnum.BROWSER_GET_ACTIVE_TAB,
+                            ActionTypeEnum.BROWSER_GET_PAGE_CONTENT,
+                            ActionTypeEnum.BROWSER_TAB_OBSERVE,
+                            ActionTypeEnum.BROWSER_GET_VALUES,
+                            ActionTypeEnum.RESEARCH_WEB_SEARCH,
+                            ActionTypeEnum.RESEARCH_FETCH_PAGE,
+                            ActionTypeEnum.RESEARCH_WEB_MULTIHOP,
+                        )
+                    )
                 )
             )
             for grant in active_grants

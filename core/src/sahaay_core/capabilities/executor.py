@@ -9,10 +9,11 @@ Dispatches validated capability calls to authoritative native adapters:
 - Verification Layer (independent postcondition verification)
 """
 
-from datetime import datetime, timezone
 import hashlib
+import json
 import logging
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -33,7 +34,9 @@ logger = logging.getLogger("sahaay.capabilities.executor")
 class CapabilityExecutionError(Exception):
     """Raised when capability execution fails."""
 
-    def __init__(self, message: str, code: str = "EXECUTION_FAILED", capability_id: Optional[str] = None):
+    def __init__(
+        self, message: str, code: str = "EXECUTION_FAILED", capability_id: Optional[str] = None
+    ):
         super().__init__(message)
         self.message = message
         self.code = code
@@ -52,6 +55,7 @@ class CapabilityExecutor:
         context_store: Optional[ContextStore] = None,
     ) -> None:
         import sys
+
         is_test = getattr(settings, "is_testing", False) or "pytest" in sys.modules
         self.windows_adapter = windows_adapter or WindowsNativeAdapter(allow_simulation=is_test)
         self.browser_adapter = browser_adapter or BrowserAdapter(allow_simulation=is_test)
@@ -103,21 +107,31 @@ class CapabilityExecutor:
                 p_name = win.get("processName", "").lower()
                 title = win.get("title", "").lower()
 
-                if any(k in target_str for k in ["calc", "calculator", "calculatorapp", "applicationframehost"]):
-                    if any(k in p_name or k in title for k in ["calc", "calculator", "calculatorapp"]):
+                if any(
+                    k in target_str
+                    for k in ["calc", "calculator", "calculatorapp", "applicationframehost"]
+                ):
+                    if any(
+                        k in p_name or k in title for k in ["calc", "calculator", "calculatorapp"]
+                    ):
                         try:
                             import ctypes
                             from ctypes import wintypes
+
                             user32 = ctypes.windll.user32
                             core = [w_hwnd]
-                            WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
-                            def _enum_core(h, lp):
+                            WNDENUMPROC = ctypes.WINFUNCTYPE(
+                                wintypes.BOOL, wintypes.HWND, wintypes.LPARAM
+                            )
+
+                            def _enum_core(h, lp, _user32=user32, _core=core):
                                 cbuff = ctypes.create_unicode_buffer(256)
-                                user32.GetClassNameW(h, cbuff, 256)
+                                _user32.GetClassNameW(h, cbuff, 256)
                                 if cbuff.value == "Windows.UI.Core.CoreWindow":
-                                    core[0] = int(h)
+                                    _core[0] = int(h)
                                     return False
                                 return True
+
                             user32.EnumChildWindows(w_hwnd, WNDENUMPROC(_enum_core), 0)
                             return core[0]
                         except Exception:
@@ -149,6 +163,7 @@ class CapabilityExecutor:
                 if launched_hwnd > 0:
                     return launched_hwnd
                 import time
+
                 time.sleep(0.5)
                 for win in self.windows_adapter.list_open_windows():
                     p_name = win.get("processName", "").lower()
@@ -198,7 +213,9 @@ class CapabilityExecutor:
                 )
                 if not app_name and context:
                     instr = str(context.get("instruction") or context.get("title") or "").lower()
-                    target = str(context.get("target") or context.get("target_surface") or "").lower()
+                    target = str(
+                        context.get("target") or context.get("target_surface") or ""
+                    ).lower()
                     combined = f"{instr} {target}"
                     if "calc" in combined:
                         app_name = "calc.exe"
@@ -230,7 +247,11 @@ class CapabilityExecutor:
                 }
                 app_lower = app_name.lower().strip()
                 stem = os.path.splitext(app_lower)[0].strip()
-                search_patterns = APP_PROCESS_PATTERNS.get(app_lower) or APP_PROCESS_PATTERNS.get(stem) or [stem, app_lower]
+                search_patterns = (
+                    APP_PROCESS_PATTERNS.get(app_lower)
+                    or APP_PROCESS_PATTERNS.get(stem)
+                    or [stem, app_lower]
+                )
 
                 def matches_win(win_dict: dict) -> bool:
                     p_name = win_dict.get("processName", "").lower()
@@ -267,6 +288,7 @@ class CapabilityExecutor:
                     }
                 if res.get("hwnd", 0) <= 0 and res.get("success", False):
                     import time
+
                     for _ in range(6):
                         time.sleep(0.4)
                         try:
@@ -312,12 +334,22 @@ class CapabilityExecutor:
                 target_app_hint = (
                     "calc"
                     if any(
-                        k in (str(parameters.get("targetScope", "") or parameters.get("application", "")) + " " + ctx_inst).lower()
+                        k
+                        in (
+                            str(
+                                parameters.get("targetScope", "")
+                                or parameters.get("application", "")
+                            )
+                            + " "
+                            + ctx_inst
+                        ).lower()
                         for k in ["calc", "calculator"]
                     )
                     else "notepad"
                 )
-                hwnd = self._resolve_target_hwnd(parameters, default_app=target_app_hint, context=context)
+                hwnd = self._resolve_target_hwnd(
+                    parameters, default_app=target_app_hint, context=context
+                )
                 target_id = parameters.get("targetId") or parameters.get("automationId")
                 try:
                     res = self.windows_adapter.get_control_text(hwnd, target_id)
@@ -325,10 +357,12 @@ class CapabilityExecutor:
                     logger.debug("windows_adapter.get_control_text failed: %s", ex)
                     res = {}
                 # If text is empty or error, and target is calculator, execute real PowerShell UIAutomation readback
-                if (not res.get("text") or res.get("text") == "" or not res.get("success")) and hwnd > 0:
+                if (
+                    not res.get("text") or res.get("text") == "" or not res.get("success")
+                ) and hwnd > 0:
                     try:
                         import subprocess
-                        import re
+
                         ps_code = rf"""
 Add-Type @'
 using System;
@@ -363,11 +397,19 @@ if ($root) {{
     }}
 }}
 """
-                        out = subprocess.check_output(
-                            ["powershell", "-NoProfile", "-Command", ps_code],
-                            timeout=3.0,
-                        ).decode("utf-8", errors="ignore").strip()
-                        lines = [ln.strip() for ln in out.splitlines() if ln.strip() and ln.strip() != "False"]
+                        out = (
+                            subprocess.check_output(
+                                ["powershell", "-NoProfile", "-Command", ps_code],
+                                timeout=3.0,
+                            )
+                            .decode("utf-8", errors="ignore")
+                            .strip()
+                        )
+                        lines = [
+                            ln.strip()
+                            for ln in out.splitlines()
+                            if ln.strip() and ln.strip() != "False"
+                        ]
                         read_val = lines[-1] if lines else ""
                         if read_val:
                             res = {
@@ -386,12 +428,17 @@ if ($root) {{
                 target_app_hint = (
                     "calc"
                     if any(
-                        k in str(parameters.get("targetScope", "") or parameters.get("application", "")).lower()
+                        k
+                        in str(
+                            parameters.get("targetScope", "") or parameters.get("application", "")
+                        ).lower()
                         for k in ["calc", "calculator"]
                     )
                     else "notepad"
                 )
-                hwnd = self._resolve_target_hwnd(parameters, default_app=target_app_hint, context=context)
+                hwnd = self._resolve_target_hwnd(
+                    parameters, default_app=target_app_hint, context=context
+                )
                 text = str(parameters.get("text", ""))
                 target_id = parameters.get("targetId") or parameters.get("automationId")
 
@@ -402,7 +449,11 @@ if ($root) {{
                     try:
                         open_wins = self.windows_adapter.list_open_windows()
                         for w in open_wins:
-                            if w.get("hwnd") == hwnd and "calc" in (w.get("processName", "") + w.get("title", "")).lower():
+                            if (
+                                w.get("hwnd") == hwnd
+                                and "calc"
+                                in (w.get("processName", "") + w.get("title", "")).lower()
+                            ):
                                 is_calc = True
                                 break
                     except Exception:
@@ -412,11 +463,19 @@ if ($root) {{
                     try:
                         self.windows_adapter.focus_window(hwnd)
                         calc_keys = text.strip()
-                        if any(op in calc_keys for op in ["*", "+", "-", "/"]) and not calc_keys.endswith("="):
+                        if any(
+                            op in calc_keys for op in ["*", "+", "-", "/"]
+                        ) and not calc_keys.endswith("="):
                             calc_keys += "="
                         import subprocess
+
                         subprocess.run(
-                            ["powershell", "-NoProfile", "-Command", f"[System.Windows.Forms.SendKeys]::SendWait('{calc_keys}')"],
+                            [
+                                "powershell",
+                                "-NoProfile",
+                                "-Command",
+                                f"[System.Windows.Forms.SendKeys]::SendWait('{calc_keys}')",
+                            ],
                             timeout=3.0,
                         )
                         return {
@@ -529,7 +588,12 @@ if ($root) {{
 
             elif capability_id == "browser_input_text":
                 text = str(parameters.get("text") or parameters.get("value") or "")
-                selector = str(parameters.get("selector") or parameters.get("targetId") or parameters.get("target") or "")
+                selector = str(
+                    parameters.get("selector")
+                    or parameters.get("targetId")
+                    or parameters.get("target")
+                    or ""
+                )
                 res = self.browser_adapter.input_text(text=text, selector=selector)
                 return {
                     "success": bool(res.get("success", False)),
@@ -582,9 +646,16 @@ if ($root) {{
                 }
 
             elif capability_id == "browser_search_in_tab":
-                query = parameters.get("query") or parameters.get("search") or parameters.get("text") or ""
+                query = (
+                    parameters.get("query")
+                    or parameters.get("search")
+                    or parameters.get("text")
+                    or ""
+                )
                 if not query:
-                    raise CapabilityExecutionError("browser_search_in_tab requires a 'query' parameter.")
+                    raise CapabilityExecutionError(
+                        "browser_search_in_tab requires a 'query' parameter."
+                    )
                 res = self.browser_adapter.search_in_tab(query)
                 return {
                     "query": query,
@@ -593,7 +664,13 @@ if ($root) {{
                 }
 
             elif capability_id == "browser_play_media":
-                query = parameters.get("query") or parameters.get("search") or parameters.get("title") or parameters.get("song") or ""
+                query = (
+                    parameters.get("query")
+                    or parameters.get("search")
+                    or parameters.get("title")
+                    or parameters.get("song")
+                    or ""
+                )
                 video_url = parameters.get("video_url") or parameters.get("url") or ""
                 res = self.browser_adapter.play_media(query=query or video_url)
                 return {
@@ -606,7 +683,12 @@ if ($root) {{
                 }
 
             elif capability_id == "file_create_write":
-                file_path_str = parameters.get("path") or parameters.get("filePath") or parameters.get("target") or ""
+                file_path_str = (
+                    parameters.get("path")
+                    or parameters.get("filePath")
+                    or parameters.get("target")
+                    or ""
+                )
                 content = parameters.get("content") or parameters.get("text") or ""
                 if not file_path_str:
                     desktop = os.path.join(os.path.expanduser("~"), "Desktop")
@@ -648,8 +730,15 @@ if ($root) {{
                 }
 
             elif capability_id == "file_list_directory":
-                dir_str = str(parameters.get("path") or parameters.get("directory") or parameters.get("target") or ".").strip()
-                clean_dir = dir_str.lower().replace("folder", "").replace("my", "").strip().strip("\"'")
+                dir_str = str(
+                    parameters.get("path")
+                    or parameters.get("directory")
+                    or parameters.get("target")
+                    or "."
+                ).strip()
+                clean_dir = (
+                    dir_str.lower().replace("folder", "").replace("my", "").strip().strip("\"'")
+                )
                 user_home = Path.home()
 
                 target_dir: Optional[Path] = None
@@ -677,9 +766,13 @@ if ($root) {{
                         target_dir = cand.resolve()
 
                 if not target_dir or not target_dir.is_dir():
-                    raise CapabilityExecutionError(f"Directory not found or inaccessible: {dir_str}")
+                    raise CapabilityExecutionError(
+                        f"Directory not found or inaccessible: {dir_str}"
+                    )
 
-                sort_by = str(parameters.get("sort_by") or parameters.get("sortBy") or "modified").lower()
+                sort_by = str(
+                    parameters.get("sort_by") or parameters.get("sortBy") or "modified"
+                ).lower()
                 limit = parameters.get("limit")
                 limit_int = int(limit) if limit and str(limit).isdigit() else None
 
@@ -700,17 +793,23 @@ if ($root) {{
                         ext = entry.suffix.lower() if entry.is_file() else "Directory"
                         file_type = ext.replace(".", "").upper() if ext.startswith(".") else ext
 
-                        items.append({
-                            "name": entry.name,
-                            "type": file_type,
-                            "extension": ext,
-                            "isDir": entry.is_dir(),
-                            "size": sz,
-                            "sizeFormatted": sz_fmt,
-                            "mtime": stat.st_mtime,
-                            "modified": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
-                            "modifiedIso": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
-                        })
+                        items.append(
+                            {
+                                "name": entry.name,
+                                "type": file_type,
+                                "extension": ext,
+                                "isDir": entry.is_dir(),
+                                "size": sz,
+                                "sizeFormatted": sz_fmt,
+                                "mtime": stat.st_mtime,
+                                "modified": datetime.fromtimestamp(
+                                    stat.st_mtime, tz=timezone.utc
+                                ).strftime("%Y-%m-%d %H:%M:%S UTC"),
+                                "modifiedIso": datetime.fromtimestamp(
+                                    stat.st_mtime, tz=timezone.utc
+                                ).isoformat(),
+                            }
+                        )
                     except Exception:
                         pass
 
@@ -725,7 +824,9 @@ if ($root) {{
 
                 lines = [f"Inspected directory: {target_dir} ({len(items)} total entries)"]
                 for i, it in enumerate(selected_items[:10], 1):
-                    type_info = "Directory" if it["isDir"] else f"{it['type']} file, {it['sizeFormatted']}"
+                    type_info = (
+                        "Directory" if it["isDir"] else f"{it['type']} file, {it['sizeFormatted']}"
+                    )
                     lines.append(f"{i}. {it['name']} ({type_info}, modified: {it['modified']})")
                 if len(items) > len(selected_items):
                     lines.append(f"(Showing {len(selected_items)} of {len(items)} entries)")
@@ -747,8 +848,11 @@ if ($root) {{
                 custom_title = parameters.get("title")
                 task_id = context.get("taskId") if context else None
                 from uuid import UUID
+
                 tid = UUID(str(task_id)) if task_id else None
-                result = self.doc_ingestion.ingest_file(file_path, custom_title=custom_title, task_id=tid)
+                result = self.doc_ingestion.ingest_file(
+                    file_path, custom_title=custom_title, task_id=tid
+                )
                 return {
                     "sourceId": str(result.get("sourceId")),
                     "filePath": file_path,
@@ -793,12 +897,14 @@ if ($root) {{
                 inconsistencies = []
                 if len(by_source) > 1:
                     src_keys = list(by_source.keys())
-                    inconsistencies.append({
-                        "topic": query,
-                        "sourcesCompared": len(src_keys),
-                        "status": "multi_source_aligned",
-                        "summary": f"Analyzed {len(facts)} statements across {len(src_keys)} sources on topic '{query}'.",
-                    })
+                    inconsistencies.append(
+                        {
+                            "topic": query,
+                            "sourcesCompared": len(src_keys),
+                            "status": "multi_source_aligned",
+                            "summary": f"Analyzed {len(facts)} statements across {len(src_keys)} sources on topic '{query}'.",
+                        }
+                    )
                 return {
                     "query": query,
                     "sourcesCount": len(by_source),
@@ -809,7 +915,9 @@ if ($root) {{
                 }
 
             elif capability_id == "data_analyze_tabular":
-                source = parameters.get("source") or parameters.get("filePath") or parameters.get("data")
+                source = (
+                    parameters.get("source") or parameters.get("filePath") or parameters.get("data")
+                )
                 sql_q = parameters.get("query")
                 res = artifact_generator.analyze_tabular_data(table_data=source, query=sql_q)
                 return {
@@ -862,24 +970,30 @@ if ($root) {{
             elif capability_id == "research_web_multihop":
                 query = parameters.get("query") or ""
                 max_results = int(parameters.get("maxResults", 4))
-                search_res = await internet_research_manager.search_public_web(query, max_results=max_results)
+                search_res = await internet_research_manager.search_public_web(
+                    query, max_results=max_results
+                )
                 # Fetch text from top 2 sources safely for deep extraction
                 fetched_pages = []
                 for r in (search_res.results or [])[:2]:
                     if r.url and r.url.startswith("http"):
                         try:
                             page_res = await internet_research_manager.fetch_clean_page(r.url)
-                            fetched_pages.append({
-                                "url": r.url,
-                                "title": page_res.title or r.title,
-                                "excerpt": (page_res.extracted_text or "")[:1200],
-                            })
+                            fetched_pages.append(
+                                {
+                                    "url": r.url,
+                                    "title": page_res.title or r.title,
+                                    "excerpt": (page_res.extracted_text or "")[:1200],
+                                }
+                            )
                         except Exception:
-                            fetched_pages.append({
-                                "url": r.url,
-                                "title": r.title,
-                                "excerpt": r.snippet[:1200],
-                            })
+                            fetched_pages.append(
+                                {
+                                    "url": r.url,
+                                    "title": r.title,
+                                    "excerpt": r.snippet[:1200],
+                                }
+                            )
 
                 return {
                     "query": query,
@@ -898,8 +1012,14 @@ if ($root) {{
                 controls = []
                 try:
                     import subprocess
+
                     ps_cmd = f"Add-Type -AssemblyName UIAutomationClient; $el = [System.Windows.Automation.AutomationElement]::FromHandle([IntPtr]{hwnd}); $cond = [System.Windows.Automation.Condition]::TrueCondition; $col = $el.FindAll([System.Windows.Automation.TreeScope]::Descendants, $cond); foreach($c in $col){{ if($c.Current.Name -or $c.Current.AutomationId){{ [PSCustomObject]@{{ Name=$c.Current.Name; Id=$c.Current.AutomationId; Type=$c.Current.ControlType.ProgrammaticName }} }} }} | ConvertTo-Json -Compress"
-                    p = subprocess.run(["powershell", "-NoProfile", "-Command", ps_cmd], capture_output=True, text=True, timeout=5)
+                    p = subprocess.run(
+                        ["powershell", "-NoProfile", "-Command", ps_cmd],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
                     if p.returncode == 0 and p.stdout.strip():
                         data = json.loads(p.stdout.strip())
                         controls = data if isinstance(data, list) else [data]
@@ -916,8 +1036,16 @@ if ($root) {{
 
             elif capability_id in ("image_edit_style", "image_edit"):
                 from sahaay_core.models.meta.muse_image import muse_image
-                image_path = parameters.get("imagePath") or parameters.get("path") or parameters.get("file") or ""
-                style_inst = parameters.get("styleInstruction") or parameters.get("style") or "retro vintage"
+
+                image_path = (
+                    parameters.get("imagePath")
+                    or parameters.get("path")
+                    or parameters.get("file")
+                    or ""
+                )
+                style_inst = (
+                    parameters.get("styleInstruction") or parameters.get("style") or "retro vintage"
+                )
                 task_id = str(context.get("taskId") or "task_creative")
                 return await muse_image.edit_image_with_style(
                     image_path=image_path,
@@ -949,7 +1077,9 @@ if ($root) {{
                 return {
                     "url": obs.get("url", ""),
                     "title": obs.get("title", ""),
-                    "textExcerpt": (obs.get("visibleTextExcerpt") or obs.get("pageText") or "")[:1500],
+                    "textExcerpt": (obs.get("visibleTextExcerpt") or obs.get("pageText") or "")[
+                        :1500
+                    ],
                     "success": True,
                     "driverProvenance": obs.get("driverProvenance", "real_browser_extension"),
                 }
@@ -957,7 +1087,12 @@ if ($root) {{
             elif capability_id == "browser_get_page_content":
                 tab_id = parameters.get("tabId")
                 obs = self.browser_adapter.get_active_tab_observation()
-                content = obs.get("visibleTextExcerpt") or obs.get("pageText") or obs.get("textContent") or ""
+                content = (
+                    obs.get("visibleTextExcerpt")
+                    or obs.get("pageText")
+                    or obs.get("textContent")
+                    or ""
+                )
                 return {
                     "url": obs.get("url", ""),
                     "title": obs.get("title", ""),
@@ -969,6 +1104,7 @@ if ($root) {{
 
             elif capability_id == "workspace_run_code":
                 from sahaay_core.capabilities.code_runner import execute_python_script
+
                 script_path = parameters.get("script_path") or parameters.get("scriptPath") or ""
                 args = parameters.get("args") or []
                 timeout = float(parameters.get("timeout", 30.0))
@@ -976,6 +1112,7 @@ if ($root) {{
 
             elif capability_id == "workspace_index_directory":
                 from sahaay_core.sources.workspace_indexer import index_workspace_directory
+
                 ws_path = (
                     parameters.get("workspace_path")
                     or parameters.get("workspacePath")
@@ -1065,7 +1202,9 @@ if ($root) {{
 
                 elif target in ("windows", "desktop", "notepad", "calculator", "calc"):
                     target_app_hint = "calc" if target in ("calculator", "calc") else "notepad"
-                    hwnd = self._resolve_target_hwnd(parameters, default_app=target_app_hint, context=context)
+                    hwnd = self._resolve_target_hwnd(
+                        parameters, default_app=target_app_hint, context=context
+                    )
                     target_id = parameters.get("targetId") or parameters.get("automationId")
                     if target in ("calculator", "calc") and not target_id:
                         target_id = "CalculatorResults"
@@ -1076,9 +1215,15 @@ if ($root) {{
                     readback = self.windows_adapter.get_control_text(hwnd, target_id)
                     actual_text = readback.get("text", "")
 
-                    if (not actual_text or actual_text == "") and target_app_hint == "calc" and hwnd > 0:
+                    if (
+                        (not actual_text or actual_text == "")
+                        and target_app_hint == "calc"
+                        and hwnd > 0
+                    ):
                         try:
-                            calc_res = self.windows_adapter.get_control_text(hwnd, "CalculatorResults")
+                            calc_res = self.windows_adapter.get_control_text(
+                                hwnd, "CalculatorResults"
+                            )
                             if calc_res.get("text"):
                                 readback = calc_res
                                 actual_text = calc_res.get("text", "")
@@ -1088,9 +1233,13 @@ if ($root) {{
                     readback_data = {"text": actual_text}
 
                     norm_expected = str(expected_text or "").replace(",", "").strip()
-                    norm_actual = str(actual_text or "").replace(",", "").replace("Display is ", "").strip()
+                    norm_actual = (
+                        str(actual_text or "").replace(",", "").replace("Display is ", "").strip()
+                    )
 
-                    if norm_expected and (norm_expected not in norm_actual and norm_expected != norm_actual):
+                    if norm_expected and (
+                        norm_expected not in norm_actual and norm_expected != norm_actual
+                    ):
                         mismatches.append(
                             f"Text mismatch: expected '{expected_text}' to match actual '{actual_text}'"
                         )
@@ -1106,7 +1255,7 @@ if ($root) {{
                         )
 
                 elif target in ("retrieved_facts", "facts", "local_store"):
-                    for k, expected_v in (expected.items() if isinstance(expected, dict) else []):
+                    for k, expected_v in expected.items() if isinstance(expected, dict) else []:
                         if expected_v is True or k in ("source_verified", "findings_cited"):
                             all_facts = self.context_store.search_facts("")
                             if not all_facts:
@@ -1125,7 +1274,7 @@ if ($root) {{
 
                 else:
                     # Generic fact verification against context store
-                    for k, expected_v in (expected.items() if isinstance(expected, dict) else []):
+                    for k, expected_v in expected.items() if isinstance(expected, dict) else []:
                         if expected_v is True or k in ("source_verified", "findings_cited"):
                             all_facts = self.context_store.search_facts("")
                             if not all_facts:

@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
-from sahaay_core.config.settings import REPO_ROOT, settings
 from sahaay_core.contracts.models import ContextFact, SourceReference
 from sahaay_core.storage.persistence import durable_storage
 
@@ -66,7 +65,6 @@ def index_workspace_directory(
         raise ValueError(f"Directory path does not exist or is not a folder: {target_dir}")
 
     discovered_files: List[Dict[str, Any]] = []
-    file_tree: Dict[str, Any] = {"name": target_dir.name, "type": "directory", "children": []}
 
     base_depth = len(target_dir.parts)
 
@@ -100,7 +98,9 @@ def index_workspace_directory(
                     except Exception:
                         preview = ""
                 else:
-                    sha256_hash = hashlib.sha256(f"{file_path}_{stat.st_mtime}".encode("utf-8")).hexdigest()
+                    sha256_hash = hashlib.sha256(
+                        f"{file_path}_{stat.st_mtime}".encode("utf-8")
+                    ).hexdigest()
 
                 rel_path = str(file_path.relative_to(target_dir))
                 file_info = {
@@ -156,4 +156,3 @@ def index_workspace_directory(
             f"with cryptographic SHA-256 fingerprints."
         ),
     }
-

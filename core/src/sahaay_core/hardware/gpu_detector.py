@@ -9,7 +9,7 @@ import logging
 import shutil
 import subprocess
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger("sahaay.hardware.gpu")
 
@@ -50,6 +50,7 @@ def get_gpu_profile(force_fresh: bool = False) -> Dict[str, Any]:
         # Check standard Windows NVIDIA directory
         default_nvsmi = r"C:\Windows\System32\nvidia-smi.exe"
         import os
+
         if os.path.exists(default_nvsmi):
             nvsmi_path = default_nvsmi
 
@@ -101,4 +102,3 @@ def get_gpu_profile(force_fresh: bool = False) -> Dict[str, Any]:
     _cached_gpu_profile = profile
     _last_profile_query = now
     return profile
-

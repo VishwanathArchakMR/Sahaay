@@ -122,7 +122,11 @@ class PrivacyGateway:
                 and (
                     grant.purpose == purpose
                     or grant.purpose in ("*", "meta_cloud", "all", "task_planning")
-                    or (purpose in ("task_planning", "Task planning and grounded reasoning") and grant.purpose in ("task_planning", "Task planning and grounded reasoning", "meta_cloud"))
+                    or (
+                        purpose in ("task_planning", "Task planning and grounded reasoning")
+                        and grant.purpose
+                        in ("task_planning", "Task planning and grounded reasoning", "meta_cloud")
+                    )
                 )
                 and (
                     grant.targetDomainOrPath == destination

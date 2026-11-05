@@ -106,6 +106,7 @@ class SafeWebFetcher:
     async def fetch_page(self, url: str) -> PageFetchResult:
         """Safely fetches and sanitizes a public web page."""
         import sys
+
         from sahaay_core.config.settings import settings
 
         is_test = getattr(settings, "is_testing", False) or "pytest" in sys.modules

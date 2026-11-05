@@ -15,6 +15,7 @@ import uuid
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel, Field
 
 from sahaay_core.adapters.browser.adapter import BrowserAdapter
@@ -243,7 +244,9 @@ class ObservationCoordinator:
             "accessibleElementsCount": len(tab_data.get("accessibleElements", [])),
         }
 
-        freshness = "live" if is_attached and url else ("awaiting_tab" if is_conn else "disconnected")
+        freshness = (
+            "live" if is_attached and url else ("awaiting_tab" if is_conn else "disconnected")
+        )
         msg = (
             f"Mode C Browser: Observing web tab '{title}' ({url})."
             if is_attached and url
@@ -291,11 +294,13 @@ class ObservationCoordinator:
                     for entry in target_path.iterdir():
                         try:
                             stat = entry.stat()
-                            items_summary.append({
-                                "name": entry.name,
-                                "isDir": entry.is_dir(),
-                                "size": stat.st_size if entry.is_file() else 0,
-                            })
+                            items_summary.append(
+                                {
+                                    "name": entry.name,
+                                    "isDir": entry.is_dir(),
+                                    "size": stat.st_size if entry.is_file() else 0,
+                                }
+                            )
                         except Exception:
                             pass
                 except Exception as ex:
@@ -329,4 +334,3 @@ class ObservationCoordinator:
             freshness_status="live" if exists else "not_found",
             message=msg,
         )
-

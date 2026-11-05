@@ -358,6 +358,7 @@ class MuseSparkClient:
         )
 
         import sys
+
         is_test = getattr(settings, "is_testing", False) or "pytest" in sys.modules
 
         if not privacy_eval.allowTransmission:
@@ -701,6 +702,7 @@ class MuseSparkClient:
         )
 
         import sys
+
         is_test = getattr(settings, "is_testing", False) or "pytest" in sys.modules
 
         if not privacy_eval.allowTransmission:
@@ -765,9 +767,15 @@ class MuseSparkClient:
                     fallback_plan = self._generate_deterministic_local_plan(task, source_facts)
                     fallback_plan.latency_ms = (time.perf_counter() - start_time) * 1000
                     return fallback_plan
-                raise ModelProviderError("Meta Muse Spark proposed a plan that failed semantic safety policy.")
+                raise ModelProviderError(
+                    "Meta Muse Spark proposed a plan that failed semantic safety policy."
+                )
         except Exception as ex:
-            if not isinstance(ex, ModelProviderError) and is_test and (allow_test_fallback or not self.client.is_configured):
+            if (
+                not isinstance(ex, ModelProviderError)
+                and is_test
+                and (allow_test_fallback or not self.client.is_configured)
+            ):
                 fallback_plan = self._generate_deterministic_local_plan(task, source_facts)
                 fallback_plan.latency_ms = (time.perf_counter() - start_time) * 1000
                 return fallback_plan
@@ -778,16 +786,40 @@ class MuseSparkClient:
         """Determine dynamic reasoning effort ('low', 'medium', 'high') based on goal complexity."""
         g_lower = goal.lower()
         low_keywords = [
-            "open ", "launch ", "close ", "focus ", "mute", "unmute",
-            "volume", "scroll", "maximize", "minimize", "show desktop"
+            "open ",
+            "launch ",
+            "close ",
+            "focus ",
+            "mute",
+            "unmute",
+            "volume",
+            "scroll",
+            "maximize",
+            "minimize",
+            "show desktop",
         ]
-        if any(g_lower.startswith(kw) or f" {kw}" in g_lower for kw in low_keywords) and len(g_lower.split()) <= 6:
+        if (
+            any(g_lower.startswith(kw) or f" {kw}" in g_lower for kw in low_keywords)
+            and len(g_lower.split()) <= 6
+        ):
             return "low"
 
         high_keywords = [
-            "research", "analyze", "analyse", "compare", "audit", "discrepan",
-            "inconsisten", "difference", "investigate", "synthesize", "deep dive",
-            "debug", "fix issue", "what is wrong", "limitation"
+            "research",
+            "analyze",
+            "analyse",
+            "compare",
+            "audit",
+            "discrepan",
+            "inconsisten",
+            "difference",
+            "investigate",
+            "synthesize",
+            "deep dive",
+            "debug",
+            "fix issue",
+            "what is wrong",
+            "limitation",
         ]
         if any(kw in g_lower for kw in high_keywords):
             return "high"
@@ -846,7 +878,13 @@ class MuseSparkClient:
                 raise ModelProviderError(f"Function-calling loop timed out after {elapsed:.1f}s")
 
             rounds += 1
-            logger.info("Meta function-calling round %d/%d (effort: %s) for goal: %s", rounds, max_rounds, effort, goal[:60])
+            logger.info(
+                "Meta function-calling round %d/%d (effort: %s) for goal: %s",
+                rounds,
+                max_rounds,
+                effort,
+                goal[:60],
+            )
 
             payload: Dict[str, Any] = {
                 "model": self.model_id,
@@ -876,19 +914,42 @@ class MuseSparkClient:
             tool_calls = assistant_message.get("tool_calls") or []
 
             # Anti-stall ReAct pattern: If on round 1 the model replies with conversational text without calling tools for an action goal, nudge to invoke tool
-            if rounds == 1 and not tool_calls and any(kw in goal.lower() for kw in ["open", "launch", "write", "create", "click", "search", "navigate", "find", "add to cart"]):
-                logger.info("Model returned conversational text without tool calls on round 1 for actionable goal; nudging to invoke tool directly.")
-                messages.append({
-                    "role": "user",
-                    "content": "Please proceed directly to execute this request using the available tools on the user's computer."
-                })
+            if (
+                rounds == 1
+                and not tool_calls
+                and any(
+                    kw in goal.lower()
+                    for kw in [
+                        "open",
+                        "launch",
+                        "write",
+                        "create",
+                        "click",
+                        "search",
+                        "navigate",
+                        "find",
+                        "add to cart",
+                    ]
+                )
+            ):
+                logger.info(
+                    "Model returned conversational text without tool calls on round 1 for actionable goal; nudging to invoke tool directly."
+                )
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": "Please proceed directly to execute this request using the available tools on the user's computer.",
+                    }
+                )
                 continue
 
             # If model concluded without tool calls, evaluate whether goal has been accomplished
             if finish_reason == "stop" or not tool_calls:
                 final_text = assistant_message.get("content") or "Task completed successfully."
                 latency_ms = (time.perf_counter() - start_time) * 1000
-                is_task_fulfilled = len(executed_calls) > 0 or ("retrieval" in self.classify_task_mode(goal))
+                is_task_fulfilled = len(executed_calls) > 0 or (
+                    "retrieval" in self.classify_task_mode(goal)
+                )
                 telemetry = {
                     "model_id": self.model_id,
                     "endpoint": "chat/completions",
@@ -920,7 +981,9 @@ class MuseSparkClient:
                 for tc in tool_calls
             ]
             if current_signatures == last_tool_signatures:
-                logger.warning("Loop guard triggered: identical tool calls repeated. Breaking loop.")
+                logger.warning(
+                    "Loop guard triggered: identical tool calls repeated. Breaking loop."
+                )
                 break
             last_tool_signatures = current_signatures
 
@@ -932,13 +995,19 @@ class MuseSparkClient:
                 fn_args_str = fn.get("arguments", "{}")
 
                 try:
-                    fn_args = json.loads(fn_args_str) if isinstance(fn_args_str, str) else (fn_args_str or {})
+                    fn_args = (
+                        json.loads(fn_args_str)
+                        if isinstance(fn_args_str, str)
+                        else (fn_args_str or {})
+                    )
                 except json.JSONDecodeError:
                     fn_args = {}
 
                 # Strict validation: reject unknown tool names
                 if fn_name not in allowed_tool_names:
-                    tool_result = {"error": f"Tool '{fn_name}' is not in the authorized tools allowlist."}
+                    tool_result = {
+                        "error": f"Tool '{fn_name}' is not in the authorized tools allowlist."
+                    }
                 elif executor_fn:
                     try:
                         if asyncio.iscoroutinefunction(executor_fn):
@@ -951,19 +1020,25 @@ class MuseSparkClient:
                 else:
                     tool_result = {"error": f"No tool executor registered for '{fn_name}'."}
 
-                executed_calls.append({
-                    "tool_call_id": tool_call_id,
-                    "function_name": fn_name,
-                    "arguments": fn_args,
-                    "result": tool_result,
-                })
+                executed_calls.append(
+                    {
+                        "tool_call_id": tool_call_id,
+                        "function_name": fn_name,
+                        "arguments": fn_args,
+                        "result": tool_result,
+                    }
+                )
 
                 # Feed tool result back with required role: tool and matching tool_call_id
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call_id,
-                    "content": json.dumps(tool_result) if not isinstance(tool_result, str) else tool_result,
-                })
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_call_id,
+                        "content": json.dumps(tool_result)
+                        if not isinstance(tool_result, str)
+                        else tool_result,
+                    }
+                )
 
         # Exceeded max rounds or loop guard break
         latency_ms = (time.perf_counter() - start_time) * 1000
@@ -1034,11 +1109,22 @@ class MuseSparkClient:
 
         if is_calculator:
             # Dynamically parse calculation from user goal
-            math_match = re.search(r"(\d+)\s*(?:multiplied by|\*|times|x|\+|\-|\/)\s*(\d+)", goal_lower)
+            math_match = re.search(
+                r"(\d+)\s*(?:multiplied by|\*|times|x|\+|\-|\/)\s*(\d+)", goal_lower
+            )
             if math_match:
                 n1 = int(math_match.group(1))
                 n2 = int(math_match.group(2))
-                calc_val = n1 * n2 if ("multipl" in goal_lower or "*" in goal_lower or "times" in goal_lower or " x " in goal_lower) else (n1 + n2 if "+" in goal_lower else n1)
+                calc_val = (
+                    n1 * n2
+                    if (
+                        "multipl" in goal_lower
+                        or "*" in goal_lower
+                        or "times" in goal_lower
+                        or " x " in goal_lower
+                    )
+                    else (n1 + n2 if "+" in goal_lower else n1)
+                )
                 exp_str = f"{n1}*{n2}="
             else:
                 calc_val = 6000
@@ -1081,7 +1167,11 @@ class MuseSparkClient:
                     target_surface="desktop_window",
                     target_scope="Calculator",
                     dependencies=["step-calc-2"],
-                    parameters={"targetScope": "Calculator", "targetId": "CalculatorResults", "text": exp_str},
+                    parameters={
+                        "targetScope": "Calculator",
+                        "targetId": "CalculatorResults",
+                        "text": exp_str,
+                    },
                     preconditions=["Calculator control identified"],
                     expected_postconditions=["Calculation outcome populated"],
                     requires_human_approval=False,
@@ -1216,9 +1306,17 @@ class MuseSparkClient:
                     requires_human_approval=False,
                 ),
             ]
-        elif any(w in goal_lower for w in ["invoice", "invoices", "statement", "utility bill"]) and any(w in goal_lower for w in ["search", "summarize", "find", "read", "extract", "facts"]) and not any(w in goal_lower for w in ["notepad", "write", "calc"]):
+        elif (
+            any(w in goal_lower for w in ["invoice", "invoices", "statement", "utility bill"])
+            and any(
+                w in goal_lower for w in ["search", "summarize", "find", "read", "extract", "facts"]
+            )
+            and not any(w in goal_lower for w in ["notepad", "write", "calc"])
+        ):
             elec_file = get_fixture_path("electricity_bill.txt")
-            doc_file_path = str(elec_file if elec_file.exists() else get_fixture_path("invoice_data.json"))
+            doc_file_path = str(
+                elec_file if elec_file.exists() else get_fixture_path("invoice_data.json")
+            )
             steps = [
                 PlanStepProposal(
                     step_id="step-doc-1",
@@ -1230,7 +1328,9 @@ class MuseSparkClient:
                     target_scope=Path(doc_file_path).name,
                     parameters={"filePath": doc_file_path},
                     preconditions=["Authorized document exists"],
-                    expected_postconditions=["Document chunked and SHA-256 registered in source manager"],
+                    expected_postconditions=[
+                        "Document chunked and SHA-256 registered in source manager"
+                    ],
                     requires_human_approval=False,
                 ),
                 PlanStepProposal(
@@ -1256,7 +1356,10 @@ class MuseSparkClient:
                     target_surface="local_store",
                     target_scope="retrieved_facts",
                     dependencies=["step-doc-2"],
-                    parameters={"target": "retrieved_facts", "expectedFacts": {"source_verified": True}},
+                    parameters={
+                        "target": "retrieved_facts",
+                        "expectedFacts": {"source_verified": True},
+                    },
                     preconditions=["Facts retrieved"],
                     expected_postconditions=["Cryptographic evidence recorded in ledger"],
                     requires_human_approval=False,
@@ -1447,7 +1550,9 @@ class MuseSparkClient:
                     target_surface="browser_tab",
                     target_scope="form_inputs",
                     dependencies=["step-d2b-2"],
-                    parameters={"fieldNames": list(source_facts.keys()) if source_facts else ["field1"]},
+                    parameters={
+                        "fieldNames": list(source_facts.keys()) if source_facts else ["field1"]
+                    },
                     preconditions=["Form fill dispatch completed"],
                     expected_postconditions=["DOM values match invoice source facts"],
                     requires_human_approval=False,

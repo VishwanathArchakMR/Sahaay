@@ -1,22 +1,24 @@
 """Session and Consent Management Endpoints."""
 
+import json
 import logging
+from datetime import datetime
 from typing import List, Optional
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
-logger = logging.getLogger(__name__)
-
+from sahaay_core.config.settings import settings
 from sahaay_core.contracts.consent_purposes import (
     ALL_META_CLOUD_PURPOSES,
     LOCAL_AUTOMATION_SCOPES,
     META_API_DESTINATION,
-    MetaCloudConsentPurpose,
 )
 from sahaay_core.contracts.models import ConsentGrant, Session
 from sahaay_core.storage.persistence import durable_storage
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/sessions", tags=["Sessions & Consent"])
 
@@ -180,8 +182,7 @@ async def grant_onboarding_consent(
 async def get_latest_active_session() -> Session:
     """Returns the most recent active session for cross-surface sync."""
     from sahaay_core.storage.persistence import get_sqlite_conn
-    from datetime import datetime
-    import json
+
     conn = get_sqlite_conn()
     row = conn.execute(
         "SELECT * FROM sessions WHERE is_active = 1 ORDER BY created_at DESC LIMIT 1"
@@ -267,15 +268,18 @@ async def chat_with_assistant(session_id: UUID, req: ChatRequest) -> dict:
         }
     ]
     for r in history_records[-6:]:
-        messages_payload.append({
-            "role": r.get("role", "user"),
-            "content": r.get("content", ""),
-        })
+        messages_payload.append(
+            {
+                "role": r.get("role", "user"),
+                "content": r.get("content", ""),
+            }
+        )
 
     # 3. Request completion from Meta Muse Spark model
     reply_text = ""
     try:
         from sahaay_core.models.meta_client import muse_spark
+
         if muse_spark.client.is_configured:
             resp = await muse_spark.client.post_endpoint(
                 "chat/completions",
@@ -316,7 +320,6 @@ async def chat_with_assistant(session_id: UUID, req: ChatRequest) -> dict:
         "messageId": saved_msg.get("messageId"),
         "createdAt": saved_msg.get("createdAt"),
     }
-
 
 
 @router.get("/{session_id}/grants", response_model=List[ConsentGrant])

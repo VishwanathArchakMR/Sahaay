@@ -144,4 +144,3 @@ def execute_python_script(
             "error": str(ex),
             "driverProvenance": "real_python_subprocess",
         }
-

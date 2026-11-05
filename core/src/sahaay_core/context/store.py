@@ -87,8 +87,21 @@ class ContextStore:
 
         matching: List[ContextFact] = []
         stop_words = {
-            "search", "recent", "summarize", "key", "facts", "and", "the", "for",
-            "with", "from", "what", "is", "a", "an", "to"
+            "search",
+            "recent",
+            "summarize",
+            "key",
+            "facts",
+            "and",
+            "the",
+            "for",
+            "with",
+            "from",
+            "what",
+            "is",
+            "a",
+            "an",
+            "to",
         }
         tokens = [w for w in query_lower.split() if len(w) > 2 and w not in stop_words]
 

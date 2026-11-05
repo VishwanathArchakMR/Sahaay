@@ -5,10 +5,9 @@ Skills teach the agent reusable operational methods, without bypassing permissio
 """
 
 import logging
-import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -28,7 +27,9 @@ class Skill(BaseModel):
     isEnabled: bool = True
 
     def to_prompt_text(self) -> str:
-        tools_str = ", ".join(self.allowedTools) if self.allowedTools else "all registered capabilities"
+        tools_str = (
+            ", ".join(self.allowedTools) if self.allowedTools else "all registered capabilities"
+        )
         return (
             f"### Skill: {self.name} (v{self.version})\n"
             f"Description: {self.description}\n"
@@ -41,7 +42,9 @@ class SkillsManager:
     """Manages skill discovery, parsing, and context injection."""
 
     def __init__(self, skills_dir: Optional[Path] = None) -> None:
-        self.skills_dir = skills_dir or (Path(__file__).resolve().parent.parent.parent.parent / "skills")
+        self.skills_dir = skills_dir or (
+            Path(__file__).resolve().parent.parent.parent.parent / "skills"
+        )
         self._skills: Dict[str, Skill] = {}
         self.load_skills()
 
@@ -120,7 +123,7 @@ class SkillsManager:
                 return w[:-3]
             for suff in ("ing", "tion", "ment", "ed", "es", "s"):
                 if len(w) > len(suff) + 3 and w.endswith(suff):
-                    return w[:-len(suff)]
+                    return w[: -len(suff)]
             return w
 
         goal_tokens = [_stem(w) for w in re.split(r"\W+", goal_lower) if len(w) >= 3]
@@ -138,23 +141,69 @@ class SkillsManager:
             direct_match = any(w in skill_text for w in goal_raw_tokens if len(w) >= 4)
             # Stemmed overlap
             stem_overlap = any(
-                st in skill_stemmed or any(st in sk or sk in st for sk in skill_stemmed if len(st) >= 4 and len(sk) >= 4)
+                st in skill_stemmed
+                or any(
+                    st in sk or sk in st for sk in skill_stemmed if len(st) >= 4 and len(sk) >= 4
+                )
                 for st in goal_tokens
                 if len(st) >= 4
             )
 
             # Domain specific semantic triggers
             domain_match = False
-            if any(term in goal_lower for term in ("report", "doc", "pdf", "file", "inconsist", "audit", "differ", "contract")):
+            if any(
+                term in goal_lower
+                for term in (
+                    "report",
+                    "doc",
+                    "pdf",
+                    "file",
+                    "inconsist",
+                    "audit",
+                    "differ",
+                    "contract",
+                )
+            ):
                 if "document" in skill.name.lower() or "audit" in skill.name.lower():
                     domain_match = True
-            if any(term in goal_lower for term in ("data", "stat", "table", "sheet", "csv", "excel", "xlsx", "math", "sum", "average", "finance", "financial")):
+            if any(
+                term in goal_lower
+                for term in (
+                    "data",
+                    "stat",
+                    "table",
+                    "sheet",
+                    "csv",
+                    "excel",
+                    "xlsx",
+                    "math",
+                    "sum",
+                    "average",
+                    "finance",
+                    "financial",
+                )
+            ):
                 if "data" in skill.name.lower() or "tabular" in skill.name.lower():
                     domain_match = True
-            if any(term in goal_lower for term in ("research", "find", "search", "investigate", "topic", "web", "summary", "article")):
+            if any(
+                term in goal_lower
+                for term in (
+                    "research",
+                    "find",
+                    "search",
+                    "investigate",
+                    "topic",
+                    "web",
+                    "summary",
+                    "article",
+                )
+            ):
                 if "research" in skill.name.lower():
                     domain_match = True
-            if any(term in goal_lower for term in ("window", "app", "click", "screen", "type", "desktop", "ui", "button")):
+            if any(
+                term in goal_lower
+                for term in ("window", "app", "click", "screen", "type", "desktop", "ui", "button")
+            ):
                 if "desktop" in skill.name.lower() or "windows" in skill.name.lower():
                     domain_match = True
 
@@ -171,4 +220,3 @@ class SkillsManager:
 
 
 skills_manager = SkillsManager()
-

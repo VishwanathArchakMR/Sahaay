@@ -591,27 +591,6 @@ class DurableStorage:
             for r in rows
         ]
 
-    def get_all_facts(self, limit: int = 200) -> List[ContextFact]:
-        conn = get_sqlite_conn()
-        rows = conn.execute(
-            "SELECT * FROM context_facts ORDER BY recorded_at DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
-        conn.close()
-        return [
-            ContextFact(
-                factId=UUID(r["fact_id"]),
-                factType=FactTypeEnum(r["fact_type"]),
-                content=r["content"],
-                sourceReferenceId=UUID(r["source_reference_id"]),
-                derivationIds=[UUID(d) for d in json.loads(r["derivation_ids_json"])],
-                confidenceScore=r["confidence_score"],
-                recordedAt=datetime.fromisoformat(r["recorded_at"]),
-                metadata=json.loads(r["metadata_json"]),
-            )
-            for r in rows
-        ]
-
     # --- Evidence ---
     def save_evidence(self, evidence: EvidenceReference) -> None:
         conn = get_sqlite_conn()
@@ -652,27 +631,6 @@ class DurableStorage:
                 verificationResultId=UUID(r["verification_result_id"]),
                 createdAt=datetime.fromisoformat(r["created_at"]),
                 narrative=r["narrative"],
-            )
-            for r in rows
-        ]
-
-    def get_all_facts(self, limit: int = 200) -> List[ContextFact]:
-        conn = get_sqlite_conn()
-        rows = conn.execute(
-            "SELECT * FROM context_facts ORDER BY recorded_at DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
-        conn.close()
-        return [
-            ContextFact(
-                factId=UUID(r["fact_id"]),
-                factType=FactTypeEnum(r["fact_type"]),
-                content=r["content"],
-                sourceReferenceId=UUID(r["source_reference_id"]),
-                derivationIds=[UUID(d) for d in json.loads(r["derivation_ids_json"])],
-                confidenceScore=r["confidence_score"],
-                recordedAt=datetime.fromisoformat(r["recorded_at"]),
-                metadata=json.loads(r["metadata_json"]),
             )
             for r in rows
         ]
@@ -785,7 +743,8 @@ class DurableStorage:
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM tasks WHERE origin = 'user' OR origin IS NULL ORDER BY created_at DESC LIMIT ?", (limit,)
+                "SELECT * FROM tasks WHERE origin = 'user' OR origin IS NULL ORDER BY created_at DESC LIMIT ?",
+                (limit,),
             ).fetchall()
         conn.close()
         tasks = []
@@ -1081,27 +1040,6 @@ class DurableStorage:
             for r in rows
         ]
 
-    def get_all_facts(self, limit: int = 200) -> List[ContextFact]:
-        conn = get_sqlite_conn()
-        rows = conn.execute(
-            "SELECT * FROM context_facts ORDER BY recorded_at DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
-        conn.close()
-        return [
-            ContextFact(
-                factId=UUID(r["fact_id"]),
-                factType=FactTypeEnum(r["fact_type"]),
-                content=r["content"],
-                sourceReferenceId=UUID(r["source_reference_id"]),
-                derivationIds=[UUID(d) for d in json.loads(r["derivation_ids_json"])],
-                confidenceScore=r["confidence_score"],
-                recordedAt=datetime.fromisoformat(r["recorded_at"]),
-                metadata=json.loads(r["metadata_json"]),
-            )
-            for r in rows
-        ]
-
     # --- Task Blueprints ---
     def save_task_blueprint(self, task_id: str, blueprint: Dict[str, Any]) -> None:
         """Durable persistence for the structured Task Blueprint."""
@@ -1109,7 +1047,9 @@ class DurableStorage:
         now_str = datetime.now(timezone.utc).isoformat()
         try:
             with conn:
-                task_exists = conn.execute("SELECT 1 FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
+                task_exists = conn.execute(
+                    "SELECT 1 FROM tasks WHERE task_id = ?", (task_id,)
+                ).fetchone()
                 if not task_exists:
                     return
                 conn.execute(
@@ -1142,7 +1082,9 @@ class DurableStorage:
     def get_task_blueprint(self, task_id: str) -> Optional[Dict[str, Any]]:
         conn = get_sqlite_conn()
         try:
-            row = conn.execute("SELECT * FROM task_blueprints WHERE task_id = ?", (task_id,)).fetchone()
+            row = conn.execute(
+                "SELECT * FROM task_blueprints WHERE task_id = ?", (task_id,)
+            ).fetchone()
         finally:
             conn.close()
         if not row:
@@ -1173,6 +1115,7 @@ class DurableStorage:
     ) -> Dict[str, Any]:
         """Record a structured real-time lifecycle event for a task."""
         import uuid
+
         event_id = str(uuid.uuid4())
         now_str = datetime.now(timezone.utc).isoformat()
         event_dict = {
@@ -1187,7 +1130,9 @@ class DurableStorage:
         conn = get_sqlite_conn()
         try:
             with conn:
-                task_exists = conn.execute("SELECT 1 FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
+                task_exists = conn.execute(
+                    "SELECT 1 FROM tasks WHERE task_id = ?", (task_id,)
+                ).fetchone()
                 if task_exists:
                     conn.execute(
                         """
@@ -1228,27 +1173,6 @@ class DurableStorage:
             for r in rows
         ]
 
-    def get_all_facts(self, limit: int = 200) -> List[ContextFact]:
-        conn = get_sqlite_conn()
-        rows = conn.execute(
-            "SELECT * FROM context_facts ORDER BY recorded_at DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
-        conn.close()
-        return [
-            ContextFact(
-                factId=UUID(r["fact_id"]),
-                factType=FactTypeEnum(r["fact_type"]),
-                content=r["content"],
-                sourceReferenceId=UUID(r["source_reference_id"]),
-                derivationIds=[UUID(d) for d in json.loads(r["derivation_ids_json"])],
-                confidenceScore=r["confidence_score"],
-                recordedAt=datetime.fromisoformat(r["recorded_at"]),
-                metadata=json.loads(r["metadata_json"]),
-            )
-            for r in rows
-        ]
-
     # --- Project Memory ---
     def save_project_memory(
         self,
@@ -1259,6 +1183,7 @@ class DurableStorage:
         provenance_uri: Optional[str] = None,
     ) -> None:
         import uuid
+
         memory_id = str(uuid.uuid4())
         now_str = datetime.now(timezone.utc).isoformat()
         conn = get_sqlite_conn()
@@ -1303,49 +1228,6 @@ class DurableStorage:
             for r in rows
         ]
 
-    def get_all_facts(self, limit: int = 200) -> List[ContextFact]:
-        conn = get_sqlite_conn()
-        rows = conn.execute(
-            "SELECT * FROM context_facts ORDER BY recorded_at DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
-        conn.close()
-        return [
-            ContextFact(
-                factId=UUID(r["fact_id"]),
-                factType=FactTypeEnum(r["fact_type"]),
-                content=r["content"],
-                sourceReferenceId=UUID(r["source_reference_id"]),
-                derivationIds=[UUID(d) for d in json.loads(r["derivation_ids_json"])],
-                confidenceScore=r["confidence_score"],
-                recordedAt=datetime.fromisoformat(r["recorded_at"]),
-                metadata=json.loads(r["metadata_json"]),
-            )
-            for r in rows
-        ]
-
-    def get_all_facts(self, limit: int = 200) -> List[ContextFact]:
-        conn = get_sqlite_conn()
-        rows = conn.execute(
-            "SELECT * FROM context_facts ORDER BY recorded_at DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
-        conn.close()
-        return [
-            ContextFact(
-                factId=UUID(r["fact_id"]),
-                factType=FactTypeEnum(r["fact_type"]),
-                content=r["content"],
-                sourceReferenceId=UUID(r["source_reference_id"]),
-                derivationIds=[UUID(d) for d in json.loads(r["derivation_ids_json"])],
-                confidenceScore=r["confidence_score"],
-                recordedAt=datetime.fromisoformat(r["recorded_at"]),
-                metadata=json.loads(r["metadata_json"]),
-            )
-            for r in rows
-        ]
-
-
     # --- Conversation Messages ---
     def save_conversation_message(
         self,
@@ -1365,7 +1247,15 @@ class DurableStorage:
                 INSERT INTO conversation_messages (message_id, session_id, task_id, role, content, created_at, metadata_json)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (mid, str(session_id), str(task_id) if task_id else None, role, content, now_str, json.dumps(metadata or {}))
+                (
+                    mid,
+                    str(session_id),
+                    str(task_id) if task_id else None,
+                    role,
+                    content,
+                    now_str,
+                    json.dumps(metadata or {}),
+                ),
             )
         conn.close()
         return {
@@ -1378,13 +1268,11 @@ class DurableStorage:
             "metadata": metadata or {},
         }
 
-    def list_conversation_messages(
-        self, session_id: str, limit: int = 100
-    ) -> List[Dict[str, Any]]:
+    def list_conversation_messages(self, session_id: str, limit: int = 100) -> List[Dict[str, Any]]:
         conn = get_sqlite_conn()
         rows = conn.execute(
             "SELECT * FROM conversation_messages WHERE session_id = ? ORDER BY created_at ASC LIMIT ?",
-            (str(session_id), limit)
+            (str(session_id), limit),
         ).fetchall()
         conn.close()
         return [

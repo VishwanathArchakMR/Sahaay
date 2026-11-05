@@ -2,8 +2,8 @@
 
 import secrets
 from pathlib import Path
-
 from typing import Any
+
 from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -123,6 +123,7 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return v.strip(" \"'\r\n\t")
         return ""
+
     meta_api_base_url: str = Field(
         default="https://api.meta.ai/v1",
         validation_alias=AliasChoices("SAHAAY_META_API_BASE_URL", "META_API_BASE_URL"),
@@ -228,6 +229,7 @@ class Settings(BaseSettings):
         """Determines if the runtime is currently executing in a test environment."""
         import os
         import sys
+
         return (
             "pytest" in sys.modules
             or self.environment == "testing"
@@ -282,7 +284,11 @@ class Settings(BaseSettings):
                         if line.startswith("#") or "=" not in line:
                             continue
                         k, v = line.split("=", 1)
-                        if k.strip() in ("MODEL_API_KEY", "SAHAAY_MODEL_API_KEY", "META_LLAMA_API_KEY"):
+                        if k.strip() in (
+                            "MODEL_API_KEY",
+                            "SAHAAY_MODEL_API_KEY",
+                            "META_LLAMA_API_KEY",
+                        ):
                             self.model_api_key = v.strip()
                             break
                 except Exception:

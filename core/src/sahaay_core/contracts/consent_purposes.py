@@ -84,4 +84,3 @@ LOCAL_AUTOMATION_SCOPES = [
     "research_web_search",
     "research_web_multihop",
 ]
-

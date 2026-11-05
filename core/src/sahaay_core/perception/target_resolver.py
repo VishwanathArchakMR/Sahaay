@@ -5,13 +5,11 @@ creative canvas, or system global) while strictly excluding Sahaay's own Electro
 to prevent perception contamination.
 """
 
-import os
 import re
 from enum import Enum
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
 
-from sahaay_core.config.logging import logger
+from pydantic import BaseModel
 
 
 class TargetSurfaceType(str, Enum):
@@ -90,9 +88,7 @@ class TargetResolver:
 
         return False
 
-    def filter_external_windows(
-        self, windows: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+    def filter_external_windows(self, windows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Filters a list of windows to only include valid external applications."""
         external = []
         for win in windows:
@@ -117,7 +113,20 @@ class TargetResolver:
         combined_text = f"{goal} {context or ''}".lower()
 
         # 1. Creative canvas / image editing detection
-        if any(w in combined_text for w in ("edit image", "style image", "retro style", "vintage style", "canvas", "artistic", "illustration", "generate image", "draw")):
+        if any(
+            w in combined_text
+            for w in (
+                "edit image",
+                "style image",
+                "retro style",
+                "vintage style",
+                "canvas",
+                "artistic",
+                "illustration",
+                "generate image",
+                "draw",
+            )
+        ):
             return TargetDescriptor(
                 surface_type=TargetSurfaceType.CREATIVE_CANVAS,
                 target_id="creative_canvas",
@@ -127,7 +136,22 @@ class TargetResolver:
 
         # 2. File / Workspace observation
         file_match = re.search(r'([A-Za-z]:\\[^\n\r"]+|(?:\.\/|\.\.\\)[^\n\r"]+)', combined_text)
-        if any(w in combined_text for w in ("file", "directory", "folder", "workspace", "code", "table", "csv", "json")) or file_match:
+        if (
+            any(
+                w in combined_text
+                for w in (
+                    "file",
+                    "directory",
+                    "folder",
+                    "workspace",
+                    "code",
+                    "table",
+                    "csv",
+                    "json",
+                )
+            )
+            or file_match
+        ):
             path_str = file_match.group(1) if file_match else None
             return TargetDescriptor(
                 surface_type=TargetSurfaceType.FILE_WORKSPACE,
@@ -138,10 +162,24 @@ class TargetResolver:
             )
 
         # 3. Browser tab detection
-        url_match = re.search(r'(https?://[^\s]+|[a-zA-Z0-9\-\.]+\.(?:com|org|io|net|edu|dev|in|ai)(?:/[^\s]*)?)', combined_text)
-        if (
-            url_match
-            or any(w in combined_text for w in ("browser", "tab", "webpage", "website", "chrome", "edge", "youtube", "amazon", "google", "wikipedia"))
+        url_match = re.search(
+            r"(https?://[^\s]+|[a-zA-Z0-9\-\.]+\.(?:com|org|io|net|edu|dev|in|ai)(?:/[^\s]*)?)",
+            combined_text,
+        )
+        if url_match or any(
+            w in combined_text
+            for w in (
+                "browser",
+                "tab",
+                "webpage",
+                "website",
+                "chrome",
+                "edge",
+                "youtube",
+                "amazon",
+                "google",
+                "wikipedia",
+            )
         ):
             target_url = url_match.group(1) if url_match else None
             if target_url and not target_url.startswith(("http://", "https://")):
@@ -184,7 +222,7 @@ class TargetResolver:
 
         matched_app_keyword = None
         for hint_kw, (pname, exename) in app_hints.items():
-            if re.search(r'\b' + re.escape(hint_kw) + r'\b', combined_text):
+            if re.search(r"\b" + re.escape(hint_kw) + r"\b", combined_text):
                 matched_app_keyword = (hint_kw, pname, exename)
                 app_target_name = hint_kw.capitalize()
                 break
