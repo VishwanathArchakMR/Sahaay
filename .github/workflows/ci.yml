@@ -47,7 +47,10 @@ jobs:
 
       - name: Run Automated Pytest Suite (Unit, Privacy, Security, Contracts)
         run: |
-          .\core\.venv\Scripts\pytest.exe tests/unit tests/browser tests/desktop tests/privacy tests/security -v --tb=short
+          .\core\.venv\Scripts\pytest.exe tests/unit tests/browser tests/desktop tests/privacy tests/security -v --tb=short | Tee-Object -FilePath pytest_output.txt
+          $testExit = $LASTEXITCODE
+          Get-Content pytest_output.txt | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+          if ($testExit -ne 0) { exit $testExit }
 
       - name: Run .NET Windows Companion Test Suite
         run: |
